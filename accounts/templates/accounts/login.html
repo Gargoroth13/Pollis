@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block titulo %}Entrar — Polis{% endblock %}
+
+{% block conteudo %}
+<div class="cartao">
+  <h1>Entrar</h1>
+  <form class="simples" method="post">
+    {% csrf_token %}
+    {% for field in form %}
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.errors %}<div class="erros-form">{{ field.errors|striptags }}</div>{% endif %}
+    {% endfor %}
+    {% if form.non_field_errors %}
+      <div class="erros-form">{{ form.non_field_errors|striptags }}</div>
+    {% endif %}
+    <p style="margin-top: 1.5rem;"><button type="submit" class="botao">Entrar</button></p>
+  </form>
+  <p class="rotulo">Ainda não tem conta? <a href="{% url 'cadastro' %}">Cadastre-se</a></p>
+</div>
+{% endblock %}

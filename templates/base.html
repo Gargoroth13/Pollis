@@ -1,0 +1,169 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block titulo %}Polis{% endblock %}</title>
+<style>
+  :root {
+    --tinta: #1c2430;
+    --tinta-suave: #4b5563;
+    --papel: #f5f3ec;
+    --papel-cartao: #fffdf8;
+    --linha: #d8d2c2;
+    --selo: #9c7a3c;
+    --selo-escuro: #7c5f2b;
+    --sucesso: #2f6f4f;
+    --erro: #9c3b3b;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--papel);
+    color: var(--tinta);
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    line-height: 1.5;
+  }
+
+  a { color: var(--selo-escuro); }
+
+  header.topo {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 1.25rem 2rem;
+    border-bottom: 2px solid var(--tinta);
+    background: var(--papel-cartao);
+  }
+
+  header.topo .marca {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  header.topo nav a {
+    margin-left: 1.25rem;
+    text-decoration: none;
+    font-family: system-ui, sans-serif;
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
+  }
+
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem;
+  }
+
+  .cartao {
+    background: var(--papel-cartao);
+    border: 1px solid var(--linha);
+    border-radius: 4px;
+    padding: 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h1, h2, h3 { font-weight: 700; margin-top: 0; }
+
+  .rotulo {
+    font-family: system-ui, sans-serif;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--tinta-suave);
+  }
+
+  .numero {
+    font-family: "Courier New", monospace;
+    font-size: 1.6rem;
+  }
+
+  .grade {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+  }
+
+  .botao {
+    display: inline-block;
+    font-family: system-ui, sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    background: var(--selo);
+    color: var(--papel-cartao);
+    border: none;
+    padding: 0.65rem 1.4rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .botao:hover { background: var(--selo-escuro); }
+  .botao:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; }
+
+  form.simples label {
+    display: block;
+    font-family: system-ui, sans-serif;
+    font-size: 0.85rem;
+    margin-top: 0.9rem;
+  }
+
+  form.simples input {
+    width: 100%;
+    padding: 0.5rem;
+    margin-top: 0.3rem;
+    border: 1px solid var(--linha);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 1rem;
+  }
+
+  form.simples input:focus-visible { outline: 3px solid var(--selo); }
+
+  .mensagens { list-style: none; padding: 0; margin: 0 0 1.25rem; font-family: system-ui, sans-serif; }
+  .mensagens li {
+    padding: 0.6rem 0.9rem;
+    border-radius: 3px;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+  }
+  .mensagens li.success { background: #e4f0e9; color: var(--sucesso); }
+  .mensagens li.error { background: #f4e4e4; color: var(--erro); }
+
+  .erros-form { color: var(--erro); font-family: system-ui, sans-serif; font-size: 0.85rem; margin-top: 0.5rem; }
+
+  @media (max-width: 480px) {
+    header.topo { flex-direction: column; gap: 0.5rem; }
+    header.topo nav a { margin-left: 0; margin-right: 1rem; }
+  }
+</style>
+</head>
+<body>
+<header class="topo">
+  <span class="marca">Polis</span>
+  <nav>
+    {% if user.is_authenticated %}
+      <a href="{% url 'painel' %}">Painel</a>
+      <a href="{% url 'logout' %}">Sair</a>
+    {% else %}
+      <a href="{% url 'login' %}">Entrar</a>
+      <a href="{% url 'cadastro' %}">Cadastrar</a>
+    {% endif %}
+  </nav>
+</header>
+<main>
+  {% if messages %}
+    <ul class="mensagens">
+      {% for message in messages %}
+        <li class="{{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% block conteudo %}{% endblock %}
+</main>
+</body>
+</html>

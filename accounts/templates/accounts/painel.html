@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block titulo %}Painel — Polis{% endblock %}
+
+{% block conteudo %}
+<div class="cartao">
+  <span class="rotulo">Cidadão</span>
+  <h1>{{ user.username }}</h1>
+  <p>
+    Mora em <strong>{{ perfil.bairro.nome }}</strong>, {{ perfil.bairro.cidade }}
+    — bairro de {{ perfil.bairro.get_faixa_renda_display|lower }},
+    qualidade de vida {{ perfil.bairro.qualidade_vida }}/100.
+  </p>
+</div>
+
+<div class="cartao">
+  <div class="grade">
+    <div>
+      <span class="rotulo">Dinheiro</span>
+      <div class="numero">R$ {{ perfil.dinheiro }}</div>
+    </div>
+    <div>
+      <span class="rotulo">Energia</span>
+      <div class="numero">{{ perfil.energia_atual }}/{{ perfil.energia_maxima }}</div>
+    </div>
+    <div>
+      <span class="rotulo">Saúde</span>
+      <div class="numero">{{ perfil.saude_atual }}/{{ perfil.saude_maxima }}</div>
+    </div>
+  </div>
+
+  <form method="post" action="{% url 'trabalhar' %}" style="margin-top: 1.5rem;">
+    {% csrf_token %}
+    <button type="submit" class="botao">Trabalhar (-10 energia)</button>
+  </form>
+</div>
+
+{% if registros_recentes %}
+<div class="cartao">
+  <h2>Últimos trabalhos</h2>
+  <ul>
+    {% for registro in registros_recentes %}
+      <li>{{ registro.quando|date:"d/m H:i" }} — ganhou R$ {{ registro.dinheiro_ganho }}, gastou {{ registro.energia_gasta }} de energia</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}
