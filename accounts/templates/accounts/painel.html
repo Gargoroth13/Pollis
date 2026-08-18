@@ -31,8 +31,29 @@
 
   <form method="post" action="{% url 'trabalhar' %}" style="margin-top: 1.5rem;">
     {% csrf_token %}
-    <button type="submit" class="botao">Trabalhar (-10 energia)</button>
+    <label for="categoria_id" class="rotulo" style="display:block; margin-bottom: 0.4rem;">Trabalhar em qual área?</label>
+    <select name="categoria_id" id="categoria_id" style="padding: 0.5rem; border: 1px solid var(--linha); border-radius: 3px; font-family: inherit; font-size: 1rem;">
+      {% for categoria in categorias %}
+        <option value="{{ categoria.id }}">{{ categoria.nome }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="botao" style="margin-left: 0.75rem;">Trabalhar (-10 energia)</button>
   </form>
+</div>
+
+<div class="cartao">
+  <h2>Habilidades</h2>
+  {% for h in habilidades %}
+    <div style="margin-bottom: 0.9rem;">
+      <div style="display:flex; justify-content: space-between; font-family: system-ui, sans-serif; font-size: 0.85rem;">
+        <span><strong>{{ h.categoria.nome }}</strong> — nível {{ h.nivel }}</span>
+        <span class="rotulo">{{ h.xp_atual }}/{{ h.xp_necessario }} xp</span>
+      </div>
+      <div style="background: var(--linha); border-radius: 3px; height: 8px; margin-top: 0.3rem; overflow: hidden;">
+        <div style="background: var(--selo); height: 100%; width: {% widthratio h.xp_atual h.xp_necessario 100 %}%;"></div>
+      </div>
+    </div>
+  {% endfor %}
 </div>
 
 {% if registros_recentes %}
@@ -40,7 +61,7 @@
   <h2>Últimos trabalhos</h2>
   <ul>
     {% for registro in registros_recentes %}
-      <li>{{ registro.quando|date:"d/m H:i" }} — ganhou R$ {{ registro.dinheiro_ganho }}, gastou {{ registro.energia_gasta }} de energia</li>
+      <li>{{ registro.quando|date:"d/m H:i" }} — {{ registro.categoria.nome }}: ganhou R$ {{ registro.dinheiro_ganho }} + {{ registro.xp_ganho }} xp, gastou {{ registro.energia_gasta }} de energia</li>
     {% endfor %}
   </ul>
 </div>

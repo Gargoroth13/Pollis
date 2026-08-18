@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     # Apps do jogo
     "accounts",
     "geography",
+    "skills",
     "core",
 ]
 

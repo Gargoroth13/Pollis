@@ -12,7 +12,12 @@ dessa base, nas próximas sessões.
 - Dinheiro inicial varia de acordo com a faixa sorteada
 - Energia e saúde que regeneram sozinhas com o tempo, calculadas sob
   demanda (sem nenhum processo rodando o tempo todo)
-- Ação de "trabalhar": gasta energia, gera dinheiro, fica no histórico
+- Sistema de habilidades: 8 categorias (Indústria, Comércio, Tecnologia,
+  Saúde, Educação, Jurídico, Serviços, Agropecuária), cada uma com nível
+  e XP próprios, custo de XP crescente por nível
+- Ação de "trabalhar": jogador escolhe a categoria, gasta energia, gera
+  dinheiro e XP naquela categoria (sobe de nível automaticamente), fica
+  no histórico
 - Painel administrativo do Django pronto (`/admin/`) pra editar qualquer
   dado do jogo sem escrever tela nenhuma
 
@@ -22,6 +27,7 @@ dessa base, nas próximas sessões.
 polis/            configurações do projeto (settings.py, urls.py)
 accounts/         Usuario customizado, Perfil (energia/saúde/dinheiro), cadastro/login/painel
 geography/        Estado, Cidade, Bairro + comando de seed
+skills/            categorias de habilidade + progresso de nível por jogador
 core/              ações de jogo (por enquanto: trabalhar)
 templates/         template base compartilhado
 ```
@@ -46,8 +52,9 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 # 4. Criar o banco (sqlite local, zero configuração)
 python manage.py migrate
 
-# 5. Popular os bairros iniciais (necessário antes do primeiro cadastro)
+# 5. Popular os bairros e as categorias de habilidade iniciais
 python manage.py seed_geography
+python manage.py seed_skills
 
 # 6. Criar um usuário admin, pra acessar /admin/
 python manage.py createsuperuser
@@ -89,7 +96,7 @@ Ambos funcionam de forma parecida:
 
 ## Próximos sistemas (na ordem que faz mais sentido construir)
 
-1. Profissões e empresas (skills por setor, cargos customizados)
+1. Empresas (criação, cargos customizados, contratação, ranking de estrelas)
 2. Leis paramétricas + câmara + cadeia de aprovação com prazos
 3. Eleições (prefeito/governador/presidente)
 4. Mercado imobiliário + contratos de construção via leilão

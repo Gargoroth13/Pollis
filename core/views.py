@@ -3,8 +3,10 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_POST
+
+from skills.models import CategoriaDeHabilidade, HabilidadeDoJogador
 
 from .models import RegistroDeTrabalho
 
@@ -13,12 +15,15 @@ from .models import RegistroDeTrabalho
 CUSTO_DE_ENERGIA_TRABALHO = 10
 GANHO_MINIMO = 8
 GANHO_MAXIMO = 25
+XP_MINIMO = 5
+XP_MAXIMO = 15
 
 
 @login_required
 @require_POST
 def trabalhar(request):
     perfil = request.user.perfil
+    categoria = get_object_or_404(CategoriaDeHabilidade, id=request.POST.get("categoria_id"))
 
     if not perfil.gastar_energia(CUSTO_DE_ENERGIA_TRABALHO):
         messages.error(
@@ -32,11 +37,20 @@ def trabalhar(request):
     perfil.dinheiro += dinheiro_ganho
     perfil.save(update_fields=["dinheiro"])
 
+    xp_ganho = random.randint(XP_MINIMO, XP_MAXIMO)
+    habilidade, _ = HabilidadeDoJogador.objects.get_or_create(usuario=request.user, categoria=categoria)
+    niveis_subidos = habilidade.ganhar_xp(xp_ganho)
+
     RegistroDeTrabalho.objects.create(
         usuario=request.user,
+        categoria=categoria,
         energia_gasta=CUSTO_DE_ENERGIA_TRABALHO,
         dinheiro_ganho=dinheiro_ganho,
+        xp_ganho=xp_ganho,
     )
 
-    messages.success(request, f"Você trabalhou e ganhou R$ {dinheiro_ganho}.")
+    mensagem = f"Você trabalhou em {categoria.nome} e ganhou R$ {dinheiro_ganho} + {xp_ganho} XP."
+    if niveis_subidos:
+        mensagem += f" Subiu pro nível {habilidade.nivel} em {categoria.nome}!"
+    messages.success(request, mensagem)
     return redirect("painel")
