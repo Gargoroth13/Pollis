@@ -30,11 +30,13 @@ class Command(BaseCommand):
         papel = produto("Papel", False, industria, "12.00")
         tecido = produto("Tecido", False, industria, "15.00")
         caneta = produto("Caneta", False, industria, "6.00")
+        cimento = produto("Cimento", False, industria, "10.00")
 
         receitas = [
             (papel, madeira, 2, 3),
             (tecido, algodao, 2, 2),
             (caneta, minerio, 1, 4),
+            (cimento, minerio, 3, 2),
         ]
         for produto_final, materia_prima, necessaria, produzida in receitas:
             Receita.objects.get_or_create(
@@ -44,5 +46,5 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS(
-            "Pronto: 3 matérias-primas, 3 manufaturados e 3 receitas cadastradas."
+            "Pronto: 3 matérias-primas, 4 manufaturados e 4 receitas cadastradas."
         ))

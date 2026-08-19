@@ -25,6 +25,7 @@ class TipoDeEmpresa(models.TextChoices):
     MATRIZ = "matriz", "Matriz (extração/produção primária)"
     INDUSTRIAL = "industrial", "Industrial (manufatura)"
     VAREJO = "varejo", "Varejo (venda ao consumidor)"
+    CONSTRUTORA = "construtora", "Construtora"
 
 
 class Empresa(models.Model):

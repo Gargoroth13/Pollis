@@ -26,6 +26,7 @@ PRODUCAO_MAXIMA = 15
 REGRAS_DE_COMPRA = {
     TipoDeEmpresa.INDUSTRIAL: {"tipo_vendedor": TipoDeEmpresa.MATRIZ, "materia_prima": True},
     TipoDeEmpresa.VAREJO: {"tipo_vendedor": TipoDeEmpresa.INDUSTRIAL, "materia_prima": False},
+    TipoDeEmpresa.CONSTRUTORA: {"tipo_vendedor": TipoDeEmpresa.INDUSTRIAL, "materia_prima": False},
 }
 
 

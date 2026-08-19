@@ -29,8 +29,10 @@ dessa base, nas próximas sessões.
 - Cadeia produtiva por tipo de empresa: **Matriz** produz matéria-prima
   do zero, **Industrial** compra da Matriz e fabrica manufaturados
   seguindo receitas, **Varejo** compra da Industrial e revende pros
-  jogadores no Mercado público. Catálogo inicial: Madeira/Algodão/Minério
-  de Ferro → Papel/Tecido/Caneta
+  jogadores no Mercado público, **Construtora** compra da Industrial
+  (hoje só Cimento — a parte de construir imóveis de fato ainda depende
+  do sistema de governo/leis e do mercado imobiliário). Catálogo
+  inicial: Madeira/Algodão/Minério de Ferro → Papel/Tecido/Caneta/Cimento
 - Painel administrativo do Django pronto (`/admin/`) pra editar qualquer
   dado do jogo sem escrever tela nenhuma
 
@@ -55,10 +57,11 @@ templates/         template base compartilhado
 - Comprar no Mercado não gera item nenhum no "inventário" do jogador
   (ainda não existe inventário de jogador) — é só o lado econômico da
   cadeia funcionando
-- `tipo` da empresa hoje é só Matriz/Industrial/Varejo — a lista existe
-  como `TextChoices` em `empresas/models.py`, então adicionar um tipo
-  novo (Serviços, Construção etc) é só acrescentar uma linha ali e
-  ajustar as regras que dependerem dele
+- `tipo` da empresa hoje é Matriz/Industrial/Varejo/Construtora — a
+  lista existe como `TextChoices` em `empresas/models.py`, então
+  adicionar um tipo novo (Serviços, Financeira etc) é só acrescentar uma
+  linha ali e ajustar `REGRAS_DE_COMPRA` em `empresas/views.py` se ele
+  precisar comprar de outro tipo de empresa
 
 ## Rodando localmente
 
