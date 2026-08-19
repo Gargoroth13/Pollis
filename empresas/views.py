@@ -10,13 +10,41 @@ from core.models import RegistroDeTrabalho
 from skills.models import HabilidadeDoJogador
 
 from .forms import CriarCargoForm, CriarEmpresaForm
-from .models import ESTRELA_MAXIMA, Cargo, Empresa
+from .models import ESTRELA_MAXIMA, Cargo, Empresa, EstoqueDaEmpresa, Produto, TipoDeEmpresa
 
 Usuario = get_user_model()
 
 CUSTO_DE_ENERGIA_TRABALHO = 10
 XP_MINIMO = 5
 XP_MAXIMO = 15
+PRODUCAO_MINIMA = 5
+PRODUCAO_MAXIMA = 15
+
+# Define quem pode comprar de quem na cadeia produtiva: uma empresa do
+# tipo chave só pode comprar de empresas do "tipo_vendedor", e só produtos
+# que batem com o "materia_prima" (True = crua, False = manufaturada).
+REGRAS_DE_COMPRA = {
+    TipoDeEmpresa.INDUSTRIAL: {"tipo_vendedor": TipoDeEmpresa.MATRIZ, "materia_prima": True},
+    TipoDeEmpresa.VAREJO: {"tipo_vendedor": TipoDeEmpresa.INDUSTRIAL, "materia_prima": False},
+}
+
+
+def _criar_estoque_inicial(empresa):
+    """
+    Ao fundar a empresa, já cria (com quantidade zero) as linhas de
+    estoque dos produtos que ela tem permissão de produzir/fabricar —
+    assim eles já aparecem na página da empresa prontos pra começar a
+    produzir, sem precisar de nenhum passo manual extra.
+    """
+    if empresa.tipo == TipoDeEmpresa.MATRIZ:
+        produtos = Produto.objects.filter(setor=empresa.setor, eh_materia_prima=True)
+    elif empresa.tipo == TipoDeEmpresa.INDUSTRIAL:
+        produtos = Produto.objects.filter(setor=empresa.setor, eh_materia_prima=False)
+    else:
+        produtos = Produto.objects.none()
+
+    for produto in produtos:
+        EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto)
 
 
 def listar(request):
@@ -32,6 +60,7 @@ def criar_empresa(request):
             empresa = form.save(commit=False)
             empresa.dono = request.user
             empresa.save()
+            _criar_estoque_inicial(empresa)
             messages.success(request, f"{empresa.nome} foi fundada com 1 estrela.")
             return redirect("empresas_detalhe", empresa_id=empresa.id)
     else:
@@ -44,6 +73,26 @@ def detalhe(request, empresa_id):
     cargos = empresa.cargos.select_related("categoria_habilidade", "ocupante")
     eh_dono = request.user.is_authenticated and request.user.id == empresa.dono_id
     estrelas_visual = "★" * empresa.estrelas + "☆" * (ESTRELA_MAXIMA - empresa.estrelas)
+    estoque = empresa.estoque.select_related("produto").order_by("produto__nome")
+
+    produtos_para_produzir = None
+    produtos_para_fabricar = None
+    vendedores_disponiveis = None
+
+    if eh_dono:
+        if empresa.tipo == TipoDeEmpresa.MATRIZ:
+            produtos_para_produzir = Produto.objects.filter(setor=empresa.setor, eh_materia_prima=True)
+        elif empresa.tipo == TipoDeEmpresa.INDUSTRIAL:
+            produtos_para_fabricar = Produto.objects.filter(setor=empresa.setor, eh_materia_prima=False)
+
+        regra = REGRAS_DE_COMPRA.get(empresa.tipo)
+        if regra:
+            vendedores_disponiveis = EstoqueDaEmpresa.objects.filter(
+                empresa__tipo=regra["tipo_vendedor"],
+                produto__eh_materia_prima=regra["materia_prima"],
+                quantidade__gt=0,
+            ).select_related("empresa", "produto")
+
     return render(
         request,
         "empresas/detalhe.html",
@@ -54,6 +103,10 @@ def detalhe(request, empresa_id):
             "estrelas_visual": estrelas_visual,
             "form_cargo": CriarCargoForm() if eh_dono else None,
             "requisitos_para_upar": empresa.requisitos_para_upar(),
+            "estoque": estoque,
+            "produtos_para_produzir": produtos_para_produzir,
+            "produtos_para_fabricar": produtos_para_fabricar,
+            "vendedores_disponiveis": vendedores_disponiveis,
         },
     )
 
@@ -187,3 +240,180 @@ def trabalhar_no_emprego(request):
         mensagem += f" Subiu pro nível {habilidade.nivel} em {cargo.categoria_habilidade.nome}!"
     messages.success(request, mensagem)
     return redirect("painel")
+
+
+@login_required
+@require_POST
+def produzir(request, empresa_id):
+    empresa = get_object_or_404(Empresa, id=empresa_id, dono=request.user, tipo=TipoDeEmpresa.MATRIZ)
+    produto = get_object_or_404(
+        Produto, id=request.POST.get("produto_id"), setor=empresa.setor, eh_materia_prima=True
+    )
+
+    perfil = request.user.perfil
+    if not perfil.gastar_energia(CUSTO_DE_ENERGIA_TRABALHO):
+        messages.error(
+            request,
+            f"Energia insuficiente pra produzir. Você precisa de {CUSTO_DE_ENERGIA_TRABALHO} "
+            f"e tem {perfil.energia_atual}.",
+        )
+        return redirect("empresas_detalhe", empresa_id=empresa.id)
+
+    quantidade = random.randint(PRODUCAO_MINIMA, PRODUCAO_MAXIMA)
+    estoque, _ = EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto)
+    estoque.quantidade += quantidade
+    estoque.save(update_fields=["quantidade"])
+
+    messages.success(request, f"{empresa.nome} produziu {quantidade}x {produto.nome}.")
+    return redirect("empresas_detalhe", empresa_id=empresa.id)
+
+
+@login_required
+@require_POST
+def fabricar(request, empresa_id):
+    empresa = get_object_or_404(Empresa, id=empresa_id, dono=request.user, tipo=TipoDeEmpresa.INDUSTRIAL)
+    produto_final = get_object_or_404(
+        Produto, id=request.POST.get("produto_id"), setor=empresa.setor, eh_materia_prima=False
+    )
+
+    receitas = list(produto_final.receitas.select_related("materia_prima"))
+    if not receitas:
+        messages.error(request, f"{produto_final.nome} ainda não tem receita cadastrada.")
+        return redirect("empresas_detalhe", empresa_id=empresa.id)
+
+    # Confere se tem TODOS os ingredientes em quantidade suficiente antes de
+    # consumir qualquer um — senão poderia gastar metade da receita e falhar
+    # no meio, perdendo matéria-prima à toa.
+    estoques_das_materias = {}
+    for receita in receitas:
+        estoque_mp = EstoqueDaEmpresa.objects.filter(empresa=empresa, produto=receita.materia_prima).first()
+        disponivel = estoque_mp.quantidade if estoque_mp else 0
+        if disponivel < receita.quantidade_necessaria:
+            messages.error(
+                request,
+                f"Falta {receita.materia_prima.nome}: precisa de {receita.quantidade_necessaria}, "
+                f"tem {disponivel}.",
+            )
+            return redirect("empresas_detalhe", empresa_id=empresa.id)
+        estoques_das_materias[receita] = estoque_mp
+
+    perfil = request.user.perfil
+    if not perfil.gastar_energia(CUSTO_DE_ENERGIA_TRABALHO):
+        messages.error(
+            request,
+            f"Energia insuficiente pra fabricar. Você precisa de {CUSTO_DE_ENERGIA_TRABALHO} "
+            f"e tem {perfil.energia_atual}.",
+        )
+        return redirect("empresas_detalhe", empresa_id=empresa.id)
+
+    for receita, estoque_mp in estoques_das_materias.items():
+        estoque_mp.quantidade -= receita.quantidade_necessaria
+        estoque_mp.save(update_fields=["quantidade"])
+
+    quantidade_produzida = receitas[0].quantidade_produzida
+    estoque_final, _ = EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto_final)
+    estoque_final.quantidade += quantidade_produzida
+    estoque_final.save(update_fields=["quantidade"])
+
+    messages.success(request, f"{empresa.nome} fabricou {quantidade_produzida}x {produto_final.nome}.")
+    return redirect("empresas_detalhe", empresa_id=empresa.id)
+
+
+@login_required
+@require_POST
+def comprar_de_empresa(request, empresa_id):
+    empresa_compradora = get_object_or_404(Empresa, id=empresa_id, dono=request.user)
+    regra = REGRAS_DE_COMPRA.get(empresa_compradora.tipo)
+    if regra is None:
+        messages.error(
+            request, f"Empresas do tipo {empresa_compradora.get_tipo_display()} não compram de outras empresas."
+        )
+        return redirect("empresas_detalhe", empresa_id=empresa_compradora.id)
+
+    empresa_vendedora = get_object_or_404(
+        Empresa, id=request.POST.get("empresa_vendedora_id"), tipo=regra["tipo_vendedor"]
+    )
+    produto = get_object_or_404(
+        Produto, id=request.POST.get("produto_id"), eh_materia_prima=regra["materia_prima"]
+    )
+    try:
+        quantidade = int(request.POST.get("quantidade", 0))
+    except ValueError:
+        quantidade = 0
+    if quantidade <= 0:
+        messages.error(request, "Quantidade inválida.")
+        return redirect("empresas_detalhe", empresa_id=empresa_compradora.id)
+
+    estoque_vendedor = EstoqueDaEmpresa.objects.filter(empresa=empresa_vendedora, produto=produto).first()
+    disponivel = estoque_vendedor.quantidade if estoque_vendedor else 0
+    if disponivel < quantidade:
+        messages.error(request, f"{empresa_vendedora.nome} só tem {disponivel}x {produto.nome} disponível.")
+        return redirect("empresas_detalhe", empresa_id=empresa_compradora.id)
+
+    preco_total = produto.preco_base * quantidade
+    perfil_comprador = request.user.perfil
+    if perfil_comprador.dinheiro < preco_total:
+        messages.error(request, f"Custa R$ {preco_total} e você só tem R$ {perfil_comprador.dinheiro}.")
+        return redirect("empresas_detalhe", empresa_id=empresa_compradora.id)
+
+    estoque_vendedor.quantidade -= quantidade
+    estoque_vendedor.save(update_fields=["quantidade"])
+
+    estoque_comprador, _ = EstoqueDaEmpresa.objects.get_or_create(empresa=empresa_compradora, produto=produto)
+    estoque_comprador.quantidade += quantidade
+    estoque_comprador.save(update_fields=["quantidade"])
+
+    perfil_comprador.dinheiro -= preco_total
+    perfil_comprador.save(update_fields=["dinheiro"])
+
+    perfil_vendedor = empresa_vendedora.dono.perfil
+    perfil_vendedor.dinheiro += preco_total
+    perfil_vendedor.save(update_fields=["dinheiro"])
+
+    messages.success(
+        request, f"{empresa_compradora.nome} comprou {quantidade}x {produto.nome} de {empresa_vendedora.nome} por R$ {preco_total}."
+    )
+    return redirect("empresas_detalhe", empresa_id=empresa_compradora.id)
+
+
+def mercado(request):
+    itens = EstoqueDaEmpresa.objects.filter(
+        empresa__tipo=TipoDeEmpresa.VAREJO, quantidade__gt=0
+    ).select_related("empresa", "produto")
+    return render(request, "empresas/mercado.html", {"itens": itens})
+
+
+@login_required
+@require_POST
+def comprar_do_mercado(request, estoque_id):
+    estoque = get_object_or_404(
+        EstoqueDaEmpresa.objects.select_related("empresa", "produto"),
+        id=estoque_id,
+        empresa__tipo=TipoDeEmpresa.VAREJO,
+    )
+    try:
+        quantidade = int(request.POST.get("quantidade", 1))
+    except ValueError:
+        quantidade = 0
+    if quantidade <= 0 or quantidade > estoque.quantidade:
+        messages.error(request, "Quantidade inválida ou indisponível.")
+        return redirect("empresas_mercado")
+
+    preco_total = estoque.produto.preco_base * quantidade
+    perfil = request.user.perfil
+    if perfil.dinheiro < preco_total:
+        messages.error(request, f"Custa R$ {preco_total}, você só tem R$ {perfil.dinheiro}.")
+        return redirect("empresas_mercado")
+
+    estoque.quantidade -= quantidade
+    estoque.save(update_fields=["quantidade"])
+
+    perfil.dinheiro -= preco_total
+    perfil.save(update_fields=["dinheiro"])
+
+    perfil_vendedor = estoque.empresa.dono.perfil
+    perfil_vendedor.dinheiro += preco_total
+    perfil_vendedor.save(update_fields=["dinheiro"])
+
+    messages.success(request, f"Comprou {quantidade}x {estoque.produto.nome} por R$ {preco_total}.")
+    return redirect("empresas_mercado")

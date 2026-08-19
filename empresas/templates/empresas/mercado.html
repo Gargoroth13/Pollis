@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block titulo %}Mercado — Polis{% endblock %}
+
+{% block conteudo %}
+<div class="cartao">
+  <h1>Mercado</h1>
+  <p class="rotulo">Produtos manufaturados à venda pelas empresas de varejo da cidade.</p>
+</div>
+
+{% for item in itens %}
+<div class="cartao">
+  <span class="rotulo">{{ item.empresa.nome }}</span>
+  <h2>{{ item.produto.nome }}</h2>
+  <p>R$ {{ item.produto.preco_base }}/unidade — {{ item.quantidade }} disponíveis</p>
+  {% if user.is_authenticated %}
+    <form method="post" action="{% url 'empresas_comprar_mercado' item.id %}">
+      {% csrf_token %}
+      <input type="number" name="quantidade" min="1" max="{{ item.quantidade }}" value="1"
+             style="width: 70px; padding: 0.3rem; border: 1px solid var(--linha); border-radius: 3px;">
+      <button type="submit" class="botao">Comprar</button>
+    </form>
+  {% else %}
+    <p class="rotulo"><a href="{% url 'login' %}">Entre</a> pra poder comprar.</p>
+  {% endif %}
+</div>
+{% empty %}
+<div class="cartao"><p>Nenhum produto à venda no momento — as empresas de varejo ainda não compraram estoque das indústrias.</p></div>
+{% endfor %}
+{% endblock %}

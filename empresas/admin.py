@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Cargo, Empresa
+from .models import Cargo, EstoqueDaEmpresa, Empresa, Produto, Receita
 
 
 class CargoInline(admin.TabularInline):
@@ -9,13 +9,19 @@ class CargoInline(admin.TabularInline):
     autocomplete_fields = ("ocupante",)
 
 
+class EstoqueInline(admin.TabularInline):
+    model = EstoqueDaEmpresa
+    extra = 0
+    autocomplete_fields = ("produto",)
+
+
 @admin.register(Empresa)
 class EmpresaAdmin(admin.ModelAdmin):
-    list_display = ("nome", "setor", "dono", "estrelas", "funcionarios_ocupados")
-    list_filter = ("setor", "estrelas")
+    list_display = ("nome", "tipo", "setor", "dono", "estrelas", "funcionarios_ocupados")
+    list_filter = ("tipo", "setor", "estrelas")
     search_fields = ("nome", "dono__username")
     autocomplete_fields = ("dono",)
-    inlines = [CargoInline]
+    inlines = [CargoInline, EstoqueInline]
 
     @admin.display(description="Funcionários")
     def funcionarios_ocupados(self, obj):
@@ -28,3 +34,24 @@ class CargoAdmin(admin.ModelAdmin):
     list_filter = ("empresa", "categoria_habilidade")
     search_fields = ("titulo", "empresa__nome", "ocupante__username")
     autocomplete_fields = ("empresa", "ocupante")
+
+
+@admin.register(Produto)
+class ProdutoAdmin(admin.ModelAdmin):
+    list_display = ("nome", "eh_materia_prima", "setor", "preco_base")
+    list_filter = ("eh_materia_prima", "setor")
+    search_fields = ("nome",)
+
+
+@admin.register(Receita)
+class ReceitaAdmin(admin.ModelAdmin):
+    list_display = ("produto_final", "materia_prima", "quantidade_necessaria", "quantidade_produzida")
+    list_filter = ("produto_final",)
+
+
+@admin.register(EstoqueDaEmpresa)
+class EstoqueDaEmpresaAdmin(admin.ModelAdmin):
+    list_display = ("empresa", "produto", "quantidade")
+    list_filter = ("empresa__tipo", "produto")
+    search_fields = ("empresa__nome", "produto__nome")
+    autocomplete_fields = ("empresa", "produto")

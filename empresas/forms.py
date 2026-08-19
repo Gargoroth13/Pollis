@@ -6,7 +6,7 @@ from .models import Cargo, Empresa
 class CriarEmpresaForm(forms.ModelForm):
     class Meta:
         model = Empresa
-        fields = ["nome", "setor"]
+        fields = ["nome", "tipo", "setor"]
 
 
 class CriarCargoForm(forms.ModelForm):

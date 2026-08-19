@@ -26,6 +26,11 @@ dessa base, nas próximas sessões.
   contratados **e** um investimento em dinheiro do dono
 - Empregado formal ganha um botão de trabalho que paga o salário fixo do
   cargo (em vez do valor aleatório do trabalho freelance)
+- Cadeia produtiva por tipo de empresa: **Matriz** produz matéria-prima
+  do zero, **Industrial** compra da Matriz e fabrica manufaturados
+  seguindo receitas, **Varejo** compra da Industrial e revende pros
+  jogadores no Mercado público. Catálogo inicial: Madeira/Algodão/Minério
+  de Ferro → Papel/Tecido/Caneta
 - Painel administrativo do Django pronto (`/admin/`) pra editar qualquer
   dado do jogo sem escrever tela nenhuma
 
@@ -36,10 +41,24 @@ polis/            configurações do projeto (settings.py, urls.py)
 accounts/         Usuario customizado, Perfil (energia/saúde/dinheiro), cadastro/login/painel
 geography/        Estado, Cidade, Bairro + comando de seed
 skills/            categorias de habilidade + progresso de nível por jogador
-empresas/          Empresa (com sistema de estrelas), Cargo, contratação
+empresas/          Empresa (tipo + estrelas), Cargo, Produto/Receita/Estoque, Mercado
 core/              ações de jogo (trabalho freelance genérico)
 templates/         template base compartilhado
 ```
+
+## Simplificações atuais (documentadas de propósito)
+
+- Só o **dono** produz/fabrica na empresa (gasta a própria energia) —
+  ainda não delega isso pros funcionários contratados
+- Preço de compra/venda é sempre o `preco_base` do produto — não tem
+  precificação dinâmica por empresa ainda
+- Comprar no Mercado não gera item nenhum no "inventário" do jogador
+  (ainda não existe inventário de jogador) — é só o lado econômico da
+  cadeia funcionando
+- `tipo` da empresa hoje é só Matriz/Industrial/Varejo — a lista existe
+  como `TextChoices` em `empresas/models.py`, então adicionar um tipo
+  novo (Serviços, Construção etc) é só acrescentar uma linha ali e
+  ajustar as regras que dependerem dele
 
 ## Rodando localmente
 
@@ -61,9 +80,10 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 # 4. Criar o banco (sqlite local, zero configuração)
 python manage.py migrate
 
-# 5. Popular os bairros e as categorias de habilidade iniciais
+# 5. Popular os bairros, categorias de habilidade e catálogo de produtos
 python manage.py seed_geography
 python manage.py seed_skills
+python manage.py seed_produtos
 
 # 6. Criar um usuário admin, pra acessar /admin/
 python manage.py createsuperuser

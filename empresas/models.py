@@ -21,8 +21,15 @@ NIVEIS_DE_EMPRESA = {
 }
 
 
+class TipoDeEmpresa(models.TextChoices):
+    MATRIZ = "matriz", "Matriz (extração/produção primária)"
+    INDUSTRIAL = "industrial", "Industrial (manufatura)"
+    VAREJO = "varejo", "Varejo (venda ao consumidor)"
+
+
 class Empresa(models.Model):
     nome = models.CharField(max_length=100, unique=True)
+    tipo = models.CharField(max_length=12, choices=TipoDeEmpresa.choices, default=TipoDeEmpresa.VAREJO)
     setor = models.ForeignKey(CategoriaDeHabilidade, on_delete=models.PROTECT, related_name="empresas")
     dono = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="empresas_possuidas"
@@ -113,3 +120,74 @@ class Cargo(models.Model):
 
     def vago(self):
         return self.ocupante_id is None
+
+
+class Produto(models.Model):
+    """
+    Catálogo de produtos da cadeia produtiva. Matéria-prima é o que uma
+    Matriz produz do zero; manufaturado é o que uma Industrial fabrica
+    a partir de matéria-prima, seguindo uma Receita.
+
+    O `setor` define quem tem permissão de mexer nesse produto: só
+    empresas cujo próprio setor bate com o do produto podem produzi-lo
+    (Matriz) ou fabricá-lo (Industrial). Varejo não tem essa restrição
+    — pode revender qualquer manufaturado que conseguir comprar.
+    """
+
+    nome = models.CharField(max_length=60, unique=True)
+    eh_materia_prima = models.BooleanField()
+    setor = models.ForeignKey(CategoriaDeHabilidade, on_delete=models.PROTECT, related_name="produtos")
+    preco_base = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        verbose_name = "Produto"
+        verbose_name_plural = "Produtos"
+        ordering = ["setor", "nome"]
+
+    def __str__(self):
+        tipo = "matéria-prima" if self.eh_materia_prima else "manufaturado"
+        return f"{self.nome} ({tipo})"
+
+
+class Receita(models.Model):
+    """
+    Um ingrediente necessário pra fabricar um produto manufaturado. Um
+    mesmo produto_final pode ter várias Receitas (vários ingredientes
+    diferentes exigidos ao mesmo tempo).
+    """
+
+    produto_final = models.ForeignKey(
+        Produto, on_delete=models.CASCADE, related_name="receitas",
+        limit_choices_to={"eh_materia_prima": False},
+    )
+    materia_prima = models.ForeignKey(
+        Produto, on_delete=models.PROTECT, related_name="usada_em_receitas",
+        limit_choices_to={"eh_materia_prima": True},
+    )
+    quantidade_necessaria = models.PositiveIntegerField(default=1)
+    quantidade_produzida = models.PositiveIntegerField(
+        default=1, help_text="Quanto de produto_final cada execução da receita rende."
+    )
+
+    class Meta:
+        verbose_name = "Receita"
+        verbose_name_plural = "Receitas"
+        unique_together = ("produto_final", "materia_prima")
+
+    def __str__(self):
+        return f"{self.quantidade_necessaria}x {self.materia_prima.nome} → {self.quantidade_produzida}x {self.produto_final.nome}"
+
+
+class EstoqueDaEmpresa(models.Model):
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name="estoque")
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT, related_name="em_estoque_de")
+    quantidade = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Estoque"
+        verbose_name_plural = "Estoques"
+        unique_together = ("empresa", "produto")
+        ordering = ["empresa", "produto"]
+
+    def __str__(self):
+        return f"{self.empresa.nome}: {self.quantidade}x {self.produto.nome}"

@@ -26,6 +26,58 @@
 </div>
 
 <div class="cartao">
+  <h2>Estoque — {{ empresa.get_tipo_display }}</h2>
+  {% for item in estoque %}
+    <p>{{ item.produto.nome }}: <strong>{{ item.quantidade }}</strong> unidades</p>
+  {% empty %}
+    <p class="rotulo">Estoque vazio.</p>
+  {% endfor %}
+
+  {% if eh_dono and produtos_para_produzir %}
+    <form method="post" action="{% url 'empresas_produzir' empresa.id %}" style="margin-top: 1rem; border-top: 1px solid var(--linha); padding-top: 1rem;">
+      {% csrf_token %}
+      <label class="rotulo">Produzir matéria-prima (-10 energia)</label><br>
+      <select name="produto_id">
+        {% for produto in produtos_para_produzir %}
+          <option value="{{ produto.id }}">{{ produto.nome }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="botao">Produzir</button>
+    </form>
+  {% endif %}
+
+  {% if eh_dono and produtos_para_fabricar %}
+    <form method="post" action="{% url 'empresas_fabricar' empresa.id %}" style="margin-top: 1rem; border-top: 1px solid var(--linha); padding-top: 1rem;">
+      {% csrf_token %}
+      <label class="rotulo">Fabricar (-10 energia)</label><br>
+      <select name="produto_id">
+        {% for produto in produtos_para_fabricar %}
+          <option value="{{ produto.id }}">{{ produto.nome }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="botao">Fabricar</button>
+    </form>
+  {% endif %}
+
+  {% if eh_dono and vendedores_disponiveis %}
+    <h3 style="margin-top: 1.5rem;">Comprar de outra empresa</h3>
+    {% for oferta in vendedores_disponiveis %}
+      <form method="post" action="{% url 'empresas_comprar' empresa.id %}" style="border-top: 1px solid var(--linha); padding: 0.75rem 0;">
+        {% csrf_token %}
+        <input type="hidden" name="empresa_vendedora_id" value="{{ oferta.empresa.id }}">
+        <input type="hidden" name="produto_id" value="{{ oferta.produto.id }}">
+        {{ oferta.produto.nome }} de {{ oferta.empresa.nome }} — {{ oferta.quantidade }} disponíveis a R$ {{ oferta.produto.preco_base }}/un
+        <input type="number" name="quantidade" min="1" max="{{ oferta.quantidade }}" value="1"
+               style="width: 70px; padding: 0.3rem; border: 1px solid var(--linha); border-radius: 3px;">
+        <button type="submit" class="botao">Comprar</button>
+      </form>
+    {% empty %}
+      <p class="rotulo">Nenhum fornecedor com estoque disponível ainda.</p>
+    {% endfor %}
+  {% endif %}
+</div>
+
+<div class="cartao">
   <h2>Cargos</h2>
   {% for cargo in cargos %}
     <div style="border-top: 1px solid var(--linha); padding: 0.9rem 0;">
