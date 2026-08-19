@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 
 from core.models import RegistroDeTrabalho
+from empresas.models import Cargo
 from geography.models import Bairro
 from skills.models import CategoriaDeHabilidade, HabilidadeDoJogador, xp_necessario_para_nivel
 
@@ -110,6 +111,10 @@ def painel(request):
         for categoria in categorias
     ]
 
+    cargo_atual = Cargo.objects.select_related("empresa", "categoria_habilidade").filter(
+        ocupante=request.user
+    ).first()
+
     return render(
         request,
         "accounts/painel.html",
@@ -118,5 +123,6 @@ def painel(request):
             "registros_recentes": registros_recentes,
             "categorias": categorias,
             "habilidades": habilidades,
+            "cargo_atual": cargo_atual,
         },
     )

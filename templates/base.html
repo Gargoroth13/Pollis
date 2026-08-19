@@ -112,7 +112,7 @@
     margin-top: 0.9rem;
   }
 
-  form.simples input {
+  form.simples input, form.simples select {
     width: 100%;
     padding: 0.5rem;
     margin-top: 0.3rem;
@@ -122,7 +122,7 @@
     font-size: 1rem;
   }
 
-  form.simples input:focus-visible { outline: 3px solid var(--selo); }
+  form.simples input:focus-visible, form.simples select:focus-visible { outline: 3px solid var(--selo); }
 
   .mensagens { list-style: none; padding: 0; margin: 0 0 1.25rem; font-family: system-ui, sans-serif; }
   .mensagens li {
@@ -146,6 +146,7 @@
 <header class="topo">
   <span class="marca">Polis</span>
   <nav>
+    <a href="{% url 'empresas_lista' %}">Empresas</a>
     {% if user.is_authenticated %}
       <a href="{% url 'painel' %}">Painel</a>
       <a href="{% url 'logout' %}">Sair</a>

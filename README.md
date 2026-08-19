@@ -18,6 +18,14 @@ dessa base, nas próximas sessões.
 - Ação de "trabalhar": jogador escolhe a categoria, gasta energia, gera
   dinheiro e XP naquela categoria (sobe de nível automaticamente), fica
   no histórico
+- Empresas: qualquer jogador funda uma, define cargos customizados
+  (título livre, categoria de skill exigida, nível mínimo, salário) e
+  contrata outros jogadores que atendam o requisito de nível
+- Sistema de estrelas (1 a 5): cada nível define quantos cargos a
+  empresa pode ter; upar de nível exige um número mínimo de funcionários
+  contratados **e** um investimento em dinheiro do dono
+- Empregado formal ganha um botão de trabalho que paga o salário fixo do
+  cargo (em vez do valor aleatório do trabalho freelance)
 - Painel administrativo do Django pronto (`/admin/`) pra editar qualquer
   dado do jogo sem escrever tela nenhuma
 
@@ -28,7 +36,8 @@ polis/            configurações do projeto (settings.py, urls.py)
 accounts/         Usuario customizado, Perfil (energia/saúde/dinheiro), cadastro/login/painel
 geography/        Estado, Cidade, Bairro + comando de seed
 skills/            categorias de habilidade + progresso de nível por jogador
-core/              ações de jogo (por enquanto: trabalhar)
+empresas/          Empresa (com sistema de estrelas), Cargo, contratação
+core/              ações de jogo (trabalho freelance genérico)
 templates/         template base compartilhado
 ```
 
@@ -96,9 +105,9 @@ Ambos funcionam de forma parecida:
 
 ## Próximos sistemas (na ordem que faz mais sentido construir)
 
-1. Empresas (criação, cargos customizados, contratação, ranking de estrelas)
-2. Leis paramétricas + câmara + cadeia de aprovação com prazos
-3. Eleições (prefeito/governador/presidente)
-4. Mercado imobiliário + contratos de construção via leilão
-5. Judiciário (STF, fiscais, júri popular)
-6. Mercado de ações
+1. Leis paramétricas + câmara + cadeia de aprovação com prazos
+2. Eleições (prefeito/governador/presidente)
+3. Mercado imobiliário + contratos de construção via leilão (por
+   ranking de estrelas — a base já está pronta no app `empresas`)
+4. Judiciário (STF, fiscais, júri popular)
+5. Mercado de ações (elegibilidade por estrelas, também já preparada)

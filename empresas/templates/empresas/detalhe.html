@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ empresa.nome }} — Polis{% endblock %}
+
+{% block conteudo %}
+<div class="cartao">
+  <span class="rotulo">{{ empresa.setor.nome }} · dono: {{ empresa.dono.username }}</span>
+  <h1>{{ empresa.nome }}</h1>
+  <p class="numero">{{ estrelas_visual }}</p>
+  <p>{{ empresa.funcionarios_ocupados }}/{{ empresa.max_cargos_permitidos }} cargos ocupados</p>
+
+  {% if eh_dono %}
+    {% if requisitos_para_upar %}
+      <form method="post" action="{% url 'empresas_upar' empresa.id %}" style="margin-top: 1rem;">
+        {% csrf_token %}
+        <p class="rotulo">
+          Upar pra {{ empresa.estrelas|add:1 }} estrelas exige {{ requisitos_para_upar.funcionarios_para_upar }}
+          funcionários contratados e R$ {{ requisitos_para_upar.custo_para_upar }}
+        </p>
+        <button type="submit" class="botao">Upar empresa</button>
+      </form>
+    {% else %}
+      <p class="rotulo">Já está no nível máximo de estrelas.</p>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div class="cartao">
+  <h2>Cargos</h2>
+  {% for cargo in cargos %}
+    <div style="border-top: 1px solid var(--linha); padding: 0.9rem 0;">
+      <strong>{{ cargo.titulo }}</strong> — {{ cargo.categoria_habilidade.nome }} nível {{ cargo.nivel_minimo }}+,
+      salário R$ {{ cargo.salario }}
+      <br>
+      {% if cargo.ocupante %}
+        <span class="rotulo">Ocupado por {{ cargo.ocupante.username }}</span>
+        {% if eh_dono %}
+          <form method="post" action="{% url 'cargo_demitir' empresa.id cargo.id %}" style="display:inline; margin-left: 0.5rem;">
+            {% csrf_token %}
+            <button type="submit" class="botao" style="background: var(--erro);">Demitir</button>
+          </form>
+        {% endif %}
+      {% else %}
+        <span class="rotulo">Vago</span>
+        {% if eh_dono %}
+          <form method="post" action="{% url 'cargo_contratar' empresa.id cargo.id %}" style="margin-top: 0.5rem;">
+            {% csrf_token %}
+            <input type="text" name="username" placeholder="username do candidato"
+                   style="padding: 0.4rem; border: 1px solid var(--linha); border-radius: 3px; font-family: inherit;">
+            <button type="submit" class="botao">Contratar</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% empty %}
+    <p class="rotulo">Nenhum cargo criado ainda.</p>
+  {% endfor %}
+
+  {% if eh_dono and form_cargo %}
+    <h3 style="margin-top: 1.5rem;">Criar novo cargo</h3>
+    <form class="simples" method="post" action="{% url 'cargos_criar' empresa.id %}">
+      {% csrf_token %}
+      {% for field in form_cargo %}
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+      {% endfor %}
+      <p style="margin-top: 1rem;"><button type="submit" class="botao">Criar cargo</button></p>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

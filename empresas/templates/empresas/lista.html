@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block titulo %}Empresas — Polis{% endblock %}
+
+{% block conteudo %}
+<div class="cartao">
+  <h1>Empresas</h1>
+  {% if user.is_authenticated %}
+    <p><a href="{% url 'empresas_criar' %}" class="botao">Fundar empresa</a></p>
+  {% else %}
+    <p class="rotulo"><a href="{% url 'login' %}">Entre</a> pra poder fundar uma empresa.</p>
+  {% endif %}
+</div>
+
+{% for empresa in empresas %}
+<div class="cartao">
+  <span class="rotulo">{{ empresa.setor.nome }} — {{ empresa.estrelas }} estrela{{ empresa.estrelas|pluralize }}</span>
+  <h2><a href="{% url 'empresas_detalhe' empresa.id %}">{{ empresa.nome }}</a></h2>
+  <p>Dono: {{ empresa.dono.username }} · {{ empresa.funcionarios_ocupados }}/{{ empresa.max_cargos_permitidos }} funcionários</p>
+</div>
+{% empty %}
+<div class="cartao"><p>Nenhuma empresa fundada ainda. Seja o primeiro!</p></div>
+{% endfor %}
+{% endblock %}

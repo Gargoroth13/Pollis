@@ -56,6 +56,26 @@
   {% endfor %}
 </div>
 
+<div class="cartao">
+  <h2>Emprego formal</h2>
+  {% if cargo_atual %}
+    <p>
+      Você trabalha como <strong>{{ cargo_atual.titulo }}</strong> na
+      <a href="{% url 'empresas_detalhe' cargo_atual.empresa.id %}">{{ cargo_atual.empresa.nome }}</a>,
+      salário fixo de R$ {{ cargo_atual.salario }}.
+    </p>
+    <form method="post" action="{% url 'trabalhar_emprego' %}">
+      {% csrf_token %}
+      <button type="submit" class="botao">Trabalhar no emprego (-10 energia)</button>
+    </form>
+  {% else %}
+    <p class="rotulo">
+      Você ainda não tem emprego formal.
+      <a href="{% url 'empresas_lista' %}">Veja as empresas disponíveis</a>.
+    </p>
+  {% endif %}
+</div>
+
 {% if registros_recentes %}
 <div class="cartao">
   <h2>Últimos trabalhos</h2>
