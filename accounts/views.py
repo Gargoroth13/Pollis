@@ -8,7 +8,7 @@ from django.shortcuts import redirect, render
 from core.models import RegistroDeTrabalho
 from empresas.models import Cargo
 from geography.models import Bairro
-from skills.models import CategoriaDeHabilidade, HabilidadeDoJogador, xp_necessario_para_nivel
+from skills.models import HabilidadeDoJogador, Skill, xp_necessario_para_nivel
 
 from .forms import CadastroForm
 from .models import Perfil
@@ -91,29 +91,27 @@ def home(request):
 def painel(request):
     perfil = request.user.perfil
     perfil.sincronizar()
-    registros_recentes = RegistroDeTrabalho.objects.filter(usuario=request.user).select_related("categoria")[:5]
+    registros_recentes = RegistroDeTrabalho.objects.filter(usuario=request.user)[:5]
 
-    categorias = CategoriaDeHabilidade.objects.all()
     habilidades_existentes = {
-        h.categoria_id: h for h in HabilidadeDoJogador.objects.filter(usuario=request.user)
+        h.skill: h for h in HabilidadeDoJogador.objects.filter(usuario=request.user)
     }
     habilidades = [
         {
-            "categoria": categoria,
-            "nivel": habilidades_existentes[categoria.id].nivel if categoria.id in habilidades_existentes else 0,
-            "xp_atual": habilidades_existentes[categoria.id].xp_atual if categoria.id in habilidades_existentes else 0,
+            "skill": valor,
+            "nome": rotulo,
+            "nivel": habilidades_existentes[valor].nivel if valor in habilidades_existentes else 0,
+            "xp_atual": habilidades_existentes[valor].xp_atual if valor in habilidades_existentes else 0,
             "xp_necessario": (
-                habilidades_existentes[categoria.id].xp_necessario()
-                if categoria.id in habilidades_existentes
+                habilidades_existentes[valor].xp_necessario()
+                if valor in habilidades_existentes
                 else xp_necessario_para_nivel(0)
             ),
         }
-        for categoria in categorias
+        for valor, rotulo in Skill.choices
     ]
 
-    cargo_atual = Cargo.objects.select_related("empresa", "categoria_habilidade").filter(
-        ocupante=request.user
-    ).first()
+    cargo_atual = Cargo.objects.select_related("empresa").filter(ocupante=request.user).first()
 
     return render(
         request,
@@ -121,7 +119,6 @@ def painel(request):
         {
             "perfil": perfil,
             "registros_recentes": registros_recentes,
-            "categorias": categorias,
             "habilidades": habilidades,
             "cargo_atual": cargo_atual,
         },

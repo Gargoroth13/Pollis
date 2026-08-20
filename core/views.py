@@ -3,10 +3,10 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import redirect
 from django.views.decorators.http import require_POST
 
-from skills.models import CategoriaDeHabilidade, HabilidadeDoJogador
+from skills.models import HabilidadeDoJogador, Skill
 
 from .models import RegistroDeTrabalho
 
@@ -23,7 +23,10 @@ XP_MAXIMO = 15
 @require_POST
 def trabalhar(request):
     perfil = request.user.perfil
-    categoria = get_object_or_404(CategoriaDeHabilidade, id=request.POST.get("categoria_id"))
+    skill = request.POST.get("skill")
+    if skill not in Skill.values:
+        messages.error(request, "Escolha uma skill válida pra trabalhar.")
+        return redirect("painel")
 
     if not perfil.gastar_energia(CUSTO_DE_ENERGIA_TRABALHO):
         messages.error(
@@ -38,19 +41,20 @@ def trabalhar(request):
     perfil.save(update_fields=["dinheiro"])
 
     xp_ganho = random.randint(XP_MINIMO, XP_MAXIMO)
-    habilidade, _ = HabilidadeDoJogador.objects.get_or_create(usuario=request.user, categoria=categoria)
+    habilidade, _ = HabilidadeDoJogador.objects.get_or_create(usuario=request.user, skill=skill)
     niveis_subidos = habilidade.ganhar_xp(xp_ganho)
 
     RegistroDeTrabalho.objects.create(
         usuario=request.user,
-        categoria=categoria,
+        skill=skill,
         energia_gasta=CUSTO_DE_ENERGIA_TRABALHO,
         dinheiro_ganho=dinheiro_ganho,
         xp_ganho=xp_ganho,
     )
 
-    mensagem = f"Você trabalhou em {categoria.nome} e ganhou R$ {dinheiro_ganho} + {xp_ganho} XP."
+    nome_da_skill = habilidade.get_skill_display()
+    mensagem = f"Você trabalhou em {nome_da_skill} e ganhou R$ {dinheiro_ganho} + {xp_ganho} XP."
     if niveis_subidos:
-        mensagem += f" Subiu pro nível {habilidade.nivel} em {categoria.nome}!"
+        mensagem += f" Subiu pro nível {habilidade.nivel} em {nome_da_skill}!"
     messages.success(request, mensagem)
     return redirect("painel")

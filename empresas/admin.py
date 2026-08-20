@@ -17,8 +17,11 @@ class EstoqueInline(admin.TabularInline):
 
 @admin.register(Empresa)
 class EmpresaAdmin(admin.ModelAdmin):
-    list_display = ("nome", "tipo", "setor", "dono", "estrelas", "funcionarios_ocupados")
-    list_filter = ("tipo", "setor", "estrelas")
+    list_display = (
+        "nome", "tipo", "terreno", "tipo_industria", "especializacao_servico",
+        "dono", "estrelas", "funcionarios_ocupados",
+    )
+    list_filter = ("tipo", "terreno", "tipo_industria", "especializacao_servico", "estrelas")
     search_fields = ("nome", "dono__username")
     autocomplete_fields = ("dono",)
     inlines = [CargoInline, EstoqueInline]
@@ -30,16 +33,16 @@ class EmpresaAdmin(admin.ModelAdmin):
 
 @admin.register(Cargo)
 class CargoAdmin(admin.ModelAdmin):
-    list_display = ("titulo", "empresa", "categoria_habilidade", "nivel_minimo", "salario", "ocupante")
-    list_filter = ("empresa", "categoria_habilidade")
+    list_display = ("titulo", "empresa", "skill_relevante", "nivel_minimo", "salario", "ocupante")
+    list_filter = ("empresa", "skill_relevante")
     search_fields = ("titulo", "empresa__nome", "ocupante__username")
     autocomplete_fields = ("empresa", "ocupante")
 
 
 @admin.register(Produto)
 class ProdutoAdmin(admin.ModelAdmin):
-    list_display = ("nome", "eh_materia_prima", "setor", "preco_base")
-    list_filter = ("eh_materia_prima", "setor")
+    list_display = ("nome", "eh_materia_prima", "terreno_produtor", "tipo_industria_produtor", "preco_base")
+    list_filter = ("eh_materia_prima", "terreno_produtor", "tipo_industria_produtor")
     search_fields = ("nome",)
 
 

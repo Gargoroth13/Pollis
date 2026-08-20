@@ -14,7 +14,7 @@
 
 {% for empresa in empresas %}
 <div class="cartao">
-  <span class="rotulo">{{ empresa.setor.nome }} — {{ empresa.estrelas }} estrela{{ empresa.estrelas|pluralize }}</span>
+  <span class="rotulo">{{ empresa.classificacao_legivel }} — {{ empresa.estrelas }} estrela{{ empresa.estrelas|pluralize }}</span>
   <h2><a href="{% url 'empresas_detalhe' empresa.id %}">{{ empresa.nome }}</a></h2>
   <p>Dono: {{ empresa.dono.username }} · {{ empresa.funcionarios_ocupados }}/{{ empresa.max_cargos_permitidos }} funcionários</p>
 </div>

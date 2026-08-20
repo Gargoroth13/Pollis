@@ -1,9 +1,10 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
-from skills.models import CategoriaDeHabilidade
+from skills.models import Skill
 
 ESTRELA_MAXIMA = 5
 
@@ -26,12 +27,50 @@ class TipoDeEmpresa(models.TextChoices):
     INDUSTRIAL = "industrial", "Industrial (manufatura)"
     VAREJO = "varejo", "Varejo (venda ao consumidor)"
     CONSTRUTORA = "construtora", "Construtora"
+    SERVICOS = "servicos", "Serviços"
+
+
+class TerrenoDeMatriz(models.TextChoices):
+    """Só se aplica a empresas do tipo Matriz — define o que ela produz do zero."""
+
+    AGROPECUARIA = "agropecuaria", "Agropecuária"
+    EXTRATIVISMO = "extrativismo", "Extrativismo"
+    MINERACAO = "mineracao", "Mineração"
+
+
+class TipoDeIndustria(models.TextChoices):
+    """Só se aplica a empresas do tipo Industrial — define quais receitas ela pode fabricar."""
+
+    PRODUCAO = "producao", "Produção"
+    ALIMENTICIA = "alimenticia", "Alimentícia"
+    BENS_DE_CONSUMO = "bens_consumo", "Bens de consumo"
+    TECNOLOGICA = "tecnologica", "Tecnológica"
+
+
+class EspecializacaoDeServico(models.TextChoices):
+    """Só se aplica a empresas do tipo Serviços — o que ela vende pro jogador."""
+
+    TRANSPORTE = "transporte", "Transporte"
+    PUBLICIDADE = "publicidade", "Publicidade"
+    LAZER = "lazer", "Lazer"
+    FINANCEIRA = "financeira", "Financeira"
 
 
 class Empresa(models.Model):
     nome = models.CharField(max_length=100, unique=True)
-    tipo = models.CharField(max_length=12, choices=TipoDeEmpresa.choices, default=TipoDeEmpresa.VAREJO)
-    setor = models.ForeignKey(CategoriaDeHabilidade, on_delete=models.PROTECT, related_name="empresas")
+    tipo = models.CharField(max_length=12, choices=TipoDeEmpresa.choices)
+
+    # Exatamente UM desses 3 é preenchido, de acordo com `tipo` — nunca
+    # mais de um, nunca nenhum quando o tipo exige classificação.
+    # Matriz/Industrial/Varejo/Construtora não usam skill nem setor pra
+    # se classificar mais — isso foi desacoplado de propósito (skill é
+    # só do jogador agora, ver app `skills`).
+    terreno = models.CharField(max_length=15, choices=TerrenoDeMatriz.choices, null=True, blank=True)
+    tipo_industria = models.CharField(max_length=15, choices=TipoDeIndustria.choices, null=True, blank=True)
+    especializacao_servico = models.CharField(
+        max_length=15, choices=EspecializacaoDeServico.choices, null=True, blank=True
+    )
+
     dono = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="empresas_possuidas"
     )
@@ -45,6 +84,37 @@ class Empresa(models.Model):
 
     def __str__(self):
         return f"{self.nome} ({'★' * self.estrelas})"
+
+    def classificacao_legivel(self):
+        """Retorna terreno/tipo_industria/especialização, o que for aplicável — ou o tipo puro se nenhum se aplica."""
+        if self.terreno:
+            return self.get_terreno_display()
+        if self.tipo_industria:
+            return self.get_tipo_industria_display()
+        if self.especializacao_servico:
+            return self.get_especializacao_servico_display()
+        return self.get_tipo_display()
+
+    def clean(self):
+        """
+        Garante que só o campo de classificação certo pro `tipo` escolhido
+        esteja preenchido — evita, por exemplo, uma Matriz salva com
+        `tipo_industria` setado por engano.
+        """
+        exigido_por_tipo = {
+            TipoDeEmpresa.MATRIZ: "terreno",
+            TipoDeEmpresa.INDUSTRIAL: "tipo_industria",
+            TipoDeEmpresa.SERVICOS: "especializacao_servico",
+        }
+        campos_de_classificacao = ("terreno", "tipo_industria", "especializacao_servico")
+
+        campo_exigido = exigido_por_tipo.get(self.tipo)
+        for campo in campos_de_classificacao:
+            valor = getattr(self, campo)
+            if campo == campo_exigido and not valor:
+                raise ValidationError({campo: f"Obrigatório para empresas do tipo {self.get_tipo_display()}."})
+            if campo != campo_exigido and valor:
+                raise ValidationError({campo: f"Não se aplica a empresas do tipo {self.get_tipo_display()}."})
 
     def config_nivel_atual(self):
         return NIVEIS_DE_EMPRESA[self.estrelas]
@@ -96,9 +166,7 @@ class Empresa(models.Model):
 class Cargo(models.Model):
     empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name="cargos")
     titulo = models.CharField(max_length=80)
-    categoria_habilidade = models.ForeignKey(
-        CategoriaDeHabilidade, on_delete=models.PROTECT, related_name="cargos"
-    )
+    skill_relevante = models.CharField(max_length=20, choices=Skill.choices)
     nivel_minimo = models.PositiveSmallIntegerField(default=0)
     salario = models.DecimalField(max_digits=10, decimal_places=2)
     ocupante = models.ForeignKey(
@@ -129,25 +197,41 @@ class Produto(models.Model):
     Matriz produz do zero; manufaturado é o que uma Industrial fabrica
     a partir de matéria-prima, seguindo uma Receita.
 
-    O `setor` define quem tem permissão de mexer nesse produto: só
-    empresas cujo próprio setor bate com o do produto podem produzi-lo
-    (Matriz) ou fabricá-lo (Industrial). Varejo não tem essa restrição
-    — pode revender qualquer manufaturado que conseguir comprar.
+    Só um dos dois campos de classificação é preenchido: matéria-prima
+    usa `terreno_produtor` (qual tipo de Matriz produz), manufaturado
+    usa `tipo_industria_produtor` (qual tipo de Industrial fabrica).
     """
 
     nome = models.CharField(max_length=60, unique=True)
     eh_materia_prima = models.BooleanField()
-    setor = models.ForeignKey(CategoriaDeHabilidade, on_delete=models.PROTECT, related_name="produtos")
+    terreno_produtor = models.CharField(
+        max_length=15, choices=TerrenoDeMatriz.choices, null=True, blank=True
+    )
+    tipo_industria_produtor = models.CharField(
+        max_length=15, choices=TipoDeIndustria.choices, null=True, blank=True
+    )
     preco_base = models.DecimalField(max_digits=10, decimal_places=2)
 
     class Meta:
         verbose_name = "Produto"
         verbose_name_plural = "Produtos"
-        ordering = ["setor", "nome"]
+        ordering = ["nome"]
 
     def __str__(self):
         tipo = "matéria-prima" if self.eh_materia_prima else "manufaturado"
         return f"{self.nome} ({tipo})"
+
+    def clean(self):
+        if self.eh_materia_prima:
+            if not self.terreno_produtor:
+                raise ValidationError({"terreno_produtor": "Obrigatório pra matéria-prima."})
+            if self.tipo_industria_produtor:
+                raise ValidationError({"tipo_industria_produtor": "Não se aplica a matéria-prima."})
+        else:
+            if not self.tipo_industria_produtor:
+                raise ValidationError({"tipo_industria_produtor": "Obrigatório pra manufaturado."})
+            if self.terreno_produtor:
+                raise ValidationError({"terreno_produtor": "Não se aplica a manufaturado."})
 
 
 class Receita(models.Model):

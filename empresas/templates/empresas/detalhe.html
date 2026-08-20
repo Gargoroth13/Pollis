@@ -4,7 +4,7 @@
 
 {% block conteudo %}
 <div class="cartao">
-  <span class="rotulo">{{ empresa.setor.nome }} · dono: {{ empresa.dono.username }}</span>
+  <span class="rotulo">{{ empresa.get_tipo_display }} · {{ classificacao }} · dono: {{ empresa.dono.username }}</span>
   <h1>{{ empresa.nome }}</h1>
   <p class="numero">{{ estrelas_visual }}</p>
   <p>{{ empresa.funcionarios_ocupados }}/{{ empresa.max_cargos_permitidos }} cargos ocupados</p>
@@ -81,7 +81,7 @@
   <h2>Cargos</h2>
   {% for cargo in cargos %}
     <div style="border-top: 1px solid var(--linha); padding: 0.9rem 0;">
-      <strong>{{ cargo.titulo }}</strong> — {{ cargo.categoria_habilidade.nome }} nível {{ cargo.nivel_minimo }}+,
+      <strong>{{ cargo.titulo }}</strong> — {{ cargo.get_skill_relevante_display }} nível {{ cargo.nivel_minimo }}+,
       salário R$ {{ cargo.salario }}
       <br>
       {% if cargo.ocupante %}

@@ -38,9 +38,9 @@ def _criar_estoque_inicial(empresa):
     produzir, sem precisar de nenhum passo manual extra.
     """
     if empresa.tipo == TipoDeEmpresa.MATRIZ:
-        produtos = Produto.objects.filter(setor=empresa.setor, eh_materia_prima=True)
+        produtos = Produto.objects.filter(terreno_produtor=empresa.terreno, eh_materia_prima=True)
     elif empresa.tipo == TipoDeEmpresa.INDUSTRIAL:
-        produtos = Produto.objects.filter(setor=empresa.setor, eh_materia_prima=False)
+        produtos = Produto.objects.filter(tipo_industria_produtor=empresa.tipo_industria, eh_materia_prima=False)
     else:
         produtos = Produto.objects.none()
 
@@ -49,7 +49,7 @@ def _criar_estoque_inicial(empresa):
 
 
 def listar(request):
-    empresas = Empresa.objects.select_related("setor", "dono")
+    empresas = Empresa.objects.select_related("dono")
     return render(request, "empresas/lista.html", {"empresas": empresas})
 
 
@@ -70,8 +70,8 @@ def criar_empresa(request):
 
 
 def detalhe(request, empresa_id):
-    empresa = get_object_or_404(Empresa.objects.select_related("setor", "dono"), id=empresa_id)
-    cargos = empresa.cargos.select_related("categoria_habilidade", "ocupante")
+    empresa = get_object_or_404(Empresa.objects.select_related("dono"), id=empresa_id)
+    cargos = empresa.cargos.select_related("ocupante")
     eh_dono = request.user.is_authenticated and request.user.id == empresa.dono_id
     estrelas_visual = "★" * empresa.estrelas + "☆" * (ESTRELA_MAXIMA - empresa.estrelas)
     estoque = empresa.estoque.select_related("produto").order_by("produto__nome")
@@ -82,9 +82,11 @@ def detalhe(request, empresa_id):
 
     if eh_dono:
         if empresa.tipo == TipoDeEmpresa.MATRIZ:
-            produtos_para_produzir = Produto.objects.filter(setor=empresa.setor, eh_materia_prima=True)
+            produtos_para_produzir = Produto.objects.filter(terreno_produtor=empresa.terreno, eh_materia_prima=True)
         elif empresa.tipo == TipoDeEmpresa.INDUSTRIAL:
-            produtos_para_fabricar = Produto.objects.filter(setor=empresa.setor, eh_materia_prima=False)
+            produtos_para_fabricar = Produto.objects.filter(
+                tipo_industria_produtor=empresa.tipo_industria, eh_materia_prima=False
+            )
 
         regra = REGRAS_DE_COMPRA.get(empresa.tipo)
         if regra:
@@ -102,6 +104,7 @@ def detalhe(request, empresa_id):
             "cargos": cargos,
             "eh_dono": eh_dono,
             "estrelas_visual": estrelas_visual,
+            "classificacao": empresa.classificacao_legivel(),
             "form_cargo": CriarCargoForm() if eh_dono else None,
             "requisitos_para_upar": empresa.requisitos_para_upar(),
             "estoque": estoque,
@@ -157,13 +160,13 @@ def contratar(request, empresa_id, cargo_id):
         return redirect("empresas_detalhe", empresa_id=empresa.id)
 
     habilidade = HabilidadeDoJogador.objects.filter(
-        usuario=candidato, categoria=cargo.categoria_habilidade
+        usuario=candidato, skill=cargo.skill_relevante
     ).first()
     nivel_do_candidato = habilidade.nivel if habilidade else 0
     if nivel_do_candidato < cargo.nivel_minimo:
         messages.error(
             request,
-            f"{candidato.username} tem nível {nivel_do_candidato} em {cargo.categoria_habilidade.nome}, "
+            f"{candidato.username} tem nível {nivel_do_candidato} em {cargo.get_skill_relevante_display()}, "
             f"mas o cargo exige nível {cargo.nivel_minimo}.",
         )
         return redirect("empresas_detalhe", empresa_id=empresa.id)
@@ -203,7 +206,7 @@ def upar_empresa(request, empresa_id):
 @require_POST
 def trabalhar_no_emprego(request):
     perfil = request.user.perfil
-    cargo = Cargo.objects.select_related("empresa", "categoria_habilidade").filter(ocupante=request.user).first()
+    cargo = Cargo.objects.select_related("empresa").filter(ocupante=request.user).first()
 
     if cargo is None:
         messages.error(request, "Você não está empregado em nenhum cargo formal.")
@@ -221,13 +224,13 @@ def trabalhar_no_emprego(request):
 
     xp_ganho = random.randint(XP_MINIMO, XP_MAXIMO)
     habilidade, _ = HabilidadeDoJogador.objects.get_or_create(
-        usuario=request.user, categoria=cargo.categoria_habilidade
+        usuario=request.user, skill=cargo.skill_relevante
     )
     niveis_subidos = habilidade.ganhar_xp(xp_ganho)
 
     RegistroDeTrabalho.objects.create(
         usuario=request.user,
-        categoria=cargo.categoria_habilidade,
+        skill=cargo.skill_relevante,
         energia_gasta=CUSTO_DE_ENERGIA_TRABALHO,
         dinheiro_ganho=cargo.salario,
         xp_ganho=xp_ganho,
@@ -238,7 +241,7 @@ def trabalhar_no_emprego(request):
         f"e ganhou R$ {cargo.salario} + {xp_ganho} XP."
     )
     if niveis_subidos:
-        mensagem += f" Subiu pro nível {habilidade.nivel} em {cargo.categoria_habilidade.nome}!"
+        mensagem += f" Subiu pro nível {habilidade.nivel} em {cargo.get_skill_relevante_display()}!"
     messages.success(request, mensagem)
     return redirect("painel")
 
@@ -248,7 +251,7 @@ def trabalhar_no_emprego(request):
 def produzir(request, empresa_id):
     empresa = get_object_or_404(Empresa, id=empresa_id, dono=request.user, tipo=TipoDeEmpresa.MATRIZ)
     produto = get_object_or_404(
-        Produto, id=request.POST.get("produto_id"), setor=empresa.setor, eh_materia_prima=True
+        Produto, id=request.POST.get("produto_id"), terreno_produtor=empresa.terreno, eh_materia_prima=True
     )
 
     perfil = request.user.perfil
@@ -274,7 +277,8 @@ def produzir(request, empresa_id):
 def fabricar(request, empresa_id):
     empresa = get_object_or_404(Empresa, id=empresa_id, dono=request.user, tipo=TipoDeEmpresa.INDUSTRIAL)
     produto_final = get_object_or_404(
-        Produto, id=request.POST.get("produto_id"), setor=empresa.setor, eh_materia_prima=False
+        Produto, id=request.POST.get("produto_id"),
+        tipo_industria_produtor=empresa.tipo_industria, eh_materia_prima=False,
     )
 
     receitas = list(produto_final.receitas.select_related("materia_prima"))

@@ -8,12 +8,61 @@
   <p class="rotulo">Toda empresa nasce com 1 estrela e até 3 cargos.</p>
   <form class="simples" method="post">
     {% csrf_token %}
-    {% for field in form %}
-      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-      {{ field }}
-      {% if field.errors %}<div class="erros-form">{{ field.errors|striptags }}</div>{% endif %}
-    {% endfor %}
+
+    <label for="{{ form.nome.id_for_label }}">{{ form.nome.label }}</label>
+    {{ form.nome }}
+    {% if form.nome.errors %}<div class="erros-form">{{ form.nome.errors|striptags }}</div>{% endif %}
+
+    <label for="{{ form.tipo.id_for_label }}">{{ form.tipo.label }}</label>
+    {{ form.tipo }}
+    {% if form.tipo.errors %}<div class="erros-form">{{ form.tipo.errors|striptags }}</div>{% endif %}
+
+    <div id="campo-terreno" class="campo-condicional">
+      <label for="{{ form.terreno.id_for_label }}">{{ form.terreno.label }} (Matriz)</label>
+      {{ form.terreno }}
+      {% if form.terreno.errors %}<div class="erros-form">{{ form.terreno.errors|striptags }}</div>{% endif %}
+    </div>
+
+    <div id="campo-tipo_industria" class="campo-condicional">
+      <label for="{{ form.tipo_industria.id_for_label }}">{{ form.tipo_industria.label }} (Industrial)</label>
+      {{ form.tipo_industria }}
+      {% if form.tipo_industria.errors %}<div class="erros-form">{{ form.tipo_industria.errors|striptags }}</div>{% endif %}
+    </div>
+
+    <div id="campo-especializacao_servico" class="campo-condicional">
+      <label for="{{ form.especializacao_servico.id_for_label }}">{{ form.especializacao_servico.label }} (Serviços)</label>
+      {{ form.especializacao_servico }}
+      {% if form.especializacao_servico.errors %}<div class="erros-form">{{ form.especializacao_servico.errors|striptags }}</div>{% endif %}
+    </div>
+
+    {% if form.non_field_errors %}
+      <div class="erros-form">{{ form.non_field_errors|striptags }}</div>
+    {% endif %}
+
     <p style="margin-top: 1.5rem;"><button type="submit" class="botao">Fundar</button></p>
   </form>
 </div>
+
+<script>
+  // Mostra só o campo de classificação relevante pro tipo escolhido —
+  // a validação de verdade continua no servidor (Empresa.clean()),
+  // isso aqui é só conforto visual.
+  const MAPA_DE_CAMPO_POR_TIPO = {
+    matriz: "campo-terreno",
+    industrial: "campo-tipo_industria",
+    servicos: "campo-especializacao_servico",
+  };
+
+  function atualizarCamposCondicionais() {
+    const tipoSelecionado = document.getElementById("{{ form.tipo.id_for_label }}").value;
+    const idDoCampoAMostrar = MAPA_DE_CAMPO_POR_TIPO[tipoSelecionado];
+
+    document.querySelectorAll(".campo-condicional").forEach((div) => {
+      div.style.display = div.id === idDoCampoAMostrar ? "block" : "none";
+    });
+  }
+
+  document.getElementById("{{ form.tipo.id_for_label }}").addEventListener("change", atualizarCamposCondicionais);
+  atualizarCamposCondicionais();
+</script>
 {% endblock %}

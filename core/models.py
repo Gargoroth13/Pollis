@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from skills.models import Skill
+
 
 class RegistroDeTrabalho(models.Model):
     """
@@ -12,15 +14,7 @@ class RegistroDeTrabalho(models.Model):
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="registros_de_trabalho"
     )
-    # Nullable de propósito: assim, adicionar esse campo não exige um valor
-    # default forçado pra registros antigos que já existiam antes dele.
-    categoria = models.ForeignKey(
-        "skills.CategoriaDeHabilidade",
-        on_delete=models.PROTECT,
-        related_name="registros_de_trabalho",
-        null=True,
-        blank=True,
-    )
+    skill = models.CharField(max_length=20, choices=Skill.choices, null=True, blank=True)
     energia_gasta = models.PositiveSmallIntegerField()
     dinheiro_ganho = models.DecimalField(max_digits=10, decimal_places=2)
     xp_ganho = models.PositiveSmallIntegerField(default=0)
