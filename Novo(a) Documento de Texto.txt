@@ -1,0 +1,6 @@
+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
+
+git pull
+citycore-env\Scripts\Activate.ps1
+pip install -r requirements.txt
+python manage.py migrate
