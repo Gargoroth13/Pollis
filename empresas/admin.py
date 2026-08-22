@@ -48,8 +48,8 @@ class ProdutoAdmin(admin.ModelAdmin):
 
 @admin.register(Receita)
 class ReceitaAdmin(admin.ModelAdmin):
-    list_display = ("produto_final", "materia_prima", "quantidade_necessaria", "quantidade_produzida")
-    list_filter = ("produto_final",)
+    list_display = ("produto_final", "ingrediente", "quantidade_necessaria", "quantidade_produzida", "estrela_minima")
+    list_filter = ("produto_final", "estrela_minima")
 
 
 @admin.register(EstoqueDaEmpresa)

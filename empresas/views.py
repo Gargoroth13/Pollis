@@ -21,13 +21,31 @@ PRODUCAO_MINIMA = 5
 PRODUCAO_MAXIMA = 15
 
 # Define quem pode comprar de quem na cadeia produtiva: uma empresa do
-# tipo chave só pode comprar de empresas do "tipo_vendedor", e só produtos
-# que batem com o "materia_prima" (True = crua, False = manufaturada).
+# tipo chave pode comprar de qualquer uma das regras da sua lista. Cada
+# regra diz de qual "tipo_vendedor" pode comprar, e se o produto tem
+# que ser matéria-prima (True) ou manufaturado (False).
+#
+# Industrial agora tem DUAS regras: compra matéria-prima de Matriz (pra
+# fabricar o básico) E compra manufaturado de outra Industrial (pra
+# receitas que usam produto de outro tipo de indústria como ingrediente,
+# ex: Carro precisa de Aço/Plástico feitos por uma Industrial de
+# Produção e Bateria feita por uma Industrial Tecnológica).
 REGRAS_DE_COMPRA = {
-    TipoDeEmpresa.INDUSTRIAL: {"tipo_vendedor": TipoDeEmpresa.MATRIZ, "materia_prima": True},
-    TipoDeEmpresa.VAREJO: {"tipo_vendedor": TipoDeEmpresa.INDUSTRIAL, "materia_prima": False},
-    TipoDeEmpresa.CONSTRUTORA: {"tipo_vendedor": TipoDeEmpresa.INDUSTRIAL, "materia_prima": False},
+    TipoDeEmpresa.INDUSTRIAL: [
+        {"tipo_vendedor": TipoDeEmpresa.MATRIZ, "materia_prima": True},
+        {"tipo_vendedor": TipoDeEmpresa.INDUSTRIAL, "materia_prima": False},
+    ],
+    TipoDeEmpresa.VAREJO: [
+        {"tipo_vendedor": TipoDeEmpresa.INDUSTRIAL, "materia_prima": False},
+    ],
+    TipoDeEmpresa.CONSTRUTORA: [
+        {"tipo_vendedor": TipoDeEmpresa.INDUSTRIAL, "materia_prima": False},
+    ],
 }
+
+# Produtos manufaturados consumidos automaticamente a cada produzir/fabricar,
+# se a empresa tiver em estoque (não bloqueia a ação se não tiver — só avisa).
+CONSUMO_OPERACIONAL_POR_ACAO = ["EPIs", "Uniforme"]
 
 
 def _criar_estoque_inicial(empresa):
@@ -46,6 +64,28 @@ def _criar_estoque_inicial(empresa):
 
     for produto in produtos:
         EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto)
+
+
+def _consumir_operacional(empresa):
+    """
+    Consome 1 unidade de cada produto de CONSUMO_OPERACIONAL_POR_ACAO
+    (EPIs, Uniforme) do próprio estoque da empresa, se ela tiver. Não
+    bloqueia a ação (produzir/fabricar) se faltar — só avisa, porque
+    bloquear travaria toda empresa recém-fundada que ainda não comprou
+    nada disso. Retorna uma string de aviso (ou "" se não faltou nada).
+    """
+    faltando = []
+    for nome_produto in CONSUMO_OPERACIONAL_POR_ACAO:
+        estoque = EstoqueDaEmpresa.objects.filter(empresa=empresa, produto__nome=nome_produto).first()
+        if estoque and estoque.quantidade > 0:
+            estoque.quantidade -= 1
+            estoque.save(update_fields=["quantidade"])
+        else:
+            faltando.append(nome_produto)
+
+    if faltando:
+        return f"⚠️ Sem {' e '.join(faltando)} em estoque (consumo operacional não pago)."
+    return ""
 
 
 def listar(request):
@@ -88,13 +128,15 @@ def detalhe(request, empresa_id):
                 tipo_industria_produtor=empresa.tipo_industria, eh_materia_prima=False
             )
 
-        regra = REGRAS_DE_COMPRA.get(empresa.tipo)
-        if regra:
-            vendedores_disponiveis = EstoqueDaEmpresa.objects.filter(
+        for regra in REGRAS_DE_COMPRA.get(empresa.tipo, []):
+            ofertas_da_regra = EstoqueDaEmpresa.objects.filter(
                 empresa__tipo=regra["tipo_vendedor"],
                 produto__eh_materia_prima=regra["materia_prima"],
                 quantidade__gt=0,
-            ).select_related("empresa", "produto")
+            ).exclude(empresa=empresa).select_related("empresa", "produto")
+            vendedores_disponiveis = (
+                ofertas_da_regra if vendedores_disponiveis is None else vendedores_disponiveis | ofertas_da_regra
+            )
 
     return render(
         request,
@@ -268,7 +310,12 @@ def produzir(request, empresa_id):
     estoque.quantidade += quantidade
     estoque.save(update_fields=["quantidade"])
 
-    messages.success(request, f"{empresa.nome} produziu {quantidade}x {produto.nome}.")
+    aviso_consumo = _consumir_operacional(empresa)
+
+    mensagem = f"{empresa.nome} produziu {quantidade}x {produto.nome}."
+    if aviso_consumo:
+        mensagem += f" {aviso_consumo}"
+    messages.success(request, mensagem)
     return redirect("empresas_detalhe", empresa_id=empresa.id)
 
 
@@ -281,26 +328,35 @@ def fabricar(request, empresa_id):
         tipo_industria_produtor=empresa.tipo_industria, eh_materia_prima=False,
     )
 
-    receitas = list(produto_final.receitas.select_related("materia_prima"))
+    receitas = list(produto_final.receitas.select_related("ingrediente"))
     if not receitas:
         messages.error(request, f"{produto_final.nome} ainda não tem receita cadastrada.")
         return redirect("empresas_detalhe", empresa_id=empresa.id)
 
+    estrela_exigida = max(receita.estrela_minima for receita in receitas)
+    if empresa.estrelas < estrela_exigida:
+        messages.error(
+            request,
+            f"{produto_final.nome} exige uma Industrial de {estrela_exigida}★ ou mais "
+            f"(a {empresa.nome} tem {empresa.estrelas}★).",
+        )
+        return redirect("empresas_detalhe", empresa_id=empresa.id)
+
     # Confere se tem TODOS os ingredientes em quantidade suficiente antes de
     # consumir qualquer um — senão poderia gastar metade da receita e falhar
-    # no meio, perdendo matéria-prima à toa.
-    estoques_das_materias = {}
+    # no meio, perdendo insumo à toa.
+    estoques_dos_ingredientes = {}
     for receita in receitas:
-        estoque_mp = EstoqueDaEmpresa.objects.filter(empresa=empresa, produto=receita.materia_prima).first()
-        disponivel = estoque_mp.quantidade if estoque_mp else 0
+        estoque_ing = EstoqueDaEmpresa.objects.filter(empresa=empresa, produto=receita.ingrediente).first()
+        disponivel = estoque_ing.quantidade if estoque_ing else 0
         if disponivel < receita.quantidade_necessaria:
             messages.error(
                 request,
-                f"Falta {receita.materia_prima.nome}: precisa de {receita.quantidade_necessaria}, "
+                f"Falta {receita.ingrediente.nome}: precisa de {receita.quantidade_necessaria}, "
                 f"tem {disponivel}.",
             )
             return redirect("empresas_detalhe", empresa_id=empresa.id)
-        estoques_das_materias[receita] = estoque_mp
+        estoques_dos_ingredientes[receita] = estoque_ing
 
     perfil = request.user.perfil
     if not perfil.gastar_energia(CUSTO_DE_ENERGIA_TRABALHO):
@@ -311,16 +367,21 @@ def fabricar(request, empresa_id):
         )
         return redirect("empresas_detalhe", empresa_id=empresa.id)
 
-    for receita, estoque_mp in estoques_das_materias.items():
-        estoque_mp.quantidade -= receita.quantidade_necessaria
-        estoque_mp.save(update_fields=["quantidade"])
+    for receita, estoque_ing in estoques_dos_ingredientes.items():
+        estoque_ing.quantidade -= receita.quantidade_necessaria
+        estoque_ing.save(update_fields=["quantidade"])
 
     quantidade_produzida = receitas[0].quantidade_produzida
     estoque_final, _ = EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto_final)
     estoque_final.quantidade += quantidade_produzida
     estoque_final.save(update_fields=["quantidade"])
 
-    messages.success(request, f"{empresa.nome} fabricou {quantidade_produzida}x {produto_final.nome}.")
+    aviso_consumo = _consumir_operacional(empresa)
+
+    mensagem = f"{empresa.nome} fabricou {quantidade_produzida}x {produto_final.nome}."
+    if aviso_consumo:
+        mensagem += f" {aviso_consumo}"
+    messages.success(request, mensagem)
     return redirect("empresas_detalhe", empresa_id=empresa.id)
 
 
@@ -328,19 +389,34 @@ def fabricar(request, empresa_id):
 @require_POST
 def comprar_de_empresa(request, empresa_id):
     empresa_compradora = get_object_or_404(Empresa, id=empresa_id, dono=request.user)
-    regra = REGRAS_DE_COMPRA.get(empresa_compradora.tipo)
-    if regra is None:
+    regras = REGRAS_DE_COMPRA.get(empresa_compradora.tipo, [])
+    if not regras:
         messages.error(
             request, f"Empresas do tipo {empresa_compradora.get_tipo_display()} não compram de outras empresas."
         )
         return redirect("empresas_detalhe", empresa_id=empresa_compradora.id)
 
-    empresa_vendedora = get_object_or_404(
-        Empresa, id=request.POST.get("empresa_vendedora_id"), tipo=regra["tipo_vendedor"]
+    empresa_vendedora = get_object_or_404(Empresa, id=request.POST.get("empresa_vendedora_id"))
+    produto = get_object_or_404(Produto, id=request.POST.get("produto_id"))
+
+    if empresa_vendedora.id == empresa_compradora.id:
+        messages.error(request, "Uma empresa não pode comprar dela mesma.")
+        return redirect("empresas_detalhe", empresa_id=empresa_compradora.id)
+
+    # A compra só é válida se bater com ALGUMA das regras da empresa compradora
+    # (tipo do vendedor certo + matéria-prima/manufaturado certo).
+    compra_permitida = any(
+        empresa_vendedora.tipo == regra["tipo_vendedor"] and produto.eh_materia_prima == regra["materia_prima"]
+        for regra in regras
     )
-    produto = get_object_or_404(
-        Produto, id=request.POST.get("produto_id"), eh_materia_prima=regra["materia_prima"]
-    )
+    if not compra_permitida:
+        messages.error(
+            request,
+            f"{empresa_compradora.get_tipo_display()} não pode comprar {produto.nome} de "
+            f"{empresa_vendedora.get_tipo_display()}.",
+        )
+        return redirect("empresas_detalhe", empresa_id=empresa_compradora.id)
+
     try:
         quantidade = int(request.POST.get("quantidade", 0))
     except ValueError:

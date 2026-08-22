@@ -239,28 +239,35 @@ class Receita(models.Model):
     Um ingrediente necessário pra fabricar um produto manufaturado. Um
     mesmo produto_final pode ter várias Receitas (vários ingredientes
     diferentes exigidos ao mesmo tempo).
+
+    `ingrediente` pode ser matéria-prima OU outro manufaturado — por
+    isso não tem mais `limit_choices_to` travando só matéria-prima
+    (ex: Carro usa Aço e Bateria, que são manufaturados de outras
+    Industriais, não matéria-prima direto de Matriz).
     """
 
     produto_final = models.ForeignKey(
         Produto, on_delete=models.CASCADE, related_name="receitas",
         limit_choices_to={"eh_materia_prima": False},
     )
-    materia_prima = models.ForeignKey(
-        Produto, on_delete=models.PROTECT, related_name="usada_em_receitas",
-        limit_choices_to={"eh_materia_prima": True},
+    ingrediente = models.ForeignKey(
+        Produto, on_delete=models.PROTECT, related_name="usado_em_receitas",
     )
     quantidade_necessaria = models.PositiveIntegerField(default=1)
     quantidade_produzida = models.PositiveIntegerField(
         default=1, help_text="Quanto de produto_final cada execução da receita rende."
     )
+    estrela_minima = models.PositiveSmallIntegerField(
+        default=1, help_text="Estrela mínima que a Industrial precisa ter pra fabricar esse produto."
+    )
 
     class Meta:
         verbose_name = "Receita"
         verbose_name_plural = "Receitas"
-        unique_together = ("produto_final", "materia_prima")
+        unique_together = ("produto_final", "ingrediente")
 
     def __str__(self):
-        return f"{self.quantidade_necessaria}x {self.materia_prima.nome} → {self.quantidade_produzida}x {self.produto_final.nome}"
+        return f"{self.quantidade_necessaria}x {self.ingrediente.nome} → {self.quantidade_produzida}x {self.produto_final.nome}"
 
 
 class EstoqueDaEmpresa(models.Model):

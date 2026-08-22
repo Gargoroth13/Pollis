@@ -33,12 +33,17 @@ completo do jogo (todas as regras, números e pendências) está em
 - Empregado formal ganha um botão de trabalho que paga o salário fixo do
   cargo (em vez do valor aleatório do trabalho freelance)
 - Cadeia produtiva: **Matriz** produz matéria-prima do zero (de acordo
-  com o terreno), **Industrial** compra da Matriz e fabrica manufaturados
-  seguindo receitas (de acordo com o tipo de indústria), **Varejo**
-  compra da Industrial e revende pros jogadores no Mercado público,
-  **Construtora** compra da Industrial. Catálogo hoje é um recorte
-  pequeno (Madeira/Ferro/Carvão/Lã → Tábuas/Aço/Roupas) — o catálogo
-  completo (~40 produtos) é a Fase 2, já mapeada no `DESIGN.md`
+  com o terreno), **Industrial** compra da Matriz (ou de outra
+  Industrial, pra receitas que usam manufaturado como ingrediente) e
+  fabrica seguindo receitas com estrela mínima, **Varejo** compra da
+  Industrial e revende pros jogadores no Mercado público, **Construtora**
+  compra da Industrial. Catálogo completo: **67 produtos** (29
+  matérias-primas + 38 manufaturados) e **82 linhas de receita**,
+  incluindo o Carro (exige Industrial 5★ e ingredientes de 3 tipos de
+  indústria diferentes)
+- Consumo operacional: Matriz e Industrial consomem 1 EPI + 1 Uniforme
+  do próprio estoque a cada produzir/fabricar (se tiver — não bloqueia
+  se faltar, só avisa)
 - Painel administrativo do Django pronto (`/admin/`) pra editar qualquer
   dado do jogo sem escrever tela nenhuma
 
@@ -65,9 +70,7 @@ DESIGN.md          documento de design completo — regras, números, pendência
 - Comprar no Mercado não gera item nenhum no "inventário" do jogador
   (ainda não existe inventário de jogador) — é só o lado econômico da
   cadeia funcionando
-- Catálogo de produtos é um recorte pequeno (7 produtos), não o
-  catálogo completo de ~40 do `DESIGN.md`
-- Compra entre empresas só existe Matriz→Industrial e Industrial→Varejo/Construtora — falta Industrial→Industrial (necessário pro Carro e outras receitas que usam manufaturado como ingrediente)
+- Preço de compra/venda ainda é sempre o `preco_base` fixo, sem a estrela do produtor afetando preço/qualidade (Fase 4)
 
 ## Rodando localmente
 
@@ -135,7 +138,7 @@ Ambos funcionam de forma parecida:
 ## Roadmap (ver DESIGN.md pra detalhe completo)
 
 - [x] Fase 1 — Fundação: skills (3 stats fixos) + classificação de empresa (terreno/tipo_industria/especialização)
-- [ ] Fase 2 — Catálogo expandido (~40 produtos), compra Industrial→Industrial, consumo operacional
+- [x] Fase 2 — Catálogo expandido (67 produtos), compra Industrial→Industrial, consumo operacional, estrela mínima por receita
 - [ ] Fase 3 — Loop do jogador: inventário, QoL pessoal/Saúde/Nutrição, produção via funcionário
 - [ ] Fase 4 — Financeira completa, qualidade afetando preço, especialização de funcionário
 - [ ] Fase 5 — Governo: cargos políticos, orçamento público, leis com trade-off
