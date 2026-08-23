@@ -380,7 +380,7 @@ Sem mudança na tabela de estrelas/cargos máximos/custo de upar que já
 tínhamos. Construtora continua com a exceção de upar por obras
 concluídas, não por essa tabela padrão.
 
-### 2.11 Especialização de funcionário 🆕 (novo)
+### 2.11 Especialização de funcionário ✅ (implementado)
 
 Um funcionário pode virar especialista num produto específico (ex:
 "especialista em café"), produzindo mais daquele item do que o normal
@@ -397,7 +397,7 @@ bônus_de_especialização = 1 + (nível_de_especialização / 100) × 0.5
 Máximo de +50% de produção adicional pra quem virou especialista de
 verdade — some tudo com a mecânica de diminishing returns geral (seção 1.4).
 
-### 2.12 Qualidade afeta preço e preferência do consumidor 🆕 (novo)
+### 2.12 Qualidade afeta preço e preferência do consumidor ✅ (preço implementado; efeito ao consumir, não)
 
 Hoje o preço de um produto é fixo (`preco_base`), igual pra qualquer
 empresa que vende. Proposta: a estrela de quem produziu afeta tanto o

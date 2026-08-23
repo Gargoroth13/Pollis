@@ -66,7 +66,7 @@
         {% csrf_token %}
         <input type="hidden" name="empresa_vendedora_id" value="{{ oferta.empresa.id }}">
         <input type="hidden" name="produto_id" value="{{ oferta.produto.id }}">
-        {{ oferta.produto.nome }} de {{ oferta.empresa.nome }} — {{ oferta.quantidade }} disponíveis a R$ {{ oferta.produto.preco_base }}/un
+        {{ oferta.produto.nome }} de {{ oferta.empresa.nome }} ({{ oferta.empresa.estrelas }}★) — {{ oferta.quantidade }} disponíveis a R$ {{ oferta.preco_unitario }}/un
         <input type="number" name="quantidade" min="1" max="{{ oferta.quantidade }}" value="1"
                style="width: 70px; padding: 0.3rem; border: 1px solid var(--linha); border-radius: 3px;">
         <button type="submit" class="botao">Comprar</button>

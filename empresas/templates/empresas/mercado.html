@@ -12,7 +12,7 @@
 <div class="cartao">
   <span class="rotulo">{{ item.empresa.nome }}</span>
   <h2>{{ item.produto.nome }}</h2>
-  <p>R$ {{ item.produto.preco_base }}/unidade — {{ item.quantidade }} disponíveis</p>
+  <p>R$ {{ item.preco_unitario }}/unidade ({{ item.empresa.estrelas }}★) — {{ item.quantidade }} disponíveis</p>
   {% if user.is_authenticated %}
     <form method="post" action="{% url 'empresas_comprar_mercado' item.id %}">
       {% csrf_token %}

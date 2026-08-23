@@ -293,3 +293,51 @@ class EstoqueDaEmpresa(models.Model):
 
     def __str__(self):
         return f"{self.empresa.nome}: {self.quantidade}x {self.produto.nome}"
+
+
+NIVEL_MAXIMO_DE_ESPECIALIZACAO = 100
+GANHO_DE_ESPECIALIZACAO_POR_ACAO = 2
+
+
+class EspecializacaoDoFuncionario(models.Model):
+    """
+    Um funcionário que produz/fabrica o mesmo produto repetidamente vira
+    especialista NAQUELE produto especificamente (DESIGN.md seção 2.11)
+    — o bônus não vaza pros outros produtos da mesma empresa.
+    """
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="especializacoes"
+    )
+    produto = models.ForeignKey(Produto, on_delete=models.CASCADE, related_name="especialistas")
+    nivel = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Especialização de funcionário"
+        verbose_name_plural = "Especializações de funcionários"
+        unique_together = ("usuario", "produto")
+
+    def __str__(self):
+        return f"{self.usuario.username} especialista em {self.produto.nome} (nível {self.nivel})"
+
+    def bonus_de_producao(self):
+        """+50% de produção no máximo (nível 100), escala linear."""
+        return 1 + (self.nivel / NIVEL_MAXIMO_DE_ESPECIALIZACAO) * 0.5
+
+    def treinar(self):
+        if self.nivel < NIVEL_MAXIMO_DE_ESPECIALIZACAO:
+            self.nivel = min(NIVEL_MAXIMO_DE_ESPECIALIZACAO, self.nivel + GANHO_DE_ESPECIALIZACAO_POR_ACAO)
+            self.save(update_fields=["nivel"])
+
+
+def preco_com_qualidade(produto, empresa_vendedora):
+    """
+    A estrela de quem vende afeta o preço (DESIGN.md seção 2.12) — um
+    produto vendido por uma empresa 5★ custa mais caro que o mesmo
+    produto de uma 1★. Simplificação documentada: a qualidade é
+    aplicada em cada etapa de revenda com base na estrela do vendedor
+    NAQUELE momento, não carrega a "proveniência" do fabricante
+    original através da cadeia (o Estoque é só quantidade, não lote).
+    """
+    multiplicador = 1 + (empresa_vendedora.estrelas - 1) * Decimal("0.15")
+    return (produto.preco_base * multiplicador).quantize(Decimal("0.01"))

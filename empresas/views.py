@@ -11,7 +11,10 @@ from core.models import RegistroDeTrabalho
 from skills.models import HabilidadeDoJogador
 
 from .forms import CriarCargoForm, CriarEmpresaForm
-from .models import ESTRELA_MAXIMA, Cargo, Empresa, EstoqueDaEmpresa, Produto, TipoDeEmpresa
+from .models import (
+    ESTRELA_MAXIMA, Cargo, EspecializacaoDoFuncionario, Empresa, EstoqueDaEmpresa,
+    Produto, TipoDeEmpresa, preco_com_qualidade,
+)
 
 Usuario = get_user_model()
 
@@ -149,6 +152,10 @@ def detalhe(request, empresa_id):
             vendedores_disponiveis = (
                 ofertas_da_regra if vendedores_disponiveis is None else vendedores_disponiveis | ofertas_da_regra
             )
+
+        if vendedores_disponiveis is not None:
+            for oferta in vendedores_disponiveis:
+                oferta.preco_unitario = preco_com_qualidade(oferta.produto, oferta.empresa)
 
     return render(
         request,
@@ -332,15 +339,22 @@ def produzir(request, empresa_id):
         )
         return redirect("empresas_detalhe", empresa_id=empresa.id)
 
+    especializacao, _ = EspecializacaoDoFuncionario.objects.get_or_create(usuario=request.user, produto=produto)
+
     quantidade_base = random.randint(PRODUCAO_MINIMA, PRODUCAO_MAXIMA)
-    quantidade = max(1, round(quantidade_base * perfil.multiplicador_de_eficacia()))
+    quantidade = max(1, round(
+        quantidade_base * perfil.multiplicador_de_eficacia() * especializacao.bonus_de_producao()
+    ))
     estoque, _ = EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto)
     estoque.quantidade += quantidade
     estoque.save(update_fields=["quantidade"])
+    especializacao.treinar()
 
     aviso_consumo = _consumir_operacional(empresa)
 
     mensagem = f"{empresa.nome} produziu {quantidade}x {produto.nome}."
+    if especializacao.nivel > 0:
+        mensagem += f" (especialista nível {especializacao.nivel} em {produto.nome})"
     if aviso_consumo:
         mensagem += f" {aviso_consumo}"
     messages.success(request, mensagem)
@@ -408,15 +422,24 @@ def fabricar(request, empresa_id):
         estoque_ing.quantidade -= receita.quantidade_necessaria
         estoque_ing.save(update_fields=["quantidade"])
 
+    especializacao, _ = EspecializacaoDoFuncionario.objects.get_or_create(
+        usuario=request.user, produto=produto_final
+    )
+
     quantidade_base = receitas[0].quantidade_produzida
-    quantidade_produzida = max(1, round(quantidade_base * perfil.multiplicador_de_eficacia()))
+    quantidade_produzida = max(1, round(
+        quantidade_base * perfil.multiplicador_de_eficacia() * especializacao.bonus_de_producao()
+    ))
     estoque_final, _ = EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto_final)
     estoque_final.quantidade += quantidade_produzida
     estoque_final.save(update_fields=["quantidade"])
+    especializacao.treinar()
 
     aviso_consumo = _consumir_operacional(empresa)
 
     mensagem = f"{empresa.nome} fabricou {quantidade_produzida}x {produto_final.nome}."
+    if especializacao.nivel > 0:
+        mensagem += f" (especialista nível {especializacao.nivel} em {produto_final.nome})"
     if aviso_consumo:
         mensagem += f" {aviso_consumo}"
     messages.success(request, mensagem)
@@ -469,7 +492,8 @@ def comprar_de_empresa(request, empresa_id):
         messages.error(request, f"{empresa_vendedora.nome} só tem {disponivel}x {produto.nome} disponível.")
         return redirect("empresas_detalhe", empresa_id=empresa_compradora.id)
 
-    preco_total = produto.preco_base * quantidade
+    preco_unitario = preco_com_qualidade(produto, empresa_vendedora)
+    preco_total = preco_unitario * quantidade
     perfil_comprador = request.user.perfil
     if perfil_comprador.dinheiro < preco_total:
         messages.error(request, f"Custa R$ {preco_total} e você só tem R$ {perfil_comprador.dinheiro}.")
@@ -499,6 +523,8 @@ def mercado(request):
     itens = EstoqueDaEmpresa.objects.filter(
         empresa__tipo=TipoDeEmpresa.VAREJO, quantidade__gt=0
     ).select_related("empresa", "produto")
+    for item in itens:
+        item.preco_unitario = preco_com_qualidade(item.produto, item.empresa)
     return render(request, "empresas/mercado.html", {"itens": itens})
 
 
@@ -518,7 +544,8 @@ def comprar_do_mercado(request, estoque_id):
         messages.error(request, "Quantidade inválida ou indisponível.")
         return redirect("empresas_mercado")
 
-    preco_total = estoque.produto.preco_base * quantidade
+    preco_unitario = preco_com_qualidade(estoque.produto, estoque.empresa)
+    preco_total = preco_unitario * quantidade
     perfil = request.user.perfil
     if perfil.dinheiro < preco_total:
         messages.error(request, f"Custa R$ {preco_total}, você só tem R$ {perfil.dinheiro}.")

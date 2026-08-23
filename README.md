@@ -62,6 +62,12 @@ completo do jogo (todas as regras, números e pendências) está em
   verdade (não só transfere dinheiro); itens de comida (Pão, Chocolate,
   Macarrão, Hambúrguer, Suco, Sorvete, Carne de Sol, Refrigerante) têm
   efeito real de nutrição/QoL ao consumir
+- **Qualidade afeta preço**: a estrela de quem vende encarece o produto
+  (`preço = preço_base × (1 + (estrela-1) × 0.15)`) — testado em compra
+  real entre empresas, não só na fórmula isolada
+- **Especialização de funcionário**: produzir/fabricar o mesmo produto
+  repetidamente cria um registro de especialista naquele item
+  específico, com bônus de até +50% de produção no nível máximo (100)
 - Painel administrativo do Django pronto (`/admin/`) pra editar qualquer
   dado do jogo sem escrever tela nenhuma
 
@@ -80,15 +86,13 @@ DESIGN.md          documento de design completo — regras, números, pendência
 
 ## Simplificações atuais (documentadas de propósito)
 
-- Preço de compra/venda é sempre o `preco_base` do produto — não tem
-  precificação dinâmica por empresa ainda, nem a estrela do produtor
-  afetando preço/qualidade (Fase 4)
+- Qualidade afeta o **preço** de venda, mas ainda não o **efeito**
+  (nutrição/QoL) do item ao consumir — isso exigiria rastrear a
+  qualidade por lote no inventário, não só a quantidade (Fase 6+)
 - QoL "base" é fixa em 1.00 pra todo mundo — ainda não existe posse de
   imóvel/carro/roupa pra calcular isso de verdade (Fase 6 e além)
 - Médico reduzindo tempo de internação ainda não existe (depende do
   sistema de diploma/profissão formal)
-- Especialização de funcionário (produzir mais de um item específico)
-  ainda não existe (Fase 4)
 
 ## Rodando localmente
 
@@ -158,7 +162,8 @@ Ambos funcionam de forma parecida:
 - [x] Fase 1 — Fundação: skills (3 stats fixos) + classificação de empresa (terreno/tipo_industria/especialização)
 - [x] Fase 2 — Catálogo expandido (67 produtos), compra Industrial→Industrial, consumo operacional, estrela mínima por receita
 - [x] Fase 3 — Loop do jogador: inventário, QoL pessoal/Saúde/Nutrição, produção via funcionário
-- [ ] Fase 4 — Financeira completa, qualidade afetando preço, especialização de funcionário
+- [x] Fase 4a — Qualidade afetando preço, especialização de funcionário
+- [ ] Fase 4b — Financeira completa (empréstimo, bolsa, poupança, cartão, falência)
 - [ ] Fase 5 — Governo: cargos políticos, orçamento público, leis com trade-off
 - [ ] Fase 6 — Imóveis e Construtora
 - [ ] Fase 7 — População/NPC

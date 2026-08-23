@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Cargo, EstoqueDaEmpresa, Empresa, Produto, Receita
+from .models import Cargo, EspecializacaoDoFuncionario, EstoqueDaEmpresa, Empresa, Produto, Receita
 
 
 class CargoInline(admin.TabularInline):
@@ -61,3 +61,11 @@ class EstoqueDaEmpresaAdmin(admin.ModelAdmin):
     list_filter = ("empresa__tipo", "produto")
     search_fields = ("empresa__nome", "produto__nome")
     autocomplete_fields = ("empresa", "produto")
+
+
+@admin.register(EspecializacaoDoFuncionario)
+class EspecializacaoDoFuncionarioAdmin(admin.ModelAdmin):
+    list_display = ("usuario", "produto", "nivel")
+    list_filter = ("produto",)
+    search_fields = ("usuario__username", "produto__nome")
+    autocomplete_fields = ("usuario", "produto")
