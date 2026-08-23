@@ -41,7 +41,10 @@ class CargoAdmin(admin.ModelAdmin):
 
 @admin.register(Produto)
 class ProdutoAdmin(admin.ModelAdmin):
-    list_display = ("nome", "eh_materia_prima", "terreno_produtor", "tipo_industria_produtor", "preco_base")
+    list_display = (
+        "nome", "eh_materia_prima", "terreno_produtor", "tipo_industria_produtor",
+        "preco_base", "nutricao", "efeito_qol",
+    )
     list_filter = ("eh_materia_prima", "terreno_produtor", "tipo_industria_produtor")
     search_fields = ("nome",)
 

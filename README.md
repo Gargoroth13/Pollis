@@ -44,6 +44,24 @@ completo do jogo (todas as regras, números e pendências) está em
 - Consumo operacional: Matriz e Industrial consomem 1 EPI + 1 Uniforme
   do próprio estoque a cada produzir/fabricar (se tiver — não bloqueia
   se faltar, só avisa)
+- **Produzir/fabricar não é mais só do dono** — qualquer funcionário
+  contratado (com Cargo na empresa) também pode
+- **QoL pessoal**: barra própria do jogador (diferente da QoL do
+  bairro), começa em 1.00, drena 0.20 a cada trabalho/produção, se
+  recupera sozinha em direção à base com o tempo. Vira multiplicador de
+  quanto XP/produção você ganha por ação, e também controla a
+  velocidade de regeneração de energia
+- **Saúde com decaimento probabilístico**: QoL abaixo de 1 dá chance de
+  a saúde cair sozinha; saúde ≤20 entra em depressão (corta a QoL base
+  pela metade); saúde chega a 0 → internação automática de 3 dias,
+  bloqueando ações de trabalho
+- **Nutrição**: nova barra, cai sozinha com o tempo, só sobe consumindo
+  itens de comida do inventário; nutrição zerada trava a QoL num teto
+  de 60% da base
+- **Inventário do jogador**: comprar no Mercado agora entrega o item de
+  verdade (não só transfere dinheiro); itens de comida (Pão, Chocolate,
+  Macarrão, Hambúrguer, Suco, Sorvete, Carne de Sol, Refrigerante) têm
+  efeito real de nutrição/QoL ao consumir
 - Painel administrativo do Django pronto (`/admin/`) pra editar qualquer
   dado do jogo sem escrever tela nenhuma
 
@@ -51,7 +69,7 @@ completo do jogo (todas as regras, números e pendências) está em
 
 ```
 polis/            configurações do projeto (settings.py, urls.py)
-accounts/         Usuario customizado, Perfil (energia/saúde/dinheiro), cadastro/login/painel
+accounts/         Usuario customizado, Perfil (energia/saúde/nutrição/QoL/dinheiro), ItemDoJogador (inventário), cadastro/login/painel
 geography/        Estado, Cidade, Bairro + comando de seed
 skills/            as 3 skills fixas (Inteligência/Físico/Carisma) + progresso por jogador
 empresas/          Empresa (tipo + classificação + estrelas), Cargo, Produto/Receita/Estoque, Mercado
@@ -62,15 +80,15 @@ DESIGN.md          documento de design completo — regras, números, pendência
 
 ## Simplificações atuais (documentadas de propósito)
 
-- Só o **dono** produz/fabrica na empresa (gasta a própria energia) —
-  ainda não delega isso pros funcionários contratados
 - Preço de compra/venda é sempre o `preco_base` do produto — não tem
   precificação dinâmica por empresa ainda, nem a estrela do produtor
-  afetando preço/qualidade
-- Comprar no Mercado não gera item nenhum no "inventário" do jogador
-  (ainda não existe inventário de jogador) — é só o lado econômico da
-  cadeia funcionando
-- Preço de compra/venda ainda é sempre o `preco_base` fixo, sem a estrela do produtor afetando preço/qualidade (Fase 4)
+  afetando preço/qualidade (Fase 4)
+- QoL "base" é fixa em 1.00 pra todo mundo — ainda não existe posse de
+  imóvel/carro/roupa pra calcular isso de verdade (Fase 6 e além)
+- Médico reduzindo tempo de internação ainda não existe (depende do
+  sistema de diploma/profissão formal)
+- Especialização de funcionário (produzir mais de um item específico)
+  ainda não existe (Fase 4)
 
 ## Rodando localmente
 
@@ -139,7 +157,7 @@ Ambos funcionam de forma parecida:
 
 - [x] Fase 1 — Fundação: skills (3 stats fixos) + classificação de empresa (terreno/tipo_industria/especialização)
 - [x] Fase 2 — Catálogo expandido (67 produtos), compra Industrial→Industrial, consumo operacional, estrela mínima por receita
-- [ ] Fase 3 — Loop do jogador: inventário, QoL pessoal/Saúde/Nutrição, produção via funcionário
+- [x] Fase 3 — Loop do jogador: inventário, QoL pessoal/Saúde/Nutrição, produção via funcionário
 - [ ] Fase 4 — Financeira completa, qualidade afetando preço, especialização de funcionário
 - [ ] Fase 5 — Governo: cargos políticos, orçamento público, leis com trade-off
 - [ ] Fase 6 — Imóveis e Construtora

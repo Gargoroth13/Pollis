@@ -1,9 +1,11 @@
 import random
 from decimal import Decimal
 
+from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from core.models import RegistroDeTrabalho
 from empresas.models import Cargo
@@ -11,7 +13,7 @@ from geography.models import Bairro
 from skills.models import HabilidadeDoJogador, Skill, xp_necessario_para_nivel
 
 from .forms import CadastroForm
-from .models import Perfil
+from .models import ItemDoJogador, Perfil
 
 # Chance de nascer em cada faixa de renda. Ajuste esses números pra mudar
 # a distribuição social da cidade — não precisa mexer em nenhum outro lugar.
@@ -123,3 +125,37 @@ def painel(request):
             "cargo_atual": cargo_atual,
         },
     )
+
+
+@login_required
+def inventario(request):
+    perfil = request.user.perfil
+    perfil.sincronizar()
+    itens = ItemDoJogador.objects.filter(usuario=request.user, quantidade__gt=0).select_related("produto")
+    return render(request, "accounts/inventario.html", {"perfil": perfil, "itens": itens})
+
+
+@login_required
+@require_POST
+def consumir(request, item_id):
+    item = get_object_or_404(ItemDoJogador, id=item_id, usuario=request.user)
+    if not item.produto.eh_comivel():
+        messages.error(request, f"{item.produto.nome} não é um item que dá pra consumir.")
+        return redirect("inventario")
+    if item.quantidade <= 0:
+        messages.error(request, "Você não tem mais desse item.")
+        return redirect("inventario")
+
+    perfil = request.user.perfil
+    perfil.sincronizar()
+    perfil.comer(item.produto.nutricao, item.produto.efeito_qol)
+    perfil.save(update_fields=["nutricao_atual", "qol_atual"])
+
+    item.quantidade -= 1
+    item.save(update_fields=["quantidade"])
+
+    messages.success(
+        request,
+        f"Consumiu 1x {item.produto.nome}. Nutrição +{item.produto.nutricao}, QoL {item.produto.efeito_qol:+}.",
+    )
+    return redirect("inventario")

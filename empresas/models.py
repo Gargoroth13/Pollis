@@ -212,6 +212,13 @@ class Produto(models.Model):
     )
     preco_base = models.DecimalField(max_digits=10, decimal_places=2)
 
+    # Efeito ao consumir (via inventário, seção 6 do DESIGN.md). Só faz
+    # sentido pra alimentos — a maioria dos produtos fica com os dois
+    # zerados e não é "comível". efeito_qol pode ser negativo (ex: Carne
+    # de Sol dá debuff de QoL apesar de alimentar).
+    nutricao = models.PositiveSmallIntegerField(default=0)
+    efeito_qol = models.DecimalField(max_digits=4, decimal_places=2, default=0)
+
     class Meta:
         verbose_name = "Produto"
         verbose_name_plural = "Produtos"
@@ -220,6 +227,9 @@ class Produto(models.Model):
     def __str__(self):
         tipo = "matéria-prima" if self.eh_materia_prima else "manufaturado"
         return f"{self.nome} ({tipo})"
+
+    def eh_comivel(self):
+        return self.nutricao > 0 or self.efeito_qol != 0
 
     def clean(self):
         if self.eh_materia_prima:

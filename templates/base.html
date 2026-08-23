@@ -150,6 +150,7 @@
     <a href="{% url 'empresas_mercado' %}">Mercado</a>
     {% if user.is_authenticated %}
       <a href="{% url 'painel' %}">Painel</a>
+      <a href="{% url 'inventario' %}">Inventário</a>
       <a href="{% url 'logout' %}">Sair</a>
     {% else %}
       <a href="{% url 'login' %}">Entrar</a>

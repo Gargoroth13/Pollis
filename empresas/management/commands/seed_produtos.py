@@ -131,6 +131,25 @@ class Command(BaseCommand):
         for nome, tipo_industria, preco in manufaturados_lista:
             manufaturado(nome, tipo_industria, preco)
 
+        # Efeitos de consumo (nutrição / QoL) — só os alimentos têm isso.
+        # Escala aproximada: nutrição 0-100 (100 = uma refeição completa),
+        # efeito_qol é o delta aplicado na hora de comer (pode ser negativo).
+        # Valores batem com a tabela qualitativa do DESIGN.md seção 2.3.
+        efeitos_alimentares = {
+            "Pão": {"nutricao": 20, "efeito_qol": "0.00"},
+            "Chocolate": {"nutricao": 10, "efeito_qol": "0.05"},
+            "Macarrão": {"nutricao": 60, "efeito_qol": "0.00"},
+            "Hambúrguer": {"nutricao": 40, "efeito_qol": "0.05"},
+            "Suco": {"nutricao": 5, "efeito_qol": "0.05"},
+            "Sorvete": {"nutricao": 0, "efeito_qol": "0.10"},
+            "Carne de Sol": {"nutricao": 40, "efeito_qol": "-0.05"},
+            "Refrigerante": {"nutricao": 0, "efeito_qol": "0.10"},
+        }
+        for nome, efeito in efeitos_alimentares.items():
+            Produto.objects.filter(nome=nome).update(
+                nutricao=efeito["nutricao"], efeito_qol=Decimal(efeito["efeito_qol"])
+            )
+
         # ==================== RECEITAS ====================
         # (produto_final, [(ingrediente, quantidade_necessaria), ...], quantidade_produzida, estrela_minima)
         receitas_lista = [

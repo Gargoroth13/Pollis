@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block titulo %}Inventário — Polis{% endblock %}
+
+{% block conteudo %}
+<div class="cartao">
+  <h1>Inventário</h1>
+  <p>
+    <span class="rotulo">Nutrição</span> {{ perfil.nutricao_atual }}/{{ perfil.nutricao_maxima }} ·
+    <span class="rotulo">QoL</span> {{ perfil.qol_atual }}
+  </p>
+</div>
+
+{% for item in itens %}
+<div class="cartao">
+  <h2>{{ item.produto.nome }}</h2>
+  <p>Quantidade: {{ item.quantidade }}</p>
+  {% if item.produto.eh_comivel %}
+    <p class="rotulo">
+      Nutrição +{{ item.produto.nutricao }} · QoL {{ item.produto.efeito_qol|stringformat:"+" }}
+    </p>
+    <form method="post" action="{% url 'consumir' item.id %}">
+      {% csrf_token %}
+      <button type="submit" class="botao">Consumir 1x</button>
+    </form>
+  {% else %}
+    <p class="rotulo">Não é um item consumível.</p>
+  {% endif %}
+</div>
+{% empty %}
+<div class="cartao"><p>Inventário vazio — compre algo no <a href="{% url 'empresas_mercado' %}">Mercado</a>.</p></div>
+{% endfor %}
+{% endblock %}

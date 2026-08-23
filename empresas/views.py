@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from accounts.models import ItemDoJogador
 from core.models import RegistroDeTrabalho
 from skills.models import HabilidadeDoJogador
 
@@ -14,7 +15,7 @@ from .models import ESTRELA_MAXIMA, Cargo, Empresa, EstoqueDaEmpresa, Produto, T
 
 Usuario = get_user_model()
 
-CUSTO_DE_ENERGIA_TRABALHO = 10
+CUSTO_DE_ENERGIA_TRABALHO = 25  # DESIGN.md seção 5.1
 XP_MINIMO = 5
 XP_MAXIMO = 15
 PRODUCAO_MINIMA = 5
@@ -64,6 +65,17 @@ def _criar_estoque_inicial(empresa):
 
     for produto in produtos:
         EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto)
+
+
+def _pode_operar_empresa(usuario, empresa):
+    """
+    Produzir/fabricar deixa de ser ação exclusiva do dono (DESIGN.md
+    seção 2.9) — qualquer funcionário contratado (Cargo com esse
+    usuário como ocupante) também pode, além do próprio dono.
+    """
+    if empresa.dono_id == usuario.id:
+        return True
+    return Cargo.objects.filter(empresa=empresa, ocupante=usuario).exists()
 
 
 def _consumir_operacional(empresa):
@@ -248,10 +260,15 @@ def upar_empresa(request, empresa_id):
 @require_POST
 def trabalhar_no_emprego(request):
     perfil = request.user.perfil
+    perfil.sincronizar()
     cargo = Cargo.objects.select_related("empresa").filter(ocupante=request.user).first()
 
     if cargo is None:
         messages.error(request, "Você não está empregado em nenhum cargo formal.")
+        return redirect("painel")
+
+    if perfil.esta_internado():
+        messages.error(request, f"Você está internado até {perfil.internado_ate:%d/%m %H:%M} e não pode trabalhar.")
         return redirect("painel")
 
     if not perfil.gastar_energia(CUSTO_DE_ENERGIA_TRABALHO):
@@ -264,7 +281,8 @@ def trabalhar_no_emprego(request):
     perfil.dinheiro += cargo.salario
     perfil.save(update_fields=["dinheiro"])
 
-    xp_ganho = random.randint(XP_MINIMO, XP_MAXIMO)
+    xp_ganho = round(random.randint(XP_MINIMO, XP_MAXIMO) * perfil.multiplicador_de_eficacia())
+    xp_ganho = max(xp_ganho, 1)
     habilidade, _ = HabilidadeDoJogador.objects.get_or_create(
         usuario=request.user, skill=cargo.skill_relevante
     )
@@ -291,12 +309,21 @@ def trabalhar_no_emprego(request):
 @login_required
 @require_POST
 def produzir(request, empresa_id):
-    empresa = get_object_or_404(Empresa, id=empresa_id, dono=request.user, tipo=TipoDeEmpresa.MATRIZ)
+    empresa = get_object_or_404(Empresa, id=empresa_id, tipo=TipoDeEmpresa.MATRIZ)
+    if not _pode_operar_empresa(request.user, empresa):
+        messages.error(request, "Você precisa ser dono ou funcionário dessa empresa pra produzir.")
+        return redirect("empresas_detalhe", empresa_id=empresa.id)
+
     produto = get_object_or_404(
         Produto, id=request.POST.get("produto_id"), terreno_produtor=empresa.terreno, eh_materia_prima=True
     )
 
     perfil = request.user.perfil
+    perfil.sincronizar()
+    if perfil.esta_internado():
+        messages.error(request, f"Você está internado até {perfil.internado_ate:%d/%m %H:%M} e não pode trabalhar.")
+        return redirect("empresas_detalhe", empresa_id=empresa.id)
+
     if not perfil.gastar_energia(CUSTO_DE_ENERGIA_TRABALHO):
         messages.error(
             request,
@@ -305,7 +332,8 @@ def produzir(request, empresa_id):
         )
         return redirect("empresas_detalhe", empresa_id=empresa.id)
 
-    quantidade = random.randint(PRODUCAO_MINIMA, PRODUCAO_MAXIMA)
+    quantidade_base = random.randint(PRODUCAO_MINIMA, PRODUCAO_MAXIMA)
+    quantidade = max(1, round(quantidade_base * perfil.multiplicador_de_eficacia()))
     estoque, _ = EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto)
     estoque.quantidade += quantidade
     estoque.save(update_fields=["quantidade"])
@@ -322,7 +350,11 @@ def produzir(request, empresa_id):
 @login_required
 @require_POST
 def fabricar(request, empresa_id):
-    empresa = get_object_or_404(Empresa, id=empresa_id, dono=request.user, tipo=TipoDeEmpresa.INDUSTRIAL)
+    empresa = get_object_or_404(Empresa, id=empresa_id, tipo=TipoDeEmpresa.INDUSTRIAL)
+    if not _pode_operar_empresa(request.user, empresa):
+        messages.error(request, "Você precisa ser dono ou funcionário dessa empresa pra fabricar.")
+        return redirect("empresas_detalhe", empresa_id=empresa.id)
+
     produto_final = get_object_or_404(
         Produto, id=request.POST.get("produto_id"),
         tipo_industria_produtor=empresa.tipo_industria, eh_materia_prima=False,
@@ -359,6 +391,11 @@ def fabricar(request, empresa_id):
         estoques_dos_ingredientes[receita] = estoque_ing
 
     perfil = request.user.perfil
+    perfil.sincronizar()
+    if perfil.esta_internado():
+        messages.error(request, f"Você está internado até {perfil.internado_ate:%d/%m %H:%M} e não pode trabalhar.")
+        return redirect("empresas_detalhe", empresa_id=empresa.id)
+
     if not perfil.gastar_energia(CUSTO_DE_ENERGIA_TRABALHO):
         messages.error(
             request,
@@ -371,7 +408,8 @@ def fabricar(request, empresa_id):
         estoque_ing.quantidade -= receita.quantidade_necessaria
         estoque_ing.save(update_fields=["quantidade"])
 
-    quantidade_produzida = receitas[0].quantidade_produzida
+    quantidade_base = receitas[0].quantidade_produzida
+    quantidade_produzida = max(1, round(quantidade_base * perfil.multiplicador_de_eficacia()))
     estoque_final, _ = EstoqueDaEmpresa.objects.get_or_create(empresa=empresa, produto=produto_final)
     estoque_final.quantidade += quantidade_produzida
     estoque_final.save(update_fields=["quantidade"])
@@ -496,5 +534,9 @@ def comprar_do_mercado(request, estoque_id):
     perfil_vendedor.dinheiro += preco_total
     perfil_vendedor.save(update_fields=["dinheiro"])
 
-    messages.success(request, f"Comprou {quantidade}x {estoque.produto.nome} por R$ {preco_total}.")
+    item, _ = ItemDoJogador.objects.get_or_create(usuario=request.user, produto=estoque.produto)
+    item.quantidade += quantidade
+    item.save(update_fields=["quantidade"])
+
+    messages.success(request, f"Comprou {quantidade}x {estoque.produto.nome} por R$ {preco_total}. Foi pro seu inventário.")
     return redirect("empresas_mercado")

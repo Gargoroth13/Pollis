@@ -13,6 +13,13 @@
   </p>
 </div>
 
+{% if perfil.esta_internado %}
+<div class="cartao" style="border-color: var(--erro);">
+  <span class="rotulo" style="color: var(--erro);">Internado</span>
+  <p>Você está internado até {{ perfil.internado_ate|date:"d/m H:i" }} e não pode trabalhar.</p>
+</div>
+{% endif %}
+
 <div class="cartao">
   <div class="grade">
     <div>
@@ -24,8 +31,16 @@
       <div class="numero">{{ perfil.energia_atual }}/{{ perfil.energia_maxima }}</div>
     </div>
     <div>
-      <span class="rotulo">Saúde</span>
+      <span class="rotulo">Saúde{% if perfil.em_depressao %} (depressão){% endif %}</span>
       <div class="numero">{{ perfil.saude_atual }}/{{ perfil.saude_maxima }}</div>
+    </div>
+    <div>
+      <span class="rotulo">Nutrição</span>
+      <div class="numero">{{ perfil.nutricao_atual }}/{{ perfil.nutricao_maxima }}</div>
+    </div>
+    <div>
+      <span class="rotulo">QoL</span>
+      <div class="numero">{{ perfil.qol_atual }}</div>
     </div>
   </div>
 
@@ -37,8 +52,9 @@
         <option value="{{ h.skill }}">{{ h.nome }}</option>
       {% endfor %}
     </select>
-    <button type="submit" class="botao" style="margin-left: 0.75rem;">Trabalhar (-10 energia)</button>
+    <button type="submit" class="botao" style="margin-left: 0.75rem;" {% if perfil.esta_internado %}disabled{% endif %}>Trabalhar (-25 energia)</button>
   </form>
+  <p class="rotulo" style="margin-top: 0.75rem;"><a href="{% url 'inventario' %}">Ver inventário</a></p>
 </div>
 
 <div class="cartao">
@@ -66,7 +82,7 @@
     </p>
     <form method="post" action="{% url 'trabalhar_emprego' %}">
       {% csrf_token %}
-      <button type="submit" class="botao">Trabalhar no emprego (-10 energia)</button>
+      <button type="submit" class="botao" {% if perfil.esta_internado %}disabled{% endif %}>Trabalhar no emprego (-25 energia)</button>
     </form>
   {% else %}
     <p class="rotulo">
