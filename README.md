@@ -68,6 +68,15 @@ completo do jogo (todas as regras, números e pendências) está em
 - **Especialização de funcionário**: produzir/fabricar o mesmo produto
   repetidamente cria um registro de especialista naquele item
   específico, com bônus de até +50% de produção no nível máximo (100)
+- **Financeira** (app novo): empresas de Serviços com especialização
+  Financeira ganham poupança (juros semanais compostos, calculados sob
+  demanda), empréstimo (juros de 5% fixo), cartão de crédito (limite
+  calculado por skill Carisma + renda recente, juros compostos mensais
+  de 10%), transferência entre jogadores (taxa de 2% pro dono da
+  financeira), reserva obrigatória de 20% (bloqueia saque/empréstimo/
+  saque de cartão que deixaria o caixa abaixo disso), rating público
+  de solvência (A a F) e falência (reduz saldo dos depositantes em 30%,
+  bloqueia saque por 30 dias)
 - Painel administrativo do Django pronto (`/admin/`) pra editar qualquer
   dado do jogo sem escrever tela nenhuma
 
@@ -79,6 +88,7 @@ accounts/         Usuario customizado, Perfil (energia/saúde/nutrição/QoL/din
 geography/        Estado, Cidade, Bairro + comando de seed
 skills/            as 3 skills fixas (Inteligência/Físico/Carisma) + progresso por jogador
 empresas/          Empresa (tipo + classificação + estrelas), Cargo, Produto/Receita/Estoque, Mercado
+financeira/        Poupança, Empréstimo, Cartão de crédito, transferência, reserva obrigatória e falência
 core/              ações de jogo (trabalho freelance genérico)
 templates/         template base compartilhado
 DESIGN.md          documento de design completo — regras, números, pendências
@@ -163,7 +173,7 @@ Ambos funcionam de forma parecida:
 - [x] Fase 2 — Catálogo expandido (67 produtos), compra Industrial→Industrial, consumo operacional, estrela mínima por receita
 - [x] Fase 3 — Loop do jogador: inventário, QoL pessoal/Saúde/Nutrição, produção via funcionário
 - [x] Fase 4a — Qualidade afetando preço, especialização de funcionário
-- [ ] Fase 4b — Financeira completa (empréstimo, bolsa, poupança, cartão, falência)
+- [x] Fase 4b — Financeira: poupança, empréstimo, cartão, transferência, reserva obrigatória, rating, falência (bolsa de valores e intervenção do governo ficaram de fora — dependem de fases futuras)
 - [ ] Fase 5 — Governo: cargos políticos, orçamento público, leis com trade-off
 - [ ] Fase 6 — Imóveis e Construtora
 - [ ] Fase 7 — População/NPC

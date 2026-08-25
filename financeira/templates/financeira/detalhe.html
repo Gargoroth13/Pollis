@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ empresa.nome }} — Polis{% endblock %}
+
+{% block conteudo %}
+<div class="cartao">
+  <span class="rotulo">Financeira{% if dados.falida %} · FALIDA{% endif %}</span>
+  <h1>{{ empresa.nome }}</h1>
+  <p class="numero">Rating: {{ dados.rating }}</p>
+  <p class="rotulo">Índice de reserva: {{ dados.indice_de_reserva }} (mínimo exigido: 0.20)</p>
+  {% if eh_dono %}
+    <p>Caixa: R$ {{ dados.caixa }} · Obrigações com clientes: R$ {{ dados.obrigacoes_totais }}</p>
+  {% endif %}
+</div>
+
+{% if eh_dono %}
+<div class="cartao">
+  <h2>Painel do dono</h2>
+  <form method="post" action="{% url 'financeira_capitalizar' empresa.id %}" style="margin-bottom: 1rem;">
+    {% csrf_token %}
+    <label class="rotulo">Capitalizar (injeta dinheiro seu no caixa)</label><br>
+    <input type="number" step="0.01" name="valor" min="0.01" style="padding: 0.4rem; border: 1px solid var(--linha); border-radius: 3px;">
+    <button type="submit" class="botao">Capitalizar</button>
+  </form>
+  {% if not dados.falida %}
+    <form method="post" action="{% url 'financeira_declarar_falencia' empresa.id %}" onsubmit="return confirm('Tem certeza? Isso reduz o saldo de todos os depositantes em 30%% e bloqueia saques por 30 dias.');">
+      {% csrf_token %}
+      <button type="submit" class="botao" style="background: var(--erro);">Declarar falência</button>
+    </form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if user.is_authenticated %}
+<div class="cartao">
+  <h2>Poupança</h2>
+  {% if poupanca %}
+    <p>Saldo: R$ {{ poupanca.saldo }}</p>
+    {% if poupanca.esta_bloqueada %}
+      <p class="rotulo">Bloqueada até {{ poupanca.bloqueado_ate|date:"d/m H:i" }} (financeira faliu).</p>
+    {% else %}
+      <form method="post" action="{% url 'financeira_sacar' empresa.id %}">
+        {% csrf_token %}
+        <input type="number" step="0.01" name="valor" min="0.01" max="{{ poupanca.saldo }}" style="padding: 0.4rem; border: 1px solid var(--linha); border-radius: 3px;">
+        <button type="submit" class="botao">Sacar</button>
+      </form>
+    {% endif %}
+  {% endif %}
+  {% if not dados.falida %}
+    <form method="post" action="{% url 'financeira_depositar' empresa.id %}" style="margin-top: 0.75rem;">
+      {% csrf_token %}
+      <input type="number" step="0.01" name="valor" min="0.01" style="padding: 0.4rem; border: 1px solid var(--linha); border-radius: 3px;">
+      <button type="submit" class="botao">Depositar</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="cartao">
+  <h2>Empréstimo</h2>
+  {% if emprestimo %}
+    <p>Devendo R$ {{ emprestimo.saldo_devedor }} (juros de {{ emprestimo.taxa_juros }})</p>
+    <form method="post" action="{% url 'financeira_pagar_emprestimo' empresa.id %}">
+      {% csrf_token %}
+      <input type="number" step="0.01" name="valor" min="0.01" max="{{ emprestimo.saldo_devedor }}" style="padding: 0.4rem; border: 1px solid var(--linha); border-radius: 3px;">
+      <button type="submit" class="botao">Pagar</button>
+    </form>
+  {% elif not dados.falida %}
+    <form method="post" action="{% url 'financeira_pedir_emprestimo' empresa.id %}">
+      {% csrf_token %}
+      <input type="number" step="0.01" name="valor" min="0.01" style="padding: 0.4rem; border: 1px solid var(--linha); border-radius: 3px;">
+      <button type="submit" class="botao">Pedir empréstimo</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="cartao">
+  <h2>Cartão de crédito</h2>
+  {% if cartao %}
+    <p>Limite: R$ {{ cartao.limite }} · Disponível: R$ {{ cartao.limite_disponivel }} · Devendo: R$ {{ cartao.saldo_devedor }}</p>
+    {% if not dados.falida %}
+      <form method="post" action="{% url 'financeira_sacar_cartao' empresa.id %}" style="margin-bottom: 0.5rem;">
+        {% csrf_token %}
+        <input type="number" step="0.01" name="valor" min="0.01" max="{{ cartao.limite_disponivel }}" style="padding: 0.4rem; border: 1px solid var(--linha); border-radius: 3px;">
+        <button type="submit" class="botao">Sacar no cartão</button>
+      </form>
+    {% endif %}
+    <form method="post" action="{% url 'financeira_pagar_cartao' empresa.id %}" style="display: inline;">
+      {% csrf_token %}
+      <input type="hidden" name="modo" value="minimo">
+      <button type="submit" class="botao">Pagar mínimo (R$ {{ cartao.pagamento_minimo }})</button>
+    </form>
+    <form method="post" action="{% url 'financeira_pagar_cartao' empresa.id %}" style="display: inline;">
+      {% csrf_token %}
+      <input type="hidden" name="valor" value="{{ cartao.saldo_devedor }}">
+      <button type="submit" class="botao">Pagar tudo</button>
+    </form>
+  {% elif not dados.falida %}
+    <p class="rotulo">Limite calculado a partir da sua skill Carisma e renda recente.</p>
+    <form method="post" action="{% url 'financeira_pedir_cartao' empresa.id %}">
+      {% csrf_token %}
+      <button type="submit" class="botao">Pedir cartão</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="cartao">
+  <h2>Transferir pra outro jogador</h2>
+  <p class="rotulo">Taxa de 2% cobrada por {{ empresa.nome }}.</p>
+  <form method="post" action="{% url 'financeira_transferir' empresa.id %}">
+    {% csrf_token %}
+    <input type="text" name="username" placeholder="username do destinatário" style="padding: 0.4rem; border: 1px solid var(--linha); border-radius: 3px;">
+    <input type="number" step="0.01" name="valor" min="0.01" placeholder="valor" style="padding: 0.4rem; border: 1px solid var(--linha); border-radius: 3px;">
+    <button type="submit" class="botao">Transferir</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -9,6 +9,10 @@
   <p class="numero">{{ estrelas_visual }}</p>
   <p>{{ empresa.funcionarios_ocupados }}/{{ empresa.max_cargos_permitidos }} cargos ocupados</p>
 
+  {% if empresa.especializacao_servico == "financeira" %}
+    <p><a href="{% url 'financeira_detalhe' empresa.id %}" class="botao" style="display: inline-block;">Ver produtos financeiros</a></p>
+  {% endif %}
+
   {% if eh_dono %}
     {% if requisitos_para_upar %}
       <form method="post" action="{% url 'empresas_upar' empresa.id %}" style="margin-top: 1rem;">

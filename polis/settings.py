@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "geography",
     "skills",
     "empresas",
+    "financeira",
     "core",
 ]
 

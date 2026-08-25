@@ -327,7 +327,7 @@ de "só Cimento".
 | Lazer | 🤝 | Buff temporário de QoL, varia de acordo com o imóvel Especial onde a empresa está |
 | Financeira | 🤝 | Ver seção 2.8 — é especialização de Serviços igual as outras, só ganhou seção própria pelo tanto de regra que tem |
 
-### 2.8 Financeira — detalhamento da especialização 🤝
+### 2.8 Financeira — detalhamento da especialização ✅ (implementado, exceto bolsa de valores e intervenção do governo)
 
 - **Empréstimos** pros jogadores
 - **Bolsa de valores e poupança**: acesso mediante taxa mensal; poupança paga juros semanais sobre o valor depositado
