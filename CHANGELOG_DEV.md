@@ -3,6 +3,17 @@
 Registro breve de mudanças e decisões de desenvolvimento relevantes pro
 futuro. Não é histórico completo — pra isso, ver o log do Git e `design/`.
 
+## 2026-09-10 — Fila de desenvolvimento e papel de segundo agente
+
+- Criado `TASK_QUEUE.md`: fila única de tasks pequenas. `TASK.md` volta a
+  ser só a task Current.
+- Decisão de Tech Lead (ainda não implementada): **caixa da empresa +
+  salário debitado da caixa + teto diário entram antes do cargo Dono**.
+  Motivo: `trabalhar_no_emprego` hoje soma salário no `Perfil` sem debitar
+  a empresa — é emissão de dinheiro. Dono automático em cima disso vira
+  exploit.
+- Sem mudança de lógica de jogo neste commit.
+
 ## 2026-09-08 — Fundação do projeto até Fase 4b
 
 - MVP inicial: cadastro, bairro sorteado por faixa de renda, energia com
