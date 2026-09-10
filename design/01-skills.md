@@ -1,3 +1,11 @@
+# 01 — Skills
+
+> Status: REVIEW
+> Última revisão: 2026-09-10
+>
+> Este documento está em revisão e ainda não deve ser tratado como
+> especificação final para implementação definitiva.
+
 ## 1. Skills do jogador (revisão grande)
 
 **Só existem 3 skills, e elas substituem as 8 categorias antigas
