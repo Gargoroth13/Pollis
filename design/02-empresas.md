@@ -1,302 +1,860 @@
-## 2. Empresas
+# 02 — Empresas
 
-### 2.1 Tipos gerais
-
-| Tipo | Vende pro jogador? |
-|---|---|
-| Matriz | Não — só vende pra Industrial |
-| Industrial | Não — só vende pra Varejo/Construtora |
-| Varejo | ✅ Sim |
-| Construtora | Não — constrói e vende o imóvel pronto |
-| Serviços | ✅ Sim (inclui Financeira como especialização, ver 2.7/2.8) |
-
-✅ **Resolvido:** Financeira é especialização de Serviços, não um tipo
-próprio — igual Transporte/Publicidade/Lazer. Só ganhou seção grande
-(2.8) porque tem muito mais regra que as outras, não porque é estrutura
-diferente.
-
-**Confirmado: só Varejo e Serviços vendem direto pro jogador.**
-
-### 2.2 Matriz — definida por terreno, não por skill 🤝
-
-| Terreno | Produz |
-|---|---|
-| Agropecuária | Trigo, Leite, Cana, Grão de Café, Cacau, Carne, Ovos, Couro, Lã, Fruta |
-| Extrativismo | Madeira, Resina, Látex, Óleo natural, Ervas, Areia, Pedra, Químicos, Petróleo, Borracha |
-| Mineração | Ferro, Cobre, Sílica, Carvão, Petróleo, Sal, Lítio, Ouro, Prata, Diamante |
-
-✅ **Resolvido:** "Leite" era repetição (fica só uma vez na lista).
-Petróleo em Extrativismo *e* Mineração é intencional — duas rotas
-diferentes pro mesmo insumo, cada terreno com seu próprio custo/ritmo
-de extração a definir depois.
-
-### 2.3 Industrial — 4 sub-tipos, cada um com suas receitas 🤝
-
-**Produção:**
-
-| Produto final | Ingredientes | Estrela mínima |
-|---|---|---|
-| Cimento | Pedra + Areia | 1★ |
-| Aço | Ferro + Carvão | 2★ |
-| Tábuas | Madeira | 1★ |
-| Vidro | Areia | 2★ |
-| Materiais de Construção | Cimento + Aço + Madeira + Vidro | 3★ |
-| Plástico | Petróleo | 2★ |
-| Combustível | Petróleo | 3★ |
-| Fertilizante | Químicos | 2★ |
-| Fios de cobre | Cobre | 1★ |
-| EPIs | Borracha + Plástico + Aço + Roupas + Calçados | 3★ |
-| Materiais escolares | Borracha + Caneta + Móveis + Papel | 3★ |
-| Materiais hospitalares | Químicos + Componentes eletrônicos + Plástico + Ervas | 4★ |
-
-**Alimentícia:**
-
-| Produto final | Ingredientes | Estrela mínima |
-|---|---|---|
-| Farinha | Trigo | 1★ |
-| Açúcar | Cana | 1★ |
-| Queijo | Leite | 1★ |
-| Manteiga | Leite | 2★ |
-| Café em pó | Grão de café | 2★ |
-| Manteiga de cacau | Cacau | 3★ |
-| Carne processada | Carne | 2★ |
-
-**Bens de consumo:**
-
-| Produto final | Ingredientes | Estrela mínima | Nutrição | Efeito de QoL |
-|---|---|---|---|---|
-| Roupas | Lã | 1★ | — | — |
-| Móveis | Tábuas + Aço | 3★ | — | — |
-| Papel | Madeira + Sal | 2★ | — | — |
-| Caneta | Aço + Químicos | 1★ | — | — |
-| Calçado | Couro | 1★ | — | — |
-| Uniforme | Roupas + Calçado | 3★ | — | — |
-| Pão | Farinha | 1★ | — | — |
-| Chocolate | Manteiga de cacau + Açúcar + Leite | 4★ | pouca | pequeno buff |
-| Macarrão | Queijo + Farinha + Ovo | 3★ | bastante | sem efeito |
-| Hambúrguer | Queijo + Carne processada + Pão | 4★ | média | pequeno buff |
-| Suco | Fruta + Açúcar | 2★ | quase nada | pequeno buff |
-| Sorvete | Leite + Açúcar + Fruta | 3★ | nada | buff médio |
-| Carne de Sol | Carne + Sal | 1★ | média | **debuff** |
-| Refrigerante | Açúcar + Suco + Químicos | 2★ | nada | buff médio |
-| Carro | Aço + Plástico + Bateria + Borracha + Químico | 5★ | — | — |
-
-🆕 **Todas as receitas agora têm estrela mínima, não só o Carro** — o
-campo `estrela_minima` na `Receita` (proposto na rodada anterior) vira
-regra geral do catálogo, não exceção. Isso cria uma progressão natural:
-empresa 1★ só faz o básico, e o motivo real de upar de estrela deixa de
-ser só "mais cargos" e passa a ser "desbloqueio de receita".
-
-⚠️ **Implicação técnica que essa receita expõe:** Aço e Plástico vêm do
-tipo Produção, Bateria vem do tipo Tecnológica — ou seja, pra fabricar
-Carro (tipo Bens de Consumo), a Industrial precisa comprar produto
-manufaturado de **outra Industrial**, não só matéria-prima de Matriz.
-Hoje `REGRAS_DE_COMPRA` só permite Industrial comprar de Matriz — vai
-precisar de uma regra nova de Industrial comprando de Industrial
-(provavelmente sem restrição de tipo, já que Bens de Consumo precisa
-de Produção e Tecnológica ao mesmo tempo).
-
-**Tecnológica:**
-
-| Produto final | Ingredientes | Estrela mínima |
-|---|---|---|
-| Componentes eletrônicos | Fios de cobre + Sílica + Ouro | 1★ |
-| Bateria | Cobre + Lítio + Químicos | 2★ |
-| Celular | Componentes eletrônicos + Plástico + Bateria | 3★ |
-| Computador | Componentes eletrônicos + Plástico + Aço + Químicos | 4★ |
-
-⚠️ Nosso `Receita` no código já suporta múltiplos ingredientes por
-produto (fiz assim de propósito lá atrás), então estruturalmente isso
-encaixa sem redesenhar o modelo — é "só" MUITO dado de seed pra digitar.
-
-### 2.4 Consumo operacional (mecânica nova) 🤝
-
-Empresas e instituições agora **consomem** produtos continuamente pra
-funcionar, não só o jogador:
-
-| Quem consome | Consome |
-|---|---|
-| Escolas/Universidades | Uniformes + Materiais escolares |
-| Hospitais | Uniformes + Materiais hospitalares |
-| Matriz e Industrial | EPIs + Uniformes (gasto por funcionário a cada trabalho) |
-| Varejo e Serviços | Uniformes |
-
-Isso dá utilidade real pra praticamente todo mundo da cadeia de Bens de
-Consumo, não só o jogador final.
-
-### 2.5 Varejo 🤝
-
-- Nível de estrela define **qual imóvel comercial** ela pode ocupar (liga com a seção 9)
-- Compra de Industrial, revende pro jogador ✅ (já implementado, falta o vínculo com imóvel)
-- Carros também são vendidos por Varejo, igual qualquer outro bem de consumo — sem loja/tipo de imóvel exclusivo pra veículo
-
-🆕 **Capacidade de estoque limitada por funcionário.** Não é só Matriz e
-Industrial que ficam travados pelo número de funcionários trabalhando —
-Varejo também: ela só consegue **comprar/movimentar** uma certa
-quantidade de estoque por período, proporcional a quantos funcionários
-estão ativos. Isso cria escassez de verdade na ponta final também, não
-só na produção — obriga a fazer acordo com fornecedores específicos ou
-correr atrás de quem tiver estoque disponível no momento, em vez de
-"comprar quanto quiser, quando quiser". A fórmula exata (quantidade
-máxima por funcionário por período) fica pra quando formos implementar.
-
-### 2.6 Construtora — revisão 🤝
-
-Pra terminar um imóvel pronto pra venda, precisa comprar **dois**
-produtos da Industrial: Materiais de Construção (ergue a estrutura) e
-Móveis (finaliza/mobilia). Isso substitui minha simplificação anterior
-de "só Cimento".
-
-### 2.7 Serviços — especializações revisadas
-
-| Especialização | Status | Regra |
-|---|---|---|
-| Transporte | 🤝 | Vende ticket de uso único, pequeno buff de QoL, limite **2 por dia por jogador**. Não funciona se o jogador tiver veículo próprio — **exceto** se a empresa de transporte for 5 estrelas. ⏸️ Veículo próprio ainda não tem sistema nenhum (compra, posse, manutenção) — decidido deixar essa exceção sem efeito prático até existir um sistema de veículos, sem travar Transporte por causa disso |
-| ~~Segurança~~ | ❌ removida por você | Motivo: você queria uma forma dos jogadores poderem perder itens (pra "comprou não é pra sempre"), mas achou que tem jeito melhor de fazer isso. Fica em aberto pro futuro, fora do sistema de Serviços |
-| Publicidade | 🤝 | Anúncio em páginas específicas do site; quanto mais paga, maior a chance de aparecer; preço escala com o tráfego da página |
-| Lazer | 🤝 | Buff temporário de QoL, varia de acordo com o imóvel Especial onde a empresa está |
-| Financeira | 🤝 | Ver seção 2.8 — é especialização de Serviços igual as outras, só ganhou seção própria pelo tanto de regra que tem |
-
-### 2.8 Financeira — detalhamento da especialização ✅ (implementado, exceto bolsa de valores e intervenção do governo)
-
-- **Empréstimos** pros jogadores
-- **Bolsa de valores e poupança**: acesso mediante taxa mensal; poupança paga juros semanais sobre o valor depositado
-- **Cartão de crédito**: limite rotativo, jogador escolhe pagar tudo ou o mínimo. Se ficar em dívida, é **preso** e seus bens são vendidos pra quitar a dívida
-- **Transferência entre jogadores**: taxa menor que a de outros métodos, paga só pra empresa financeira
-- **Falência**: se a Financeira quebra, o dono fica em dívida; jogadores com dinheiro depositado recebem uma "promessa de recompensa" — o valor volta em 1 mês, mas com perda de 30%
-
-🆕 **Controles de solvência adicionais** (sua ideia nova, evita que
-"promessa de recompensa com 30% de perda" seja a única salvaguarda):
-
-- **Reserva obrigatória**: a Financeira precisa manter um % fixo do
-  total depositado pelos clientes em caixa, sem poder emprestar tudo.
-  ✅ Fechado em **20%**.
-- **Rating de solvência público**: score visível pra todo mundo (ex:
-  A/B/C/D/F), calculado a partir da razão entre reserva em caixa e o
-  total de obrigações (depósitos + dívidas pendentes). Jogador decide
-  onde depositar sabendo o risco.
-- **Intervenção do governo**: se o rating cair abaixo de um limiar, o
-  governo (ou um futuro "banco central" controlado por jogadores) pode
-  intervir e liquidar a empresa de forma **ordenada** — vender os
-  ativos e ratear entre credores antes da falência total, o que reduz
-  (mas não necessariamente elimina) a perda dos 30% já combinada.
-
-🆕 **Cartão de crédito, revisado:**
-
-- Juros compostos agressivos sobre saldo não pago. ✅ Fechado em **10%
-  ao mês** (~213% ao ano composto).
-- Limite de crédito **não é fixo** — calculado a partir de uma
-  combinação de Carisma + renda declarada (histórico de salário do
-  jogador), não um valor arbitrário que o dono da Financeira escolhe
-
-⚠️ **Trava anti-exploit necessária** (você mesmo marcou isso): impedir
-que o dono abra uma Financeira, capte depósitos, e falência
-"proposital" vire lucro líquido descontando os 30%. A reserva
-obrigatória + rating público + intervenção do governo acima já ajudam
-bastante nisso, mas vale revisar de novo quando formos implementar.
-
-### 2.9 Produção passa a ser dos funcionários, não só do dono ⚠️ **mudança grande**
-
-Hoje no código, só o **dono** clica em "produzir"/"fabricar" (simplificação
-que eu tinha assumido). Pelo que você descreveu agora: **cada funcionário
-que clica em "trabalhar" contribui pro progresso da produção** — ou
-seja, produção vira um acúmulo coletivo dos funcionários trabalhando, não
-uma ação isolada do dono. Isso é uma mudança de mecânica, não só de
-número — precisa redesenhar a view de produzir/fabricar.
-
-### 2.10 Estrelas ✅ (mantém)
-
-Sem mudança na tabela de estrelas/cargos máximos/custo de upar que já
-tínhamos. Construtora continua com a exceção de upar por obras
-concluídas, não por essa tabela padrão.
-
-### 2.11 Especialização de funcionário ✅ (implementado)
-
-Um funcionário pode virar especialista num produto específico (ex:
-"especialista em café"), produzindo mais daquele item do que o normal
-da skill dele sozinha explicaria. Proposta: um registro separado
-(`EspecializacaoDoFuncionario`: usuário, produto, nível), que sobe
-conforme o funcionário produz aquele item especificamente — quanto mais
-vezes ele trabalha *nesse produto*, maior o bônus só *nele*, sem
-beneficiar os outros produtos da mesma empresa.
-
-```
-bônus_de_especialização = 1 + (nível_de_especialização / 100) × 0.5
-```
-
-Máximo de +50% de produção adicional pra quem virou especialista de
-verdade — some tudo com a mecânica de diminishing returns geral (seção 1.4).
-
-### 2.12 Qualidade afeta preço e preferência do consumidor ✅ (preço implementado; efeito ao consumir, não)
-
-Hoje o preço de um produto é fixo (`preco_base`), igual pra qualquer
-empresa que vende. Proposta: a estrela de quem produziu afeta tanto o
-preço quanto o efeito do produto — um Pão de padaria 5★ não é só "mais
-caro", ele **nutre/dá buff visivelmente mais** que o de uma padaria 1★.
-
-```
-preço efetivo = preco_base × (1 + (estrela − 1) × 0.15)
-efeito efetivo (nutrição/buff) = efeito_base × (1 + (estrela − 1) × 0.2)
-```
-
-Isso cria de verdade um mercado de "básico barato" vs "premium caro",
-em vez de todo produto igual ter preço fixo. Preferência do consumidor
-(NPC ou jogador escolhendo onde comprar) fica pra depois — pressupõe
-que exista uma listagem comparável no Mercado, o que já temos.
+> **Status:** REVIEW
+>
+> Este documento define o funcionamento atual do sistema de empresas,
+> consolidando as decisões de design já tomadas.
+>
+> O documento ainda não é FINAL — BOT TEST porque algumas partes, especialmente
+> Financeira e Transporte, ainda precisam de revisão e algumas variáveis de
+> balanceamento serão definidas posteriormente através dos bots.
 
 ---
 
+## 1. Visão geral
+
+Empresas são uma das principais estruturas econômicas de Polis.
+
+A economia é formada principalmente por empresas controladas por jogadores,
+com funções diferentes dentro da cadeia produtiva.
+
+Os principais tipos de empresa são:
+
+- Varejo
+- Serviços
+- Matriz
+- Construtora
+- Industrial
+- Financeira
+
+Financeira é uma especialização de Serviços.
+
+A localização da empresa é relevante para algumas regras e, no caso das
+Matrizes, determina a categoria de recurso que pode ser explorada.
 
 ---
 
-## Correções de hoje
+# 2. Tipos de empresa
 
-### Fundar empresa tem custo, escalado por tipo
+## 2.1 Matriz
 
-Fundar é objetivo de fim de jogo, não algo trivial. Proposta de custo:
+A Matriz é a porta de entrada da cadeia produtiva.
 
-| Tipo | Custo |
-|---|---|
-| Varejo | R$ 15.000 |
-| Serviços (Transporte/Publicidade/Lazer) | R$ 25.000 |
-| Matriz | R$ 40.000 |
-| Construtora | R$ 60.000 |
-| Industrial | R$ 80.000 |
-| Serviços (Financeira) | R$ 100.000 |
+Sua função principal é extrair matérias-primas diretamente do ambiente.
 
-Depois, diploma de **Administração Empresarial** também vira
-pré-requisito — mas só entra quando Escola/Universidade existirem de
-verdade (03-escolas.md).
+A Matriz:
 
-### Cargo "Dono" automático
+- não precisa consumir matéria-prima para produzir;
+- consome apenas materiais operacionais necessários à atividade;
+- possui margens menores que empresas posteriores da cadeia;
+- vende as matérias-primas para empresas que realmente possam consumi-las.
 
-Ao fundar, cria um `Cargo` "Dono" com o fundador como ocupante e
-salário definido por ele mesmo. Dono passa a clicar "trabalhar no
-emprego" igual funcionário comum pra receber.
+A categoria da Matriz é determinada pelo tipo de terreno em que ela está
+localizada.
 
-Um jogador pode ser dono de uma empresa **e** funcionário contratado
-de outra ao mesmo tempo — o cargo "Dono" da própria empresa não conta
-pro limite de "só um cargo contratado por vez".
+Exemplos conceituais:
 
-### Produção: só o dono escolhe o quê
+Terreno Agro
+→ Matriz Agro
+Terreno Mineral
+→ Matriz Mineral
 
-Funcionário não escolhe mais o produto ao clicar produzir/fabricar —
-só o dono define "o que a empresa está produzindo agora"; funcionário
-só contribui clicando.
+O terreno define a categoria macro da Matriz.
 
-### Especialização mais lenta
+O proprietário escolhe qual produto produzir dentro daquela categoria, desde
+que possua uma receita/produção válida para isso.
 
-`GANHO_DE_ESPECIALIZACAO_POR_ACAO` cai de 2 pra 1 (dobra o tempo até
-nível 100).
+Exemplo
 
-### Vagas de emprego (mural público)
+Uma Matriz Agro pode escolher entre diferentes produtos pertencentes à
+categoria Agro.
 
-Precisa de uma página listando todos os `Cargo` vagos de todas as
-empresas. Candidatura exige aprovação do dono (ou sócio, quando
-sociedade existir — 10-futuro.md).
+Ela não pode escolher livremente produtos fora da categoria determinada pelo
+terreno.
 
-⚠️ **Pendência aberta**: você mencionou a interface *atual* de
-Matriz/Industrial/Varejo como parte do que precisa arrumar — preciso
-que descreva especificamente o que parece faltando aí, porque no
-código essas 3 já têm estoque, compra entre empresas e venda desde a
-Fase 2.
+2.2 Industrial
+
+Indústrias transformam matérias-primas e produtos intermediários em outros
+produtos.
+
+Podem:
+
+comprar materiais operacionais;
+comprar matérias-primas de Matrizes;
+comprar produtos intermediários de outras Industriais;
+vender produtos para empresas que os utilizem;
+fornecer produtos ao Varejo quando esses produtos forem destinados ao
+consumidor final;
+fornecer produtos para outras empresas, incluindo Construtoras, quando
+houver consumo válido.
+
+A Industrial não possui acesso irrestrito ao catálogo.
+
+Sua capacidade de compra e venda depende das receitas e operações que a empresa
+possui.
+
+2.3 Varejo
+
+O Varejo é a etapa final da cadeia empresarial antes do consumidor.
+
+Sua função é:
+
+comprar produtos
+↓
+disponibilizá-los ao consumidor
+
+Um Varejo não pode comprar qualquer produto.
+
+Ele só pode comprar produtos compatíveis com sua atividade e seu catálogo de
+venda.
+
+Exemplo
+
+Um Varejo especializado em automóveis não pode comprar móveis.
+
+Um Varejo especializado em móveis não pode comprar automóveis sem possuir uma
+atividade/receita que permita isso.
+
+2.4 Serviços
+
+Empresas de Serviços fornecem atividades diretamente para jogadores ou outras
+entidades.
+
+As categorias inicialmente planejadas incluem:
+
+Transporte
+Publicidade
+Lazer
+
+Financeira é tratada como uma especialização específica de Serviços.
+
+As regras detalhadas de cada serviço serão definidas nos sistemas
+correspondentes.
+
+2.5 Construtora
+
+A Construtora transforma insumos da cadeia industrial em imóveis prontos.
+
+O processo conceitual é:
+
+Materiais de Construção
++
+Acabamentos
+↓
+Imóvel
+
+Construtoras não utilizam Móveis como insumo de construção.
+
+Móveis são produtos separados, utilizados posteriormente pelo jogador para
+mobiliar e melhorar sua residência.
+
+2.6 Financeira
+
+Financeira é uma especialização de Serviços e representa uma empresa de
+endgame.
+
+Pode fornecer:
+
+depósitos/poupança;
+empréstimos;
+cartões de crédito;
+transferências;
+outros produtos financeiros.
+
+O sistema financeiro possui regras próprias de:
+
+reserva obrigatória;
+rating;
+juros;
+falência;
+intervenção.
+
+A definição completa da Financeira ainda está em REVIEW.
+
+3. Cadeia econômica
+
+A economia deve incentivar especialização e interdependência entre empresas.
+
+Estrutura conceitual:
+
+Matriz
+↓
+Industrial
+↓
+Industrial / Varejo / Construtora / outras empresas consumidoras
+↓
+Jogador
+
+Nem todas as cadeias passam por todas as etapas.
+
+Uma matéria-prima pode ser transformada várias vezes antes de chegar ao
+consumidor.
+
+A existência de múltiplas empresas produzindo o mesmo produto é desejável,
+pois cria:
+
+concorrência;
+escassez;
+variações de preço;
+arbitragem;
+oportunidades para novos empresários;
+pressão econômica e política.
+
+Uma economia em que uma empresa consegue produzir praticamente tudo deve ser
+evitada.
+
+4. Permissões de compra e venda
+
+A regra central do comércio empresarial é:
+
+Produto
+↓
+usos permitidos
+↓
+empresas capazes de consumi-lo
+
+Uma empresa só pode comprar um produto se esse produto for uma entrada válida
+para alguma operação, atividade ou receita daquela empresa.
+
+Da mesma forma, uma empresa só pode vender um produto para empresas que tenham
+um uso válido para ele.
+
+A permissão comercial deve ser derivada do catálogo de produtos e receitas,
+evitando listas independentes e duplicadas de permissões.
+
+Exemplos
+
+Se Ferro for utilizado em uma receita de produção de Aço:
+
+Matriz de Ferro
+→ pode vender Ferro
+→ Industrial que produz Aço pode comprar Ferro
+
+Uma empresa que não possua qualquer uso válido para Ferro não pode comprá-lo.
+
+Se uma Industrial produz um produto que é consumido por uma Construtora:
+
+Industrial
+→ pode vender o produto
+→ Construtora pode comprar
+
+O mesmo princípio se aplica ao Varejo.
+
+Um Varejo só pode comprar produtos que sejam compatíveis com sua atividade.
+
+5. Produção
+5.1 Um produto por vez
+
+Cada empresa produtiva trabalha com um único produto de produção por vez.
+
+Isso vale principalmente para Matriz e Industrial.
+
+O objetivo é estimular:
+
+especialização;
+concorrência;
+criação de múltiplas empresas;
+dependência econômica;
+decisões estratégicas de produção.
+
+Uma empresa não deve funcionar como uma fábrica universal capaz de produzir
+diversos produtos simultaneamente.
+
+5.2 Seleção do produto
+
+O proprietário da empresa escolhe qual produto a empresa está produzindo.
+
+A seleção deve respeitar:
+
+tipo da empresa;
+categoria;
+terreno, quando aplicável;
+receitas disponíveis;
+requisitos de estrelas;
+demais restrições da empresa.
+
+Funcionários não escolhem o produto.
+
+5.3 Mudança de produção
+
+A troca do produto produzido possui três formas de fricção:
+
+troca de produto
++
+custo fixo
++
+tempo de setup
++
+cooldown longo
+
+Durante o setup:
+
+a empresa fica fora de operação;
+nenhum funcionário pode trabalhar;
+a empresa não produz.
+
+O cooldown entre alterações de produção deve ser de aproximadamente 1 semana.
+
+O valor exato e a duração exata do setup serão definidos posteriormente
+através de balanceamento.
+
+O estoque existente não é destruído quando a empresa muda de produção.
+
+6. Trabalho dos funcionários
+
+A produção empresarial é baseada na contribuição dos funcionários.
+
+O proprietário define a atividade/produto da empresa.
+
+O funcionário decide quanto de sua energia deseja gastar trabalhando.
+
+Conceitualmente:
+
+energia gasta
+↓
+trabalho realizado
+↓
+produção gerada
++
+ganho de skill
+
+Quanto mais energia o funcionário utiliza:
+
+maior a produção gerada;
+maior o ganho de skill;
+maior a contribuição para a empresa.
+
+A quantidade exata produzida por unidade de energia será parametrizada para
+balanceamento posterior.
+
+7. Relação entre funcionário e proprietário
+
+O sistema deve permitir que o proprietário da empresa estabeleça padrões de
+trabalho e recompense ou puna funcionários conforme sua atuação.
+
+O proprietário pode, de acordo com as regras do sistema:
+
+definir expectativas mínimas;
+definir salário;
+promover;
+conceder bônus;
+demitir.
+
+O funcionário, por sua vez:
+
+escolhe quanto trabalhar;
+decide se permanece na empresa;
+pode procurar outro emprego;
+pode buscar empresas que valorizem melhor sua contribuição.
+
+A relação deve funcionar como uma relação de trabalho emergente, em que a
+empresa e o funcionário possuem interesses parcialmente alinhados, mas não
+necessariamente idênticos.
+
+8. Cargo Dono
+
+Ao fundar uma empresa, o fundador recebe automaticamente o cargo de Dono.
+
+O cargo Dono não conta para o limite normal de um único emprego contratado.
+
+Assim:
+
+Dono da Empresa A
++
+Funcionário da Empresa B
+
+é permitido.
+
+O fundador define o salário associado ao cargo Dono.
+
+9. Especialização dos funcionários
+
+Funcionários desenvolvem especialização conforme trabalham em determinada área
+ou produto.
+
+A especialização melhora a eficiência do funcionário naquela atividade.
+
+A especialização não é totalmente permanente.
+
+Decaimento
+
+Quando uma especialização deixa de ser utilizada:
+
+especialização
+↓
+decai lentamente ao longo do tempo
+
+A decadência deve ocorrer em ritmo diário baixo.
+
+A especialização nunca deve cair abaixo de 50% do maior valor já atingido
+naquela especialização.
+
+Recuperação
+
+Quando o jogador volta a trabalhar em uma área antiga, sua especialização se
+recupera mais rapidamente.
+
+A velocidade de recuperação será aproximadamente:
+
+1.5× a velocidade normal
+
+Os valores exatos de decadência e recuperação serão balanceados posteriormente
+com bots.
+
+O histórico de especialização deve continuar existindo para que experiência
+anterior tenha valor mesmo depois de uma mudança de carreira.
+
+10. Produção e funcionários de suporte
+
+Nem todo funcionário precisa gerar produção diretamente.
+
+Existem funções de suporte que aumentam a eficiência da operação.
+
+Os exemplos atualmente considerados incluem:
+
+10.1 Engenheiro
+
+Cada trabalho realizado pelo Engenheiro aumenta a eficiência dos demais
+funcionários da empresa em uma pequena porcentagem.
+
+O efeito deve ser limitado pela energia disponível para o Engenheiro.
+
+Conceitualmente:
+
+energia do Engenheiro
+↓
+trabalhos realizados
+↓
+bônus de eficiência dos funcionários
+
+O bônus exato por trabalho ainda será balanceado.
+
+10.2 Advogado
+
+Cada trabalho realizado pelo Advogado reduz a chance de os funcionários da
+empresa sofrerem burnout.
+
+O efeito também é limitado pela energia disponível para o Advogado.
+
+Conceitualmente:
+
+energia do Advogado
+↓
+trabalhos realizados
+↓
+menor risco de burnout
+
+O valor exato da redução será balanceado posteriormente.
+
+Outros cargos de suporte poderão ser adicionados futuramente quando houver
+justificativa de design.
+
+11. Burnout
+
+Trabalhar repetidamente em grande intensidade deve possuir um custo.
+
+Cada trabalho consecutivo pode aumentar o risco de burnout.
+
+Conceitualmente:
+
+trabalho
+↓
+burnout aumenta
+↓
+trabalho consecutivo
+↓
+risco aumenta
+
+Ao atingir o limite de burnout:
+
+burnout máximo
+↓
+jogador fica temporariamente impedido de trabalhar
+
+O bloqueio dura um período definido pelo sistema.
+
+Algumas atividades de descanso ou recuperação podem reduzir burnout.
+
+Trabalhar mais deve continuar sendo vantajoso, mas deve criar um risco
+crescente de exaustão.
+
+O sistema deve permitir escolhas como:
+
+trabalhar muito
+→ maior produção
+→ maior ganho de skill
+→ maior risco de burnout
+
+Os números exatos serão definidos durante o balanceamento.
+
+12. Operacionais
+
+Algumas empresas consomem produtos operacionais de forma recorrente.
+
+Esses produtos não representam necessariamente matéria-prima da principal
+produção.
+
+Exemplos de consumidores incluem:
+
+Escolas;
+Hospitais;
+Matrizes;
+Industriais;
+Varejos;
+Serviços.
+
+A frequência de consumo pode variar conforme o tipo de produto e atividade.
+
+Produtos que representam equipamentos de longa duração não devem ser tratados
+automaticamente como consumíveis de cada trabalho.
+
+A frequência de consumo deverá ser definida por produto/operação.
+
+13. Qualidade e estrelas
+
+Empresas possuem nível de qualidade representado por estrelas.
+
+As estrelas influenciam o potencial econômico da empresa.
+
+Entre os efeitos previstos estão:
+
+acesso a receitas;
+acesso a produtos mais complexos;
+qualidade da produção;
+capacidade de disputar determinados mercados;
+valor/preço percebido.
+
+Empresas com maior estrela podem acessar receitas mais avançadas.
+
+A relação exata entre estrelas, qualidade e preços ainda será balanceada.
+
+14. Qualidade do produto e preço
+
+A qualidade de um produto pode influenciar seu preço.
+
+Conceitualmente:
+
+qualidade maior
+→ maior valor percebido
+→ preço potencialmente maior
+
+Produtos podem possuir qualidade diferente dependendo da empresa e do processo
+de produção.
+
+Os multiplicadores exatos serão definidos através do balanceamento com bots.
+
+15. Vagas de emprego
+
+Deve existir um mural público de vagas.
+
+O jogador pode visualizar cargos vagos disponíveis.
+
+A candidatura ocorre através do mural.
+
+A contratação depende da aprovação do proprietário ou de uma futura estrutura
+de administração da empresa.
+
+O sistema deve substituir o modelo em que o proprietário simplesmente informa o
+nome de qualquer jogador para contratá-lo.
+
+16. Varejo e disponibilidade
+
+O Varejo deve funcionar como uma etapa real da cadeia econômica.
+
+A existência de um produto no mundo não significa que ele esteja
+automaticamente disponível para qualquer jogador.
+
+O produto precisa:
+
+ser produzido
+→ chegar ao Varejo apropriado
+→ possuir disponibilidade operacional
+→ ser vendido ao consumidor
+
+O objetivo é permitir:
+
+escassez;
+variações de preço;
+diferenças regionais;
+oportunidades de mercado.
+
+A economia normal deve ser composta por empresas controladas por jogadores.
+
+17. Sistema de segurança para necessidades básicas
+
+A economia deve continuar essencialmente baseada em jogadores.
+
+Entretanto, o sistema pode possuir mecanismos mínimos de segurança para impedir
+que um bairro completamente abandonado torne o jogo impraticável.
+
+Exemplo:
+
+bairro sem empresas de alimentação
+↓
+serviço emergencial controlado pelo sistema
+↓
+alimento disponível
+↓
+QoL pior
+
+Esse mecanismo não deve funcionar como uma empresa NPC normal nem competir
+economicamente com jogadores.
+
+Ele existe apenas como fallback para necessidades básicas.
+
+18. Construtora
+
+A Construtora utiliza produtos industriais como insumos.
+
+A receita base atualmente prevista é:
+
+Materiais de Construção
++
+Acabamentos
+→ Imóvel
+Acabamentos
+
+Acabamentos são um produto industrial separado de Móveis.
+
+Receita:
+
+Tábuas
++
+Vidro
+→ Acabamentos
+
+Acabamentos são utilizados na construção dos imóveis.
+
+Móveis
+
+Móveis continuam sendo produtos separados.
+
+Eles não são necessários para que a Construtora conclua a construção de um
+imóvel.
+
+Podem posteriormente ser adquiridos pelo jogador para melhorar sua residência.
+
+19. Transporte
+
+O sistema de Transporte existe principalmente para influenciar a relação
+entre geografia, trabalho e vida cotidiana.
+
+A filosofia atual é:
+
+início
+→ jogador vive principalmente no próprio bairro
+
+progressão
+→ jogador amplia seu alcance para outras regiões
+
+Transporte deve incentivar o jogador a encontrar emprego e atividades perto
+de onde mora, sem impedir completamente deslocamentos maiores.
+
+Sair do bairro deve ser possível, mas idealmente representa uma expansão gradual
+do horizonte do jogador.
+
+O sistema atual de Transporte está considerado insatisfatório e será
+redesenhado antes da implementação definitiva.
+
+20. Financeira
+
+Financeira é considerada uma empresa de endgame e deve possuir profundidade
+significativamente maior que os demais tipos de empresa.
+
+Os sistemas previstos incluem:
+
+depósitos;
+empréstimos;
+cartão de crédito;
+transferências;
+reserva obrigatória;
+rating de solvência;
+juros;
+falência;
+recuperação;
+intervenção.
+
+A complexidade desse sistema é intencional.
+
+20.1 Falência
+
+A falência não deve funcionar como reset econômico.
+
+Ao entrar em recuperação:
+
+a dívida continua existindo;
+parte da renda futura pode ser automaticamente destinada ao pagamento;
+o jogador pode realizar pagamentos adicionais;
+o jogador não pode fundar novas empresas enquanto a dívida estiver pendente;
+o acesso a crédito é restringido;
+o acesso a determinados cargos políticos é restringido.
+
+A porcentagem da renda destinada ao pagamento será definida posteriormente.
+
+20.2 Fraude
+
+O sistema deve considerar explicitamente a possibilidade de um jogador tentar
+utilizar uma Financeira de maneira fraudulenta.
+
+Fraude pode gerar consequências como:
+
+perda de reputação;
+deterioração do rating;
+restrição de acesso a crédito;
+restrição de criação de empresas;
+consequências políticas;
+outras punições futuras.
+
+O sistema precisa impedir que captar depósitos e quebrar deliberadamente seja
+uma estratégia economicamente ótima.
+
+20.3 Rating
+
+Financeiras devem possuir informação pública sobre sua saúde financeira.
+
+O rating deve ser influenciado por fatores como:
+
+solvência;
+histórico;
+obrigações;
+comportamento financeiro.
+
+A fórmula definitiva do rating ainda será detalhada.
+
+21. Fundação de empresas
+
+Fundar uma empresa possui custo financeiro.
+
+Custos atuais:
+
+Tipo	Custo
+Varejo	R$15.000
+Serviços	R$25.000
+Matriz	R$40.000
+Construtora	R$60.000
+Industrial	R$80.000
+Financeira	R$100.000
+
+Fundar empresas deve representar uma conquista econômica significativa.
+
+A Fundação é considerada uma das formas de progressão de longo prazo.
+
+A criação de determinadas empresas pode futuramente depender de requisitos
+adicionais, como diplomas.
+
+22. Produtos, receitas e especializações
+
+O sistema deve tratar produtos e receitas como dados centrais do jogo.
+
+Uma receita define, entre outras coisas:
+
+entradas;
+produto produzido;
+requisitos;
+estrelas mínimas;
+tipo de empresa permitido;
+categoria de operação.
+
+Essas informações devem ser utilizadas para validar automaticamente:
+
+compra;
+venda;
+produção;
+elegibilidade da empresa.
+
+O sistema deve evitar regras duplicadas espalhadas pelas diferentes views.
+
+23. Princípios econômicos
+
+O sistema de empresas deve favorecer:
+
+especialização;
+concorrência;
+escassez;
+interdependência;
+formação de cadeias produtivas;
+mercados regionais;
+entrada de novos jogadores;
+decisões empresariais.
+
+Um jogador não deve conseguir transformar uma única empresa em uma solução
+universal para toda a economia.
+
+Ao mesmo tempo, a economia não deve depender de uma única empresa ou jogador
+para manter necessidades essenciais funcionando.
+
+24. Balanceamento
+
+Os seguintes elementos devem ser parametrizados e considerados candidatos a
+balanceamento através de bots:
+
+produção por unidade de energia;
+impacto de skill na produção;
+diminishing returns;
+bônus do Engenheiro;
+redução de burnout do Advogado;
+especialização;
+decadência da especialização;
+recuperação da especialização;
+cooldown de troca de produção;
+tempo de setup;
+custo de setup;
+impacto de estrelas;
+preço relacionado à qualidade;
+consumo operacional;
+retenção de renda para recuperação de dívida;
+juros;
+rating;
+limites financeiros.
+
+O objetivo desta etapa não é encontrar os números perfeitos, mas construir um
+sistema internamente consistente e fácil de ajustar.
+
+25. Questões em aberto
+
+As seguintes decisões continuam em REVIEW:
+
+Regras detalhadas de compra e venda por categoria de empresa.
+Valores exatos de produção por energia.
+Fórmula final do bônus do Engenheiro.
+Fórmula final do efeito do Advogado.
+Frequência de consumo dos produtos operacionais.
+Valor exato do cooldown e setup de produção.
+Sistema completo de Transporte.
+Detalhes completos da Financeira.
+Fórmula e consequências finais de rating.
+Sistema completo contra fraude.
+Regras detalhadas de qualidade e estrelas.
+Valores de balanceamento em geral.
+26. Fora do escopo deste documento
+
+Este documento não define detalhadamente:
+
+educação;
+geografia e lotes;
+imóveis;
+população;
+política;
+leis;
+sistema completo de transporte;
+atividades gerais do jogador.
+
+Esses sistemas possuem documentação própria.
+
+Quando uma empresa depender deles, este documento deve definir apenas a
+interface entre os sistemas, deixando a implementação específica para o
+documento responsável.
+
+
+### Uma mudança importante que fiz
+
+Eu **não coloquei `Financeira` como "praticamente pronta"**, mesmo que boa parte já exista no código. Para o nosso propósito de `FINAL — BOT TEST`, o design financeiro ainda está longe de fechado. Assim evitamos que o Claude leia algo existente no código e assuma que já é a regra definitiva.
+
+Também deixei **Transporte explicitamente em REVIEW**, em vez de fingir que a versão atual está pronta.
+
+E mantive os números que já decidimos, mas marquei como **balanceáveis** onde ainda não temos certeza.
+
+Eu salvaria essa versão como está em `design/02-empresas.md` e manteria:
+
+> **Status: REVIEW**
+
