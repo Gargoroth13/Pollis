@@ -33,18 +33,21 @@ economia e (em fases futuras) da política. Design completo em `design/`.
   bloqueio em `TASK.md` e parar — não expandir escopo sozinho
 - `design/` é a fonte de verdade do design — ler só o arquivo relevante
   pra cada task, não o diretório inteiro
+- Um agente implementa a task em Current (`TASK.md` + `TASK_QUEUE.md`).
+  Não trabalhar em paralelo na mesma task. Revisar o trabalho de outro
+  agente é permitido; sobrescrever não.
 
 ## Testes
-- Toda mudança de comportamento precisa de smoke test real via Django
-  test Client antes de considerar a task concluída — "parece certo" não
-  é suficiente
-- Script de teste é temporário (`python manage.py shell < smoke_test.py`),
-  apagado depois — não commitar teste solto na raiz
+- Toda mudança de comportamento precisa de teste real via Django test
+  Client antes de considerar a task concluída — "parece certo" não é
+  suficiente
+- Preferir TestCase persistente em `*/tests.py` do app. Não commitar
+  `smoke_test.py` (nem outro script solto) na raiz
 
 ## Git
 - Puxar o repositório (clone ou pull) antes de editar
-- **Sempre checar `TASK.md` primeiro** — pode haver outra sessão/agente
-  trabalhando no mesmo repositório
+- **Sempre checar `TASK.md` e `TASK_QUEUE.md` primeiro** — pode haver
+  outra sessão/agente trabalhando no mesmo repositório
 - Um commit por task concluída — nunca misturar tasks diferentes
 - Revisar `git status --short` e o diff antes de commitar
 - Push só depois de testado
@@ -52,5 +55,6 @@ economia e (em fases futuras) da política. Design completo em `design/`.
 
 ## Onde encontrar o quê
 - Task atual, escopo e critério de conclusão → `TASK.md`
+- Fila ordenada de tasks (próximas / futuras / bloqueadas) → `TASK_QUEUE.md`
 - Histórico de decisões técnicas relevantes → `CHANGELOG_DEV.md`
 - Regras e números do design do jogo → `design/`
