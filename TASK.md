@@ -30,7 +30,8 @@ seção "Correções de hoje"). Custo por tipo já definido:
 ## O que já foi feito
 Nada commitado ainda. Uma sessão anterior chegou a rascunhar o
 dicionário de custo localmente, mas não foi testado nem commitado —
-esta task começa do zero, a partir do commit `4f0f07b`.
+esta task começa do zero, a partir do commit `4f0f07b` (HEAD de lógica;
+docs de workflow depois disso não mexem em `criar_empresa`).
 
 ## O que falta
 - [ ] Adicionar `CUSTO_DE_FUNDACAO_POR_TIPO` e `custo_de_fundacao()` em `empresas/models.py`
@@ -42,19 +43,16 @@ esta task começa do zero, a partir do commit `4f0f07b`.
 
 ## Restrições
 - Não mexer em cargo "Dono" automático, produção centralizada, nem
-  especialização de funcionário — são as próximas 3 tasks, cada uma no
-  seu próprio commit (ver ordem abaixo)
+  especialização de funcionário
 - Não mexer em diploma de Administração Empresarial — depende de Escola,
   que ainda não existe
+- Não implementar caixa da empresa nesta task (Task 002 da fila)
 
 ## Critérios de conclusão
 - Custo descontado corretamente por tipo, testado via Django test Client
 - `git status` limpo depois do commit (só arquivos desta task)
 
-## Próximas tasks (ordem de referência, não iniciar ainda)
-1. **(esta)** Custo de fundação por tipo
-2. Criação automática do cargo "Dono" ao fundar (com exceção no limite
-   de 1 cargo, pra permitir emprego em outra empresa)
-3. Produção centralizada: só o dono escolhe o que a empresa produz;
-   funcionário só clica pra contribuir
-4. Especialização de funcionário mais lenta (ganho por ação: 2 → 1)
+## Fila
+Próximas tasks, bloqueios e a ordem recomendada (incluindo a inserção
+de tesouraria da empresa **antes** do cargo Dono) estão em `TASK_QUEUE.md`.
+Não iniciar a próxima enquanto esta não estiver commitada.
