@@ -197,7 +197,7 @@ sistema de Empresas.
 
 7. Burnout
 
-Trabalhar repetidamente em alta intensidade aumenta o risco de burnout.
+Trabalhar ou estudar repetidamente em alta intensidade aumenta o risco de burnout.
 
 Conceitualmente:
 
@@ -234,6 +234,8 @@ burnout.
 
 A existência e magnitude do efeito de cada atividade serão definidas
 posteriormente.
+
+Estudar gera consideravelmente menos burnout do que trabalhar
 
 8. Estudo
 
