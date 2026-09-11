@@ -1,36 +1,43 @@
 # 02 — Empresas
 
-> **Status:** REVIEW
+> **Status:** FINAL — BOT TEST
 >
-> Este documento define o funcionamento atual do sistema de empresas,
-> consolidando as decisões de design já tomadas.
+> Este documento define o funcionamento do sistema de empresas para a primeira
+> versão destinada aos testes com bots.
 >
-> O documento ainda não é FINAL — BOT TEST porque algumas partes, especialmente
-> Financeira e Transporte, ainda precisam de revisão e algumas variáveis de
-> balanceamento serão definidas posteriormente através dos bots.
+> Regras de balanceamento e parâmetros numéricos que não afetam a estrutura
+> do sistema podem ser ajustados após os testes sem alterar o design.
 
 ---
 
-## 1. Visão geral
+# 1. Visão geral
 
 Empresas são uma das principais estruturas econômicas de Polis.
 
 A economia é formada principalmente por empresas controladas por jogadores,
-com funções diferentes dentro da cadeia produtiva.
+com diferentes funções dentro da cadeia produtiva.
 
 Os principais tipos de empresa são:
 
 - Varejo
 - Serviços
 - Matriz
-- Construtora
 - Industrial
+- Construtora
 - Financeira
 
 Financeira é uma especialização de Serviços.
 
-A localização da empresa é relevante para algumas regras e, no caso das
-Matrizes, determina a categoria de recurso que pode ser explorada.
+Cada empresa possui:
+
+- proprietário;
+- funcionários;
+- cargos;
+- qualidade/estrelas;
+- estoque, quando aplicável;
+- operações determinadas por seu tipo;
+- localização;
+- regras específicas de compra, produção ou venda.
 
 ---
 
@@ -40,152 +47,148 @@ Matrizes, determina a categoria de recurso que pode ser explorada.
 
 A Matriz é a porta de entrada da cadeia produtiva.
 
-Sua função principal é extrair matérias-primas diretamente do ambiente.
+Sua função principal é extrair matérias-primas sem consumir outras matérias-primas
+como insumo de produção.
 
 A Matriz:
 
-- não precisa consumir matéria-prima para produzir;
-- consome apenas materiais operacionais necessários à atividade;
-- possui margens menores que empresas posteriores da cadeia;
-- vende as matérias-primas para empresas que realmente possam consumi-las.
+- consome materiais operacionais;
+- não precisa consumir matérias-primas para produzir;
+- possui margens menores;
+- fornece matérias-primas para empresas que realmente as utilizam.
 
 A categoria da Matriz é determinada pelo tipo de terreno em que ela está
 localizada.
 
-Exemplos conceituais:
+O terreno define uma categoria macro de produção.
+
+Exemplo:
 
 Terreno Agro
 → Matriz Agro
-Terreno Mineral
-→ Matriz Mineral
 
-O terreno define a categoria macro da Matriz.
+O proprietário pode escolher qual produto produzir dentro da categoria
+permitida pelo terreno.
 
-O proprietário escolhe qual produto produzir dentro daquela categoria, desde
-que possua uma receita/produção válida para isso.
+A Matriz não pode produzir produtos fora dessa categoria.
 
-Exemplo
-
-Uma Matriz Agro pode escolher entre diferentes produtos pertencentes à
-categoria Agro.
-
-Ela não pode escolher livremente produtos fora da categoria determinada pelo
-terreno.
+A lista de categorias, produtos e receitas é definida em
+22 — Receitas-Produção.
 
 2.2 Industrial
 
-Indústrias transformam matérias-primas e produtos intermediários em outros
-produtos.
+A Industrial transforma matérias-primas e produtos intermediários.
 
-Podem:
+Uma Industrial pode:
 
 comprar materiais operacionais;
-comprar matérias-primas de Matrizes;
-comprar produtos intermediários de outras Industriais;
-vender produtos para empresas que os utilizem;
-fornecer produtos ao Varejo quando esses produtos forem destinados ao
-consumidor final;
-fornecer produtos para outras empresas, incluindo Construtoras, quando
-houver consumo válido.
+comprar produtos de Matrizes;
+comprar produtos de outras Industriais;
+vender produtos para outras empresas consumidoras;
+fornecer produtos para Varejos;
+fornecer produtos para Construtoras;
+realizar outras operações previstas nas receitas.
 
-A Industrial não possui acesso irrestrito ao catálogo.
+Uma Industrial não pode comprar ou vender qualquer produto arbitrariamente.
 
-Sua capacidade de compra e venda depende das receitas e operações que a empresa
-possui.
+As operações válidas são determinadas pelas receitas e usos definidos no
+catálogo de Produtos e Receitas.
 
 2.3 Varejo
 
-O Varejo é a etapa final da cadeia empresarial antes do consumidor.
+O Varejo é a principal etapa empresarial de venda ao consumidor final.
 
-Sua função é:
+O Varejo:
 
-comprar produtos
-↓
-disponibilizá-los ao consumidor
+compra produtos de empresas produtoras;
+mantém estoque;
+disponibiliza produtos aos jogadores;
+possui capacidade diária de venda determinada pelos funcionários.
 
-Um Varejo não pode comprar qualquer produto.
+O Varejo não pode comprar qualquer produto.
 
-Ele só pode comprar produtos compatíveis com sua atividade e seu catálogo de
-venda.
+A empresa só pode comercializar produtos compatíveis com sua atividade e suas
+receitas.
 
-Exemplo
+Exemplo:
 
-Um Varejo especializado em automóveis não pode comprar móveis.
+Varejo de automóveis
+→ pode comprar automóveis
 
-Um Varejo especializado em móveis não pode comprar automóveis sem possuir uma
-atividade/receita que permita isso.
-
-### Consumo operacional (mecânica nova) 🤝
-
-Empresas e instituições agora **consomem** produtos continuamente pra
-funcionar, não só o jogador:
-
-| Quem consome | Consome |
-|---|---|
-| Escolas/Universidades | Uniformes + Materiais escolares |
-| Hospitais | Uniformes + Materiais hospitalares |
-| Matriz e Industrial | EPIs + Uniformes (gasto por funcionário a cada trabalho) |
-| Varejo e Serviços | Uniformes |
-
+Varejo de automóveis
+→ não pode comprar móveis
 2.4 Serviços
 
-Empresas de Serviços fornecem atividades diretamente para jogadores ou outras
-entidades.
+Serviços fornece atividades diretamente para jogadores ou outras entidades.
 
-As categorias inicialmente planejadas incluem:
+As principais especializações previstas são:
 
-Transporte
-Publicidade
-Lazer
+Transporte;
+Lazer;
+Publicidade.
 
-Financeira é tratada como uma especialização específica de Serviços.
-
-As regras detalhadas de cada serviço serão definidas nos sistemas
+A lógica detalhada de cada especialização é definida pelos sistemas
 correspondentes.
+
+Financeira é uma especialização de Serviços.
 
 2.5 Construtora
 
-A Construtora transforma insumos da cadeia industrial em imóveis prontos.
+A Construtora transforma insumos da cadeia industrial em imóveis.
 
-O processo conceitual é:
+A Construtora trabalha com uma obra ativa por vez.
+
+Fluxo:
+
+Dono
+↓
+inicia obra
+↓
+obra = 0%
+↓
+funcionários trabalham
+↓
+progresso aumenta
+↓
+obra = 100%
+↓
+imóvel concluído
+↓
+nova obra pode ser iniciada
+
+Construtoras maiores não precisam de múltiplas obras simultâneas.
+
+Mais funcionários significam maior velocidade de conclusão e, portanto, maior
+quantidade de obras concluídas ao longo do tempo.
+
+A receita da construção é:
 
 Materiais de Construção
 +
 Acabamentos
-↓
-Imóvel
-
-Construtoras não utilizam Móveis como insumo de construção.
-
-Móveis são produtos separados, utilizados posteriormente pelo jogador para
-mobiliar e melhorar sua residência.
-
+→ Imóvel
 2.6 Financeira
 
-Financeira é uma especialização de Serviços e representa uma empresa de
-endgame.
+Financeira é uma especialização de Serviços e representa um sistema de
+empresa de endgame.
 
-Pode fornecer:
+Seu funcionamento detalhado não faz parte do escopo do Bot Test atual e será
+revisado separadamente.
 
-depósitos/poupança;
+Conceitos previstos para o futuro incluem:
+
 empréstimos;
-cartões de crédito;
-transferências;
-outros produtos financeiros.
-
-O sistema financeiro possui regras próprias de:
-
-reserva obrigatória;
+depósitos;
+cartões;
+ações;
+mercado financeiro;
 rating;
-juros;
 falência;
-intervenção.
-
-A definição completa da Financeira ainda está em REVIEW.
-
+intervenção;
+outros serviços financeiros.
 3. Cadeia econômica
 
-A economia deve incentivar especialização e interdependência entre empresas.
+A economia deve incentivar especialização e interdependência.
 
 Estrutura conceitual:
 
@@ -197,27 +200,29 @@ Industrial / Varejo / Construtora / outras empresas consumidoras
 ↓
 Jogador
 
-Nem todas as cadeias passam por todas as etapas.
+Nem todos os produtos percorrem todas essas etapas.
 
-Uma matéria-prima pode ser transformada várias vezes antes de chegar ao
-consumidor.
+Alguns produtos podem ser consumidos diretamente por empresas, enquanto outros
+chegam ao consumidor.
 
-A existência de múltiplas empresas produzindo o mesmo produto é desejável,
-pois cria:
+A economia deve permitir concorrência entre empresas que produzem o mesmo
+produto.
 
-concorrência;
-escassez;
-variações de preço;
-arbitragem;
-oportunidades para novos empresários;
-pressão econômica e política.
+Escassez deve ser uma característica desejável da economia:
 
-Uma economia em que uma empresa consegue produzir praticamente tudo deve ser
-evitada.
+escassez
+→ preço sobe
+→ oportunidade de produção
+→ empresas entram no mercado
+→ oferta aumenta
+→ preço tende a se ajustar
+
+A intenção é permitir que a própria economia gere pressão por decisões
+políticas, como impostos, incentivos e regulamentações.
 
 4. Permissões de compra e venda
 
-A regra central do comércio empresarial é:
+A regra central para o comércio é:
 
 Produto
 ↓
@@ -225,519 +230,399 @@ usos permitidos
 ↓
 empresas capazes de consumi-lo
 
-Uma empresa só pode comprar um produto se esse produto for uma entrada válida
-para alguma operação, atividade ou receita daquela empresa.
+Uma empresa só pode comprar um produto quando ele for uma entrada válida para
+uma receita ou operação disponível para aquela empresa.
 
-Da mesma forma, uma empresa só pode vender um produto para empresas que tenham
-um uso válido para ele.
+Uma empresa só pode vender um produto para uma entidade que possua uma receita,
+operação ou necessidade definida que consuma aquele produto.
 
-A permissão comercial deve ser derivada do catálogo de produtos e receitas,
-evitando listas independentes e duplicadas de permissões.
+As permissões devem ser derivadas das receitas e usos do catálogo, evitando
+listas independentes e duplicadas.
 
-Exemplos
+Exemplo:
 
-Se Ferro for utilizado em uma receita de produção de Aço:
+Ferro
+↓
+receita de Aço
+↓
+Industrial que produz Aço
 
-Matriz de Ferro
-→ pode vender Ferro
-→ Industrial que produz Aço pode comprar Ferro
+Essa Industrial pode comprar Ferro.
 
-Uma empresa que não possua qualquer uso válido para Ferro não pode comprá-lo.
-
-Se uma Industrial produz um produto que é consumido por uma Construtora:
-
-Industrial
-→ pode vender o produto
-→ Construtora pode comprar
+Uma empresa sem uso válido para Ferro não pode comprá-lo.
 
 O mesmo princípio se aplica ao Varejo.
-
-Um Varejo só pode comprar produtos que sejam compatíveis com sua atividade.
 
 5. Produção
 5.1 Um produto por vez
 
-Cada empresa produtiva trabalha com um único produto de produção por vez.
+Cada empresa produtiva possui apenas um produto em produção por vez.
 
-Isso vale principalmente para Matriz e Industrial.
+O proprietário escolhe o produto.
 
-O objetivo é estimular:
+Funcionários não escolhem o produto individualmente.
+
+Isso é intencional para incentivar:
 
 especialização;
 concorrência;
 criação de múltiplas empresas;
-dependência econômica;
+dependência entre produtores;
 decisões estratégicas de produção.
+5.2 Seleção de produção
 
-Uma empresa não deve funcionar como uma fábrica universal capaz de produzir
-diversos produtos simultaneamente.
-
-5.2 Seleção do produto
-
-O proprietário da empresa escolhe qual produto a empresa está produzindo.
-
-A seleção deve respeitar:
+A escolha do produto deve respeitar:
 
 tipo da empresa;
-categoria;
-terreno, quando aplicável;
+categoria da empresa;
+terreno, no caso de Matrizes;
 receitas disponíveis;
 requisitos de estrelas;
-demais restrições da empresa.
+demais regras do catálogo.
+5.3 Troca de produção
 
-Funcionários não escolhem o produto.
+Mudar o produto de produção possui três formas de fricção:
 
-5.3 Mudança de produção
-
-A troca do produto produzido possui três formas de fricção:
-
-troca de produto
-+
-custo fixo
-+
-tempo de setup
-+
-cooldown longo
+custo fixo;
+tempo de setup;
+cooldown.
 
 Durante o setup:
 
 a empresa fica fora de operação;
 nenhum funcionário pode trabalhar;
-a empresa não produz.
+a produção é interrompida.
 
-O cooldown entre alterações de produção deve ser de aproximadamente 1 semana.
+O cooldown entre mudanças deve ser aproximadamente de uma semana.
 
-O valor exato e a duração exata do setup serão definidos posteriormente
-através de balanceamento.
+O setup deve ser significativamente menor que o cooldown, funcionando como
+um período temporário de inatividade.
 
-O estoque existente não é destruído quando a empresa muda de produção.
+Os valores exatos de cooldown, setup e custo serão balanceados posteriormente.
 
 6. Trabalho dos funcionários
 
-A produção empresarial é baseada na contribuição dos funcionários.
+O trabalho é baseado em Energia.
 
-O proprietário define a atividade/produto da empresa.
-
-O funcionário decide quanto de sua energia deseja gastar trabalhando.
+A Energia utilizada para o trabalho determina a quantidade de trabalhos
+realizados.
 
 Conceitualmente:
 
-energia gasta
-↓
-trabalho realizado
-↓
-produção gerada
+Energia gasta
+→ 1 trabalho
+
+Um trabalho pode gerar diferentes quantidades de resultado dependendo da
+atividade.
+
+Para funções produtivas:
+
+produção por trabalho
+=
+f(skill, especialização)
+×
+eficiências adicionais
+
+O jogador pode gastar mais energia realizando mais trabalhos.
+
+Quanto mais trabalho realiza, maior tende a ser:
+
+sua produção;
+seu ganho de skill;
+sua contribuição para a empresa.
+
+Os valores exatos são parâmetros de balanceamento.
+
+7. Produção e skills
+
+A quantidade produzida por um trabalho depende da skill relevante e da
+especialização do funcionário.
+
+A estrutura deve permitir valores como:
+
+Skill 1
+Especialização 0
+→ aproximadamente 1 unidade por trabalho
+
+e:
+
+Skill maior
 +
-ganho de skill
+especialização maior
+→ maior produção por trabalho
 
-Quanto mais energia o funcionário utiliza:
+Os números acima são apenas exemplos conceituais.
 
-maior a produção gerada;
-maior o ganho de skill;
-maior a contribuição para a empresa.
+A fórmula definitiva deve ser parametrizada.
 
-A quantidade exata produzida por unidade de energia será parametrizada para
-balanceamento posterior.
+8. Qualidade da produção
 
-7. Relação entre funcionário e proprietário
+A qualidade efetiva da produção depende das skills dos funcionários que
+realmente realizaram o trabalho.
 
-O sistema deve permitir que o proprietário da empresa estabeleça padrões de
-trabalho e recompense ou puna funcionários conforme sua atuação.
+A qualidade deve utilizar uma média ponderada pela contribuição de trabalho.
 
-O proprietário pode, de acordo com as regras do sistema:
+Ou seja, funcionários que realizaram mais trabalho possuem maior peso no
+resultado.
 
-definir expectativas mínimas;
-definir salário;
-promover;
-conceder bônus;
-demitir.
+A qualidade produzida é limitada pelo teto determinado pelas estrelas da
+empresa.
 
-O funcionário, por sua vez:
+Conceitualmente:
 
-escolhe quanto trabalhar;
-decide se permanece na empresa;
-pode procurar outro emprego;
-pode buscar empresas que valorizem melhor sua contribuição.
+qualidade da produção
+=
+média ponderada das skills relevantes
 
-A relação deve funcionar como uma relação de trabalho emergente, em que a
-empresa e o funcionário possuem interesses parcialmente alinhados, mas não
-necessariamente idênticos.
+e:
 
-8. Cargo Dono
+qualidade final
+=
+MIN(qualidade da produção, teto da estrela)
 
-Ao fundar uma empresa, o fundador recebe automaticamente o cargo de Dono.
+A estrela representa o potencial máximo da empresa, não seu desempenho
+garantido.
 
-O cargo Dono não conta para o limite normal de um único emprego contratado.
+Uma empresa 5★ pode possuir baixa qualidade efetiva caso tenha funcionários
+pouco qualificados ou pouca atividade produtiva.
 
-Assim:
+9. Funcionários de suporte
 
-Dono da Empresa A
+Nem todos os cargos precisam produzir itens diretamente.
+
+Existem cargos cuja função é aumentar a eficiência da operação.
+
+Os cargos inicialmente definidos incluem:
+
+Engenheiro;
+Advogado.
+9.1 Engenheiro
+
+O Engenheiro realiza trabalhos consumindo Energia.
+
+Cada trabalho contribui para o bônus de eficiência produtiva da empresa.
+
+O efeito depende de:
+
+skill relevante;
+especialização;
+quantidade de trabalhos;
+outros parâmetros definidos pelo sistema.
+
+O bônus é diário e é reiniciado a cada novo ciclo diário.
+
+A quantidade de Engenheiros disponíveis é limitada pela estrela da empresa.
+
+Uma empresa grande, com todos os Engenheiros utilizando uma barra completa
+de Energia, deve atingir aproximadamente até 2,5× da produção base.
+
+Esse valor é um alvo de balanceamento e poderá ser ajustado após os testes.
+
+O sistema não precisa de um teto artificial adicional além das limitações
+estruturais de:
+
+estrela
 +
-Funcionário da Empresa B
+quantidade de Engenheiros
++
+Energia
+9.2 Advogado
 
-é permitido.
+O Advogado realiza trabalhos consumindo Energia.
 
-O fundador define o salário associado ao cargo Dono.
+Cada trabalho reduz o risco de Burnout dos funcionários da empresa.
 
-9. Especialização dos funcionários
+O efeito depende de:
 
-Funcionários desenvolvem especialização conforme trabalham em determinada área
-ou produto.
+skill relevante;
+especialização;
+quantidade de trabalhos;
+outros parâmetros definidos pelo sistema.
 
-A especialização melhora a eficiência do funcionário naquela atividade.
+O efeito é diário e é reiniciado a cada novo ciclo diário.
+
+O risco de Burnout nunca pode ser reduzido abaixo de 1%.
+
+A quantidade de Advogados disponíveis é limitada pela estrela da empresa.
+
+10. Consumo operacional
+
+Materiais operacionais são consumidos de forma diária.
+
+A regra geral é:
+
+consumo diário =
+funcionários ativos
+×
+consumo por funcionário
+
+O consumo é baseado na quantidade de funcionários e não no número de cliques
+de trabalho realizados.
+
+Funcionários de produção e suporte contam para o consumo, salvo exceção
+explicitamente definida pelo catálogo.
+
+Cada produto operacional possui sua própria regra de consumo no catálogo de
+Produtos e Receitas.
+
+11. Varejo
+
+O Varejo possui duas características independentes:
+
+Estoque
+≠
+Capacidade de venda
+11.1 Estoque
+
+O estoque máximo é determinado pelas estrelas da empresa.
+
+Uma empresa de maior estrela possui maior capacidade de armazenar produtos.
+
+11.2 Capacidade de venda
+
+Funcionários do Varejo produzem capacidade de venda.
+
+O trabalho de um vendedor:
+
+Energia
+→ trabalho
+→ capacidade adicional de venda naquele ciclo
+
+A capacidade de venda depende dos funcionários e de suas características.
+
+Uma venda consome simultaneamente:
+
+uma unidade de estoque;
+uma unidade da capacidade de venda.
+
+Portanto:
+
+vendas realizadas
+≤ estoque disponível
+
+e:
+
+vendas realizadas
+≤ capacidade de venda disponível
+
+O valor exato da capacidade por trabalho será definido pelo balanceamento.
+
+O estoque deve ser maior que a capacidade de venda potencial do período, para
+que capacidade de operação seja uma limitação distinta do armazenamento.
+
+12. Construtora
+
+A Construtora possui uma obra ativa por vez.
+
+A obra possui um progresso percentual:
+
+0% → 100%
+
+O proprietário escolhe e inicia uma construção.
+
+Cada trabalho dos funcionários contribui para o progresso.
+
+A eficiência do trabalho pode depender de:
+
+skill;
+especialização;
+quantidade de funcionários;
+Engenheiro;
+outras regras empresariais.
+
+Quando o progresso chega a 100%, o imóvel é concluído e a Construtora pode
+iniciar outra obra.
+
+13. Especialização
+
+Funcionários desenvolvem especialização através do trabalho em determinada
+atividade ou produto.
+
+A especialização melhora o desempenho naquela área.
 
 A especialização não é totalmente permanente.
 
-Decaimento
-
-Quando uma especialização deixa de ser utilizada:
+Quando o jogador deixa de utilizar uma especialização:
 
 especialização
 ↓
-decai lentamente ao longo do tempo
+decadência diária baixa
 
-A decadência deve ocorrer em ritmo diário baixo.
+A especialização não pode cair abaixo de:
 
-A especialização nunca deve cair abaixo de 50% do maior valor já atingido
-naquela especialização.
+50% do maior valor histórico atingido
 
-Recuperação
+Quando o jogador volta a atuar naquela área:
 
-Quando o jogador volta a trabalhar em uma área antiga, sua especialização se
-recupera mais rapidamente.
+recuperação
+=
+1,5× a velocidade normal
 
-A velocidade de recuperação será aproximadamente:
+Os valores exatos de ganho e decadência serão definidos pelo balanceamento.
 
-1.5× a velocidade normal
+14. Estrelas
 
-Os valores exatos de decadência e recuperação serão balanceados posteriormente
-com bots.
+As estrelas representam a estrutura e o potencial da empresa.
 
-O histórico de especialização deve continuar existindo para que experiência
-anterior tenha valor mesmo depois de uma mudança de carreira.
+Podem influenciar:
 
-10. Produção e funcionários de suporte
+produtos disponíveis;
+receitas;
+limite de funcionários;
+estoque;
+qualidade máxima;
+limites operacionais;
+outras capacidades específicas.
 
-Nem todo funcionário precisa gerar produção diretamente.
+Estrela não representa automaticamente desempenho.
 
-Existem funções de suporte que aumentam a eficiência da operação.
+Uma empresa com mais estrelas pode ter desempenho ruim se possuir funcionários
+ou condições inadequadas.
 
-Os exemplos atualmente considerados incluem:
-
-10.1 Engenheiro
-
-Cada trabalho realizado pelo Engenheiro aumenta a eficiência dos demais
-funcionários da empresa em uma pequena porcentagem.
-
-O efeito deve ser limitado pela energia disponível para o Engenheiro.
-
-Conceitualmente:
-
-energia do Engenheiro
-↓
-trabalhos realizados
-↓
-bônus de eficiência dos funcionários
-
-O bônus exato por trabalho ainda será balanceado.
-
-10.2 Advogado
-
-Cada trabalho realizado pelo Advogado reduz a chance de os funcionários da
-empresa sofrerem burnout.
-
-O efeito também é limitado pela energia disponível para o Advogado.
-
-Conceitualmente:
-
-energia do Advogado
-↓
-trabalhos realizados
-↓
-menor risco de burnout
-
-O valor exato da redução será balanceado posteriormente.
-
-Outros cargos de suporte poderão ser adicionados futuramente quando houver
-justificativa de design.
-
-11. Burnout
-
-Trabalhar repetidamente em grande intensidade deve possuir um custo.
-
-Cada trabalho consecutivo pode aumentar o risco de burnout.
-
-Conceitualmente:
-
-trabalho
-↓
-burnout aumenta
-↓
-trabalho consecutivo
-↓
-risco aumenta
-
-Ao atingir o limite de burnout:
-
-burnout máximo
-↓
-jogador fica temporariamente impedido de trabalhar
-
-O bloqueio dura um período definido pelo sistema.
-
-Algumas atividades de descanso ou recuperação podem reduzir burnout.
-
-Trabalhar mais deve continuar sendo vantajoso, mas deve criar um risco
-crescente de exaustão.
-
-O sistema deve permitir escolhas como:
-
-trabalhar muito
-→ maior produção
-→ maior ganho de skill
-→ maior risco de burnout
-
-Os números exatos serão definidos durante o balanceamento.
-
-12. Operacionais
-
-Algumas empresas consomem produtos operacionais de forma recorrente.
-
-Esses produtos não representam necessariamente matéria-prima da principal
-produção.
-
-Exemplos de consumidores incluem:
-
-Escolas;
-Hospitais;
-Matrizes;
-Industriais;
-Varejos;
-Serviços.
-
-A frequência de consumo pode variar conforme o tipo de produto e atividade.
-
-Produtos que representam equipamentos de longa duração não devem ser tratados
-automaticamente como consumíveis de cada trabalho.
-
-A frequência de consumo deverá ser definida por produto/operação.
-
-13. Qualidade e estrelas
-
-Empresas possuem nível de qualidade representado por estrelas.
-
-As estrelas influenciam o potencial econômico da empresa.
-
-Entre os efeitos previstos estão:
-
-acesso a receitas;
-acesso a produtos mais complexos;
-qualidade da produção;
-capacidade de disputar determinados mercados;
-valor/preço percebido.
-
-Empresas com maior estrela podem acessar receitas mais avançadas.
-
-A relação exata entre estrelas, qualidade e preços ainda será balanceada.
-
-14. Qualidade do produto e preço
-
-A qualidade de um produto pode influenciar seu preço.
-
-Conceitualmente:
-
-qualidade maior
-→ maior valor percebido
-→ preço potencialmente maior
-
-Produtos podem possuir qualidade diferente dependendo da empresa e do processo
-de produção.
-
-Os multiplicadores exatos serão definidos através do balanceamento com bots.
-
-15. Vagas de emprego
+15. Mural de empregos
 
 Deve existir um mural público de vagas.
 
-O jogador pode visualizar cargos vagos disponíveis.
+Fluxo:
 
-A candidatura ocorre através do mural.
-
-A contratação depende da aprovação do proprietário ou de uma futura estrutura
-de administração da empresa.
-
-O sistema deve substituir o modelo em que o proprietário simplesmente informa o
-nome de qualquer jogador para contratá-lo.
-
-16. Varejo e disponibilidade
-
-O Varejo deve funcionar como uma etapa real da cadeia econômica.
-
-A existência de um produto no mundo não significa que ele esteja
-automaticamente disponível para qualquer jogador.
-
-O produto precisa:
-
-ser produzido
-→ chegar ao Varejo apropriado
-→ possuir disponibilidade operacional
-→ ser vendido ao consumidor
-
-O objetivo é permitir:
-
-escassez;
-variações de preço;
-diferenças regionais;
-oportunidades de mercado.
-
-A economia normal deve ser composta por empresas controladas por jogadores.
-
-17. Sistema de segurança para necessidades básicas
-
-A economia deve continuar essencialmente baseada em jogadores.
-
-Entretanto, o sistema pode possuir mecanismos mínimos de segurança para impedir
-que um bairro completamente abandonado torne o jogo impraticável.
-
-Exemplo:
-
-bairro sem empresas de alimentação
+vaga aberta
 ↓
-serviço emergencial controlado pelo sistema
+mural público
 ↓
-alimento disponível
+jogador se candidata
 ↓
-QoL pior
+proprietário ou pessoa autorizada aprova
+↓
+cargo ocupado
 
-Esse mecanismo não deve funcionar como uma empresa NPC normal nem competir
-economicamente com jogadores.
+O sistema substitui o modelo de contratação direta por nome de jogador como
+mecanismo principal de recrutamento.
 
-Ele existe apenas como fallback para necessidades básicas.
+16. Cargo Dono
 
-18. Construtora
+Ao fundar uma empresa:
 
-A Construtora utiliza produtos industriais como insumos.
+fundador
+↓
+cargo Dono
 
-A receita base atualmente prevista é:
+O cargo Dono é criado automaticamente.
 
-Materiais de Construção
+O cargo Dono não conta para o limite normal de um único emprego contratado.
+
+Assim, é permitido:
+
+Dono da Empresa A
 +
-Acabamentos
-→ Imóvel
-Acabamentos
+funcionário da Empresa B
 
-Acabamentos são um produto industrial separado de Móveis.
+O fundador define o salário associado ao cargo Dono.
 
-Receita:
-
-Tábuas
-+
-Vidro
-→ Acabamentos
-
-Acabamentos são utilizados na construção dos imóveis.
-
-Móveis
-
-Móveis continuam sendo produtos separados.
-
-Eles não são necessários para que a Construtora conclua a construção de um
-imóvel.
-
-Podem posteriormente ser adquiridos pelo jogador para melhorar sua residência.
-
-19. Transporte
-
-O sistema de Transporte existe principalmente para influenciar a relação
-entre geografia, trabalho e vida cotidiana.
-
-A filosofia atual é:
-
-início
-→ jogador vive principalmente no próprio bairro
-
-progressão
-→ jogador amplia seu alcance para outras regiões
-
-Transporte deve incentivar o jogador a encontrar emprego e atividades perto
-de onde mora, sem impedir completamente deslocamentos maiores.
-
-Sair do bairro deve ser possível, mas idealmente representa uma expansão gradual
-do horizonte do jogador.
-
-O sistema atual de Transporte está considerado insatisfatório e será
-redesenhado antes da implementação definitiva.
-
-20. Financeira
-
-Financeira é considerada uma empresa de endgame e deve possuir profundidade
-significativamente maior que os demais tipos de empresa.
-
-Os sistemas previstos incluem:
-
-depósitos;
-empréstimos;
-cartão de crédito;
-transferências;
-reserva obrigatória;
-rating de solvência;
-juros;
-falência;
-recuperação;
-intervenção.
-
-A complexidade desse sistema é intencional.
-
-20.1 Falência
-
-A falência não deve funcionar como reset econômico.
-
-Ao entrar em recuperação:
-
-a dívida continua existindo;
-parte da renda futura pode ser automaticamente destinada ao pagamento;
-o jogador pode realizar pagamentos adicionais;
-o jogador não pode fundar novas empresas enquanto a dívida estiver pendente;
-o acesso a crédito é restringido;
-o acesso a determinados cargos políticos é restringido.
-
-A porcentagem da renda destinada ao pagamento será definida posteriormente.
-
-20.2 Fraude
-
-O sistema deve considerar explicitamente a possibilidade de um jogador tentar
-utilizar uma Financeira de maneira fraudulenta.
-
-Fraude pode gerar consequências como:
-
-perda de reputação;
-deterioração do rating;
-restrição de acesso a crédito;
-restrição de criação de empresas;
-consequências políticas;
-outras punições futuras.
-
-O sistema precisa impedir que captar depósitos e quebrar deliberadamente seja
-uma estratégia economicamente ótima.
-
-20.3 Rating
-
-Financeiras devem possuir informação pública sobre sua saúde financeira.
-
-O rating deve ser influenciado por fatores como:
-
-solvência;
-histórico;
-obrigações;
-comportamento financeiro.
-
-A fórmula definitiva do rating ainda será detalhada.
-
-21. Fundação de empresas
+17. Fundação de empresas
 
 Fundar uma empresa possui custo financeiro.
 
-Custos atuais:
+Valores atualmente definidos:
 
 Tipo	Custo
 Varejo	R$15.000
@@ -747,126 +632,173 @@ Construtora	R$60.000
 Industrial	R$80.000
 Financeira	R$100.000
 
-Fundar empresas deve representar uma conquista econômica significativa.
+Fundar uma empresa deve representar uma conquista econômica relevante.
 
-A Fundação é considerada uma das formas de progressão de longo prazo.
+Requisitos adicionais, como diplomas, poderão ser aplicados conforme a
+documentação de outros sistemas.
 
-A criação de determinadas empresas pode futuramente depender de requisitos
-adicionais, como diplomas.
+18. Qualidade e preço
 
-22. Produtos, receitas e especializações
+A qualidade do produto pode influenciar seu preço.
 
-O sistema deve tratar produtos e receitas como dados centrais do jogo.
+A empresa possui um teto de qualidade relacionado às estrelas.
 
-Uma receita define, entre outras coisas:
+A qualidade efetiva depende do trabalho dos funcionários.
 
-entradas;
-produto produzido;
-requisitos;
-estrelas mínimas;
-tipo de empresa permitido;
-categoria de operação.
+A estrutura é:
 
-Essas informações devem ser utilizadas para validar automaticamente:
+Estrela
+→ teto
 
-compra;
-venda;
-produção;
-elegibilidade da empresa.
+Funcionários
+→ qualidade efetiva
 
-O sistema deve evitar regras duplicadas espalhadas pelas diferentes views.
+Qualidade efetiva
+→ valor percebido/preço
 
-23. Princípios econômicos
+Os multiplicadores de preço e seus efeitos são parâmetros de balanceamento.
 
-O sistema de empresas deve favorecer:
+19. Relação com o Inventário
 
-especialização;
-concorrência;
-escassez;
-interdependência;
-formação de cadeias produtivas;
-mercados regionais;
-entrada de novos jogadores;
-decisões empresariais.
+Empresas produzem e vendem produtos que podem chegar ao inventário dos
+jogadores.
 
-Um jogador não deve conseguir transformar uma única empresa em uma solução
-universal para toda a economia.
+Estrutura:
 
-Ao mesmo tempo, a economia não deve depender de uma única empresa ou jogador
-para manter necessidades essenciais funcionando.
+Empresa
+→ estoque empresarial
 
-24. Balanceamento
+Varejo
+→ vende
 
-Os seguintes elementos devem ser parametrizados e considerados candidatos a
-balanceamento através de bots:
+Jogador
+→ inventário
 
-produção por unidade de energia;
-impacto de skill na produção;
-diminishing returns;
+O inventário é definido em 05 — Inventário.
+
+Transferências diretas de itens entre jogadores utilizam o serviço de correio
+e possuem taxa própria.
+
+20. Relação com Produtos e Receitas
+
+O catálogo 22 — Receitas-Produção é a fonte de verdade para:
+
+produtos;
+receitas;
+categorias;
+matérias-primas;
+produtos intermediários;
+produtos finais;
+consumidores;
+requisitos de produção;
+regras de consumo operacional;
+efeitos específicos de produtos.
+
+O sistema de Empresas deve consultar esse catálogo em vez de duplicar listas
+de permissões.
+
+21. Economia e concorrência
+
+Empresas devem competir por:
+
+funcionários;
+matéria-prima;
+clientes;
+fornecedores;
+localização;
+preços;
+qualidade.
+
+Empresas não devem ser capazes de ignorar completamente a cadeia produtiva.
+
+A especialização é desejável.
+
+Diferentes empresas produzindo o mesmo produto são desejáveis.
+
+Escassez é desejável quando puder gerar:
+
+preço
+→ oportunidade
+→ concorrência
+→ expansão da oferta
+
+e não simplesmente tornar o jogo impossível.
+
+22. Balanceamento
+
+Os seguintes valores devem permanecer parametrizados:
+
+produção por trabalho;
+influência de skill;
+influência de especialização;
 bônus do Engenheiro;
-redução de burnout do Advogado;
-especialização;
-decadência da especialização;
-recuperação da especialização;
+redução de Burnout do Advogado;
+capacidade de venda do Varejo;
+estoque por estrela;
+quantidade de Engenheiros por estrela;
+quantidade de Advogados por estrela;
+qualidade máxima por estrela;
+relação qualidade/preço;
 cooldown de troca de produção;
 tempo de setup;
 custo de setup;
-impacto de estrelas;
-preço relacionado à qualidade;
 consumo operacional;
-retenção de renda para recuperação de dívida;
-juros;
-rating;
-limites financeiros.
+ganho/decadência de especialização.
 
-O objetivo desta etapa não é encontrar os números perfeitos, mas construir um
-sistema internamente consistente e fácil de ajustar.
+Esses valores serão calibrados principalmente através dos testes com bots.
 
-25. Questões em aberto
+A estrutura do sistema deve permanecer estável mesmo quando esses parâmetros
+forem alterados.
 
-As seguintes decisões continuam em REVIEW:
+23. Fora do escopo do Bot Test
 
-Regras detalhadas de compra e venda por categoria de empresa.
-Valores exatos de produção por energia.
-Fórmula final do bônus do Engenheiro.
-Fórmula final do efeito do Advogado.
-Frequência de consumo dos produtos operacionais.
-Valor exato do cooldown e setup de produção.
-Sistema completo de Transporte.
-Detalhes completos da Financeira.
-Fórmula e consequências finais de rating.
-Sistema completo contra fraude.
-Regras detalhadas de qualidade e estrelas.
-Valores de balanceamento em geral.
-26. Fora do escopo deste documento
+Os seguintes sistemas não serão fechados ou implementados neste documento
+para o primeiro Bot Test:
 
-Este documento não define detalhadamente:
+sistema completo de Financeira;
+Bolsa de Valores;
+empréstimos complexos;
+cartões;
+intervenção financeira;
+sistema completo de Transporte;
+sistemas econômicos futuros;
+múltiplas obras simultâneas;
+comércio informal direto entre jogadores;
+sistemas avançados de logística.
 
-educação;
-geografia e lotes;
-imóveis;
-população;
-política;
-leis;
-sistema completo de transporte;
-atividades gerais do jogador.
+Esses sistemas poderão ser desenvolvidos posteriormente sem alterar as regras
+fundamentais deste documento.
 
-Esses sistemas possuem documentação própria.
+24. Critério de estabilidade para o Bot Test
 
-Quando uma empresa depender deles, este documento deve definir apenas a
-interface entre os sistemas, deixando a implementação específica para o
-documento responsável.
+O sistema de Empresas deve ser considerado estável quando:
+
+os tipos de empresa possuírem responsabilidades claras;
+empresas não puderem comprar/vender produtos incompatíveis;
+uma empresa produzir apenas um produto por vez;
+trabalho e Energia determinarem a produção;
+funcionários de suporte influenciarem a operação corretamente;
+Varejo possuir separação entre estoque e capacidade de venda;
+Construtora utilizar progresso de obra;
+especialização possuir ganho, decadência e recuperação;
+estrelas definirem limites estruturais;
+a cadeia econômica puder funcionar sem depender de regras manuais
+específicas para cada transação.
+
+O objetivo do Bot Test será descobrir os valores adequados dessas mecânicas,
+e não redefinir sua estrutura fundamental.
 
 
-### Uma mudança importante que fiz
+### Agora sim
 
-Eu **não coloquei `Financeira` como "praticamente pronta"**, mesmo que boa parte já exista no código. Para o nosso propósito de `FINAL — BOT TEST`, o design financeiro ainda está longe de fechado. Assim evitamos que o Claude leia algo existente no código e assuma que já é a regra definitiva.
+Eu considero esse documento **`FINAL — BOT TEST`**.
 
-Também deixei **Transporte explicitamente em REVIEW**, em vez de fingir que a versão atual está pronta.
+E tem uma mudança de processo importante: **depois de salvar esse no GitHub, eu não quero mais ficar remodelando o `02` a cada descoberta pequena**. Se aparecer alguma questão durante a implementação, primeiro verificamos se é:
 
-E mantive os números que já decidimos, mas marquei como **balanceáveis** onde ainda não temos certeza.
+**ajuste de parâmetro** → deixa para os bots.
 
-Eu salvaria essa versão como está em `design/02-empresas.md` e manteria:
+**bug/omissão técnica** → Claude corrige.
 
-> **Status: REVIEW**
+**nova decisão de design** → volta para nós, abrimos o documento novamente como `REVIEW`.
 
+Isso evita exatamente o retrabalho que você estava tentando eliminar desde o começo.
