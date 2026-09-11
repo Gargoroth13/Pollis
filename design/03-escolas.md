@@ -582,19 +582,3 @@ sistema geral de QoL.
 Esses sistemas possuem ou possuirão documentação própria.
 
 Este documento define apenas como o sistema de educação se conecta a eles.
-
-
-### Uma mudança que eu considero particularmente importante
-
-Eu **não coloquei "30 alunos" como valor definitivo**, apenas:
-
-```text
-vagas = residências × 1,5
-
-Isso é uma regra estrutural excelente para o sistema, enquanto 1,5 fica parametrizado para os bots. Assim, depois podemos descobrir algo como:
-
-1,2 produz escolas lotadas demais
-1,5 funciona bem
-2,0 deixa escolas vazias
-
-sem reescrever o sistema.
