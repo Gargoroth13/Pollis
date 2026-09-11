@@ -425,6 +425,50 @@ O jogador deve administrar sua energia entre:
 trabalho;
 estudo;
 outras atividades.
+
+# 8. Estudo
+
+Estudar consome energia.
+
+O jogador pode decidir quanto de energia quer dedicar ao estudo.
+
+Quanto mais energia for dedicada:
+
+mais estudo
+→ maior ganho diário de skills
+
+Estudar também pode aumentar o risco de Burnout quando realizado de forma
+intensa ou consecutiva.
+
+A contribuição do estudo para Burnout pode ser diferente da contribuição do
+trabalho e deve ser parametrizada separadamente.
+
+O jogador pode administrar simultaneamente:
+
+trabalho;
+estudo;
+lazer;
+outras atividades.
+
+A quantidade de energia dedicada a cada atividade é uma decisão do próprio
+jogador.
+
+
+E eu faria **a mesma alteração conceitual no `04 — Dia a Dia`**, porque agora Burnout deixou de ser exclusivamente relacionado a trabalho. No `04`, a regra deveria passar de:
+
+> “trabalho consecutivo → Burnout”
+
+para:
+
+> **“atividades intensas ou consecutivas que consumam energia → Burnout”**, com cada atividade podendo ter sua própria contribuição.
+
+Isso é melhor porque mantém nosso princípio:
+
+Energia
+→ esforço
+→ risco de exaustão
+
+
 22. Abandono de curso
 
 O jogador pode abandonar um curso.
