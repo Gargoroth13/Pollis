@@ -115,6 +115,18 @@ Um Varejo especializado em automóveis não pode comprar móveis.
 Um Varejo especializado em móveis não pode comprar automóveis sem possuir uma
 atividade/receita que permita isso.
 
+### Consumo operacional (mecânica nova) 🤝
+
+Empresas e instituições agora **consomem** produtos continuamente pra
+funcionar, não só o jogador:
+
+| Quem consome | Consome |
+|---|---|
+| Escolas/Universidades | Uniformes + Materiais escolares |
+| Hospitais | Uniformes + Materiais hospitalares |
+| Matriz e Industrial | EPIs + Uniformes (gasto por funcionário a cada trabalho) |
+| Varejo e Serviços | Uniformes |
+
 2.4 Serviços
 
 Empresas de Serviços fornecem atividades diretamente para jogadores ou outras
