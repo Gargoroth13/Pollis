@@ -65,4 +65,4 @@
 |---|---|
 | Agropecuária | Trigo, Leite, Cana, Grão de Café, Cacau, Carne, Ovos, Couro, Lã, Fruta |
 | Extrativismo | Madeira, Resina, Látex, Óleo natural, Ervas, Areia, Pedra, Químicos, Petróleo, Borracha |
-| Mineração | Ferro, Cobre, Sílica, Carvão, Petróleo, Sal, Lítio, Ouro, Prata, Diamante |
+| Mineração | Ferro, Cobre, Sílica, Carvão, Sal, Lítio, Ouro, Prata, Diamante |
