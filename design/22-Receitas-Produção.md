@@ -58,6 +58,19 @@
 | Celular | Componentes eletrônicos + Plástico + Bateria | 3★ |
 | Computador | Componentes eletrônicos + Plástico + Aço + Químicos | 4★ |
 
+**Milícia (produzido por milícias):**
+
+| Produto final | Ingredientes | Estrela mínima |
+|---|---|---|
+| Armas Improvisadas | Aço + Madeira + Plástico | Não existe |
+| Armaduras Improvisadas | Aço + Plástico | Não existe |
+| Kit Médico | Lã + Materiais Hospitalares | Não existe |
+
+**Produtos militares do Exército — sem receita de produção, comprados pelo governo**
+
+Armas militares
+Armaduras militares
+Kits médicos
 
 ### 2.2 Matriz — definida por terreno, não por skill 🤝
 
