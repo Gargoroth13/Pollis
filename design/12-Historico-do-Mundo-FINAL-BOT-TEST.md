@@ -21,6 +21,10 @@ Exemplos:
 > **Novo presidente eleito**  
 > João foi eleito Presidente com 53,4% dos votos.
 
+> **Alta historica da QOL nacional!**  
+> QOL nacional atinge 100, o maior valor desde a criação de Polis!.
+
+
 O sistema não deve funcionar como um log técnico. A informação apresentada ao jogador precisa ser compreensível, relevante e contextualizada.
 
 ---
