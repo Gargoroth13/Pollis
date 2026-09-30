@@ -172,7 +172,7 @@ Não implementar ainda os sistemas FUTURO apenas por conveniência.
 
 | Item | Estado |
 |---|---|
-| 1. ciclo temporal, lazy | **feito** (P0.03): ticks horário/diário/semanal, `catch_up` por entidade, `advance_world`. Scheduled events pontuais: pendentes |
+| 1. ciclo temporal, lazy | **feito** (P0.03): ticks horário/diário/semanal/mensal em calendário real, `catch_up` por entidade, `advance_world`. Scheduled events pontuais: pendentes |
 | 2. Energia/QoL/Saúde/Jogador | próximo (P0.04) |
 | 3–9 | não iniciados |
 

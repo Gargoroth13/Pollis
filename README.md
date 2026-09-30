@@ -33,11 +33,14 @@ Sem `DATABASE_URL`, usa SQLite. Em produção, PostgreSQL via `DATABASE_URL`.
 
 ## Tempo do mundo
 
-O relógio de jogo é do app `core`. Padrão: 1 dia de jogo = 600 s reais.
+O tempo do jogo é o **tempo real** (segundos, dias e meses de calendário), na time zone do
+próprio jogo (`POLIS_GAME_TIMEZONE`, padrão `America/Sao_Paulo`). Só a velocidade é acelerável
+(Bot Test). Ticks: horário, diário, semanal (segunda 00:00) e mensal (dia 1, 00:00).
 
 ```bash
 python manage.py world_clock show
-python manage.py world_clock set-speed 600     # segundos reais por dia de jogo
+python manage.py world_clock set-speed 600     # Bot Test: 1 dia de jogo = 600 s reais
+python manage.py world_clock set-speed 86400   # produção: tempo real
 python manage.py advance_world                 # processa ticks pendentes do mundo
 python manage.py advance_world --loop --interval 5
 ```

@@ -113,7 +113,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 # --- Motor de tempo (core) ---------------------------------------------
-# Quantos segundos REAIS duram 1 dia de JOGO. Padrão do Bot Test: 10 min
-# (design/21, seção 21.3). Só vale ao criar o relógio do mundo pela primeira
-# vez; depois o valor vive no banco (comando `world_clock set-speed`).
-POLIS_REAL_SECONDS_PER_GAME_DAY = int(os.environ.get("POLIS_REAL_SECONDS_PER_GAME_DAY", "600"))
+# O tempo do jogo é o tempo real (segundos, dias e meses de calendário), na
+# PRÓPRIA time zone do jogo, nunca na do usuário. Só a velocidade é acelerável.
+POLIS_GAME_TIMEZONE = os.environ.get("POLIS_GAME_TIMEZONE", TIME_ZONE)
+
+# Segundos REAIS que duram 1 dia de JOGO. 86400 = tempo real (produção).
+# Bot Test: 600 (1 dia = 10 min, design/21 §21.3). Só vale ao criar o relógio do
+# mundo; depois o valor vive no banco (`manage.py world_clock set-speed`).
+POLIS_REAL_SECONDS_PER_GAME_DAY = int(os.environ.get("POLIS_REAL_SECONDS_PER_GAME_DAY", "86400"))

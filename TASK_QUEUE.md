@@ -50,8 +50,8 @@ Critérios:
 - nenhuma mecânica depende de polling excessivo.
 
 Entregue: `core.timeline`, `core.clock`, `core.ticks`, comandos `world_clock` / `advance_world`.
-Fora deste bloco (entra quando um sistema precisar): eventos agendados pontuais (Scheduled Event),
-calendário de mês/ano (ver pendência no `CHANGELOG_DEV.md`).
+Tempo = calendário real no fuso do jogo, com ticks horário/diário/semanal/mensal; velocidade acelerável (Bot Test).
+Fora deste bloco (entra quando um sistema precisar): eventos agendados pontuais (Scheduled Event).
 
 ---
 

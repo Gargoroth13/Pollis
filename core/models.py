@@ -7,7 +7,9 @@ class WorldClock(models.Model):
     """
     Estado do tempo do mundo. Singleton (pk = 1).
 
-    O tempo de jogo é derivado de uma âncora:
+    Tempo de jogo = segundos Unix do relógio de JOGO (ver timeline.py). Com
+    velocidade 1x (real_seconds_per_game_day = 86400) é idêntico ao tempo real;
+    acelerado, deriva de uma âncora:
         jogo(agora) = anchor_game + (agora_real - anchor_real) * velocidade
     Mudar a velocidade re-ancora no instante atual, então o tempo de jogo
     nunca pula nem volta.
@@ -34,11 +36,14 @@ class WorldClock(models.Model):
         qs = cls.objects.select_for_update() if for_update else cls.objects
         obj = qs.filter(pk=1).first()
         if obj is None:
+            now = timezone.now()
+            start = int(now.timestamp())  # 1x: o tempo de jogo nasce igual ao tempo real
             obj, _ = cls.objects.get_or_create(
                 pk=1,
                 defaults={
-                    "anchor_real": timezone.now(),
-                    "anchor_game": 0,
+                    "anchor_real": now,
+                    "anchor_game": start,
+                    "world_processed_until": start,  # nada a processar antes do mundo existir
                     "real_seconds_per_game_day": settings.POLIS_REAL_SECONDS_PER_GAME_DAY,
                 },
             )
