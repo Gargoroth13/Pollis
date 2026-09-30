@@ -17,11 +17,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-troque-isso-antes-de-ir-pra-producao")
+_INSECURE_DEV_KEY = "django-insecure-troque-isso-antes-de-ir-pra-producao"
+SECRET_KEY = os.environ.get("SECRET_KEY", _INSECURE_DEV_KEY)
 
 # DEBUG=True só em desenvolvimento local. Em produção, defina DEBUG=False
 # nas variáveis de ambiente do host.
 DEBUG = os.environ.get("DEBUG", "True") == "True"
+
+if not DEBUG and SECRET_KEY == _INSECURE_DEV_KEY:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("Defina SECRET_KEY no ambiente quando DEBUG=False.")
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
 
@@ -35,11 +41,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Apps do jogo
     "accounts",
-    "geography",
-    "skills",
-    "empresas",
-    "financeira",
-    "core",
+    "core",  # motor do jogo: tempo, ticks, (futuro) Action Registry e auditoria
 ]
 
 MIDDLEWARE = [
@@ -57,7 +59,7 @@ ROOT_URLCONF = "polis.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -98,9 +100,6 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-LOGIN_URL = "login"
-LOGIN_REDIRECT_URL = "painel"
-LOGOUT_REDIRECT_URL = "login"
 
 LANGUAGE_CODE = "pt-br"
 TIME_ZONE = "America/Sao_Paulo"
@@ -111,3 +110,14 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# --- Motor de tempo (core) ---------------------------------------------
+# O tempo do jogo é o tempo real (segundos, dias e meses de calendário), na
+# PRÓPRIA time zone do jogo, nunca na do usuário. Só a velocidade é acelerável.
+POLIS_GAME_TIMEZONE = os.environ.get("POLIS_GAME_TIMEZONE", TIME_ZONE)
+
+# Segundos REAIS que duram 1 dia de JOGO. 86400 = tempo real (produção).
+# Bot Test: 600 (1 dia = 10 min, design/21 §21.3). Só vale ao criar o relógio do
+# mundo; depois o valor vive no banco (`manage.py world_clock set-speed`).
+POLIS_REAL_SECONDS_PER_GAME_DAY = int(os.environ.get("POLIS_REAL_SECONDS_PER_GAME_DAY", "86400"))

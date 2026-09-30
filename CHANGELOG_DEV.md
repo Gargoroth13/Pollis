@@ -4,6 +4,35 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-09-30 — Reconstrução do código e fundação temporal
+
+### Decisão do Game Director
+- Todo o jogo implementado antes do design atual é defasado e foi **removido** (apps `empresas`, `financeira`, `geography`, `skills`, `Perfil`, templates). Preservado no histórico do Git. Mantidos: `design/`, documentos operacionais, projeto Django e `Usuario` como `AUTH_USER_MODEL`. Migrations reiniciadas (não há dados de produção a preservar).
+- Consequência: a regra antiga "-0,2 QoL por trabalho/estudo" (código) está obsoleta, o `04` a substituiu por Burnout; e a criação de dinheiro por salário sem origem contraria o `CLAUDE.md`.
+
+### Tempo do jogo (decisão do Game Director, 2026-09-30)
+- **O tempo do jogo é o tempo real**: segundos, dias e meses de calendário reais (mês de 28–31 dias, anos bissextos). Não é relativo à time zone do usuário: o jogo tem a **sua própria time zone**.
+- O jogo funciona por ticks **horários, diários, semanais e mensais**.
+- Só a **velocidade** pode ser acelerada, no Bot Test (ex.: 1 dia = 10 min reais). Em produção, velocidade 1×.
+
+### Motor de tempo (P0.03): decisões técnicas assumidas
+Não são regras de gameplay; são convenções reversíveis e cobertas por testes:
+- Tempo de jogo = segundos Unix do relógio de jogo (a 1× é idêntico ao tempo real). A velocidade padrão é 86400 s reais/dia de jogo; o Bot Test usa 600.
+- **Fuso do jogo: `America/Sao_Paulo`** (confirmado pelo Game Director em 2026-09-30), configurável por `POLIS_GAME_TIMEZONE`. Sem horário de verão hoje; o motor aguenta DST (testado com New York e Kolkata).
+- Hourly: a cada 3600 s absolutos. Daily: 00:00 local. Weekly: **segunda 00:00 local** (`07`). Monthly: **dia 1, 00:00 local** (confirmado pelo Game Director em 2026-09-30).
+- Intervalos são (start, end]: sem perda nem repetição. Não há tick "retroativo" antes de o mundo existir.
+- Ordem no mesmo instante: `TickKind` (horário, diário, semanal, mensal), depois `priority`, depois `name`. **Provisória**: o `04 §27` ainda lista a ordem como questão em aberto.
+- Escopo sem handlers avança o ponteiro; handlers registrados depois não reprocessam o passado.
+- Consequência da aceleração: com 1 dia = 10 min, um mês de calendário dura de 4h40 a 5h10 reais, e um jogador ausente por 1 dia real "perde" 144 dias de jogo (catch-up em lote).
+
+### Pendências para o Game Director (nenhuma bloqueia o P0.03)
+1. **Status divergente entre `TASK.md` e os arquivos de design:** `01` e `03` estão em FINAL no `TASK.md` mas `REVIEW` no cabeçalho do arquivo; `19` está REVIEW no `TASK.md` mas `FINAL — BOT TEST` no arquivo; `04` e `05` (REVIEW) não constam na lista. Tratado como REVIEW até decisão. A resolver em P0.01.
+2. **Índices desatualizados:** `design/README.md` e `implicacoes-tecnicas.md` citam arquivos que não existem mais (`06-politica.md`, `09-financeira.md`, `10-futuro.md`).
+3. **Ordem de processamento e classificação de tick por sistema** (`04 §27`): o motor aceita qualquer classificação, mas ela ainda precisa ser decidida sistema a sistema.
+4. **Calendário "Ano N, Mês M" do Histórico do Mundo (`12`)**: é contado a partir do início do mundo ou é o ano de calendário? A tratar em P1.14.
+
+---
+
 ## 2026-09-29 — Transição para implementação
 
 ### Processo

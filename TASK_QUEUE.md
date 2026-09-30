@@ -39,7 +39,7 @@ Critérios:
 
 ---
 
-## [ ] P0.03 — Fundação temporal
+## [x] P0.03 — Fundação temporal  *(concluído em 2026-09-30, branch `dev/fase1-fundacao`)*
 
 Implementar o motor de tempo, ticks e processamento lazy conforme `04 — Dia a Dia`.
 
@@ -48,6 +48,10 @@ Critérios:
 - processamento por acesso/ação/ciclo conforme necessário;
 - testes de avanço temporal;
 - nenhuma mecânica depende de polling excessivo.
+
+Entregue: `core.timeline`, `core.clock`, `core.ticks`, comandos `world_clock` / `advance_world`.
+Tempo = calendário real no fuso do jogo, com ticks horário/diário/semanal/mensal; velocidade acelerável (Bot Test).
+Fora deste bloco (entra quando um sistema precisar): eventos agendados pontuais (Scheduled Event).
 
 ---
 
