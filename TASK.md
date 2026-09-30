@@ -168,6 +168,18 @@ Não implementar ainda os sistemas FUTURO apenas por conveniência.
 
 ---
 
+## Progresso da Fase 1
+
+| Item | Estado |
+|---|---|
+| 1. ciclo temporal, lazy | **feito** (P0.03): ticks horário/diário/semanal, `catch_up` por entidade, `advance_world`. Scheduled events pontuais: pendentes |
+| 2. Energia/QoL/Saúde/Jogador | próximo (P0.04) |
+| 3–9 | não iniciados |
+
+O código anterior ao design atual foi removido por decisão do Game Director (2026-09-30); `design/` é a única base.
+
+---
+
 # Critérios de aceitação da fase 1
 
 - o jogador pode ser criado e possui estado inicial consistente;
