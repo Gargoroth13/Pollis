@@ -18,8 +18,8 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 ### Motor de tempo (P0.03): decisões técnicas assumidas
 Não são regras de gameplay; são convenções reversíveis e cobertas por testes:
 - Tempo de jogo = segundos Unix do relógio de jogo (a 1× é idêntico ao tempo real). A velocidade padrão é 86400 s reais/dia de jogo; o Bot Test usa 600.
-- **Fuso do jogo: `POLIS_GAME_TIMEZONE`, padrão `America/Sao_Paulo`** (o `TIME_ZONE` já existente do projeto). *O Game Director não nomeou o fuso; confirmar.* Sem horário de verão hoje; o motor aguenta DST (testado com New York e Kolkata).
-- Hourly: a cada 3600 s absolutos. Daily: 00:00 local. Weekly: **segunda 00:00 local** (`07`). Monthly: **dia 1, 00:00 local** (*o horário exato do tick mensal é suposição minha, análoga ao semanal*).
+- **Fuso do jogo: `America/Sao_Paulo`** (confirmado pelo Game Director em 2026-09-30), configurável por `POLIS_GAME_TIMEZONE`. Sem horário de verão hoje; o motor aguenta DST (testado com New York e Kolkata).
+- Hourly: a cada 3600 s absolutos. Daily: 00:00 local. Weekly: **segunda 00:00 local** (`07`). Monthly: **dia 1, 00:00 local** (confirmado pelo Game Director em 2026-09-30).
 - Intervalos são (start, end]: sem perda nem repetição. Não há tick "retroativo" antes de o mundo existir.
 - Ordem no mesmo instante: `TickKind` (horário, diário, semanal, mensal), depois `priority`, depois `name`. **Provisória**: o `04 §27` ainda lista a ordem como questão em aberto.
 - Escopo sem handlers avança o ponteiro; handlers registrados depois não reprocessam o passado.
