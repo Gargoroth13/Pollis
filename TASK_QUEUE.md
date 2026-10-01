@@ -55,7 +55,7 @@ Fora deste bloco (entra quando um sistema precisar): eventos agendados pontuais 
 
 ---
 
-## [ ] P0.04 — Player state + Energy/QoL/Health/Nutrition
+## [x] P0.04 — Player state + Energy/QoL/Health/Nutrition  *(concluído em 2026-10-01, sobre o `04` FINAL)*
 
 Implementar o estado base do jogador e as regras fundamentais de `04`.
 
@@ -67,6 +67,11 @@ Critérios:
 - burnout;
 - estados críticos com histerese quando aplicável;
 - testes das transições.
+
+Entregue: app `players` (`Player`, `QolEffect`, `rules`, `services`, `qol`, `balance`), `core.breakdown` (detalhamento
+estruturado do doc 20) e `TickKind.TEN_MINUTES`. Parâmetros `[PROV]` e interpretações: `CHANGELOG_DEV.md` (2026-10-01).
+Fica para quando o sistema dependente existir: Tratamento (dinheiro), auto-consumo de alimentos (Inventário),
+Recuperação Regional (saúde/médicos), bloqueio por Viagem (Geografia).
 
 ---
 
