@@ -55,7 +55,7 @@ class SyncTests(PlayerTestCase):
             explained = getattr(s, name)
             self.assertEqual(explained.computed_at, T0, name)            # 20.9
             self.assertGreaterEqual(len(explained.steps), 1, name)
-        self.assertEqual((s.work_blocked_by, s.study_blocked_by), ([], []))
+        self.assertEqual((s.work_blocked_by, s.study_blocked_by, s.leisure_blocked_by), ([], [], []))
 
     def test_snapshot_exposes_why_actions_are_blocked(self):
         self.set_state(burnout=100, burnout_active=True)

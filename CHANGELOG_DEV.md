@@ -13,16 +13,25 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 - Novo `TickKind.TEN_MINUTES` (600 s absolutos): o ciclo dos estados contínuos (`04 §2.3, §7.2, §10, §23`). Decisão técnica; roda antes dos demais ticks no mesmo instante.
 - Os estados são processados **ciclo a ciclo** (lazy, no acesso) e não por fórmula fechada, porque Saúde, Burnout, Nutrição e Energia dependem uns dos outros (`§23`). Custo medido: ~25 µs por ciclo (144 dias de jogo ≈ 20 mil ciclos ≈ 0,5 s).
 
-### Interpretações adotadas (reversíveis; **confirmar**)
+### Decisões estruturais confirmadas pelo Game Director (2026-10-01)
+1. **Risco de Burnout (`02 §9.2`):** é um **multiplicador** sobre os *ganhos* de Burnout de **Trabalhar e Estudar** (`04 §7.1`), com **piso de 1%** (mínimo 0,01); o Lazer **não** é afetado. Para eliminar a ambiguidade entre os documentos, o texto do `02 §9.2` foi **atualizado** (com exemplo: risco 50% → Trabalhar dá +2,5 em vez de +5).
+2. **Efeitos temporários (`04 §4.4`):** a regra de **um único efeito ativo por categoria é GLOBAL**, para efeitos positivos **e** negativos; um novo efeito da mesma categoria sempre substitui o anterior, qualquer que seja o sinal. O texto do `04 §4.4` foi **atualizado** para falar em "efeito temporário" (antes dizia "bônus").
+
+### Interpretações de implementação (derivadas do texto do `04`; não contestadas)
 1. **Ordem do ciclo (`§23`):** Saúde (lê o estado do *início*) → Burnout → Nutrição → Energia (usa a QoL Base efetiva do *novo* estado). Fica numa única função, `rules.advance_cycle`.
-2. **"Risco de Burnout" do `02 §9.2` × ganhos fixos do `04 §7.1`:** tratei o risco como **multiplicador** (100% por padrão, piso de 1%) sobre os *ganhos* de Trabalhar/Estudar; não afeta a redução do Lazer. O `04` não menciona o risco.
-3. **Categoria de efeito:** o espaço único por categoria vale também para efeitos negativos (o `§4.4` fala em "bônus", mas o `§18` prevê alimentos com efeito negativo).
-4. **Hospitalização** bloqueia apenas Trabalho (único bloqueio citado no `§14`); Estudar e Lazer continuam. Termina por **duração** (parametrizada), não por limiar de Saúde.
-5. **Recuperação de Burnout:** a espera de 1 h conta só a partir do último *Trabalho* (Estudar e Lazer não reiniciam), é inclusiva (≥ 1 h) e quem nunca trabalhou recupera sem espera.
-6. Saúde Crítica e Hospitalização são estados independentes (Saúde = 0 implica os dois).
+2. **Recuperação de Burnout:** a espera de 1 h conta só a partir do último *Trabalho* (Estudar e Lazer não reiniciam), é inclusiva (≥ 1 h) e quem nunca trabalhou recupera sem espera.
+3. Saúde Crítica e Hospitalização são estados independentes (Saúde = 0 implica os dois).
+4. A hospitalização termina por **duração** (o `§14` a declara parametrizada), não por limiar de Saúde.
+
+### Decisões de design a fechar — **ABERTAS; não são regra definitiva; fechar antes do merge**
+1. **Quais ações a hospitalização bloqueia?** O `04 §14` diz apenas "ações incompatíveis com a internação, *incluindo* trabalho" e não lista as demais.
+   - **Definido pelo documento:** Trabalho é incompatível (a validação da configuração o exige).
+   - **Em aberto:** Estudar, Lazer e quaisquer outras ações.
+   - **Estado atual do código:** só Trabalho, como **interpretação mínima** (apenas o que o texto cita), **não como decisão**. Vive em `Balance.hospitalization_blocked_actions` (categoria `[ABERTO]`), exposto no snapshot (`study_blocked_by`, `leisure_blocked_by`) e coberto por testes `test_OPEN_DECISION_*`, que documentam a interpretação sem afirmá-la como regra.
+   - **Para fechar:** definir a lista e ajustar o `04 §14`; no código, é mudar um valor.
 
 ### Parâmetros provisórios `[PROV]` (`04 §27`: calibráveis; valores só para o sistema rodar)
-Todos em `players/balance.py`, sobrescrevíveis por `POLIS_BALANCE`:
+São **numéricos**, e ficam separados das decisões estruturais e da decisão em aberto acima. Todos em `players/balance.py`, sobrescrevíveis por `POLIS_BALANCE`:
 
 | Parâmetro | Valor | O que representa |
 |---|---|---|
@@ -34,7 +43,8 @@ Todos em `players/balance.py`, sobrescrevíveis por `POLIS_BALANCE`:
 | `health_burnout_penalty` | 0 | penalidade de Saúde em Burnout Ativo (0 = ainda não definida) |
 | `hospitalization_duration_seconds` | 21600 (6 h) | duração da hospitalização |
 
-### Observações para calibração
+### Observações para calibração (parâmetros mantidos como estão)
+Por decisão do Game Director (2026-10-01), estas consequências **não** motivam alterar valores antes do Bot Test; os parâmetros seguem provisórios.
 - Com QoL Base **0,50** (`§4.1`) e relação linear, **todo jogador começa no teto de −10% de regeneração** (4,5 por ciclo) até que Moradia/Bens elevem a QoL a ≥ 0,90. É consequência direta de `§4.1` + `§2.3`; vale avaliar a relação.
 - Sem comer, a Nutrição zera em ~33 h de jogo e a Saúde cai 3 por ciclo até a Hospitalização: com a taxa atual o jogador precisa comer a cada ~1,4 dia de jogo (~14 min reais no Bot Test).
 

@@ -106,6 +106,7 @@ class PlayerSnapshot:
     hospitalized: bool
     work_blocked_by: List[str]
     study_blocked_by: List[str]
+    leisure_blocked_by: List[str]
     qol_base: Explained
     qol_base_effective: Explained
     qol_current: Explained
@@ -126,8 +127,9 @@ def get_snapshot(player_id: int) -> PlayerSnapshot:
             at=now, energy=player.energy, health=player.health, nutrition=player.nutrition,
             burnout=player.burnout, burnout_active=player.burnout_active,
             health_critical=player.health_critical, hospitalized=player.is_hospitalized(now),
-            work_blocked_by=rules.block_reasons(player, Action.WORK, now),
-            study_blocked_by=rules.block_reasons(player, Action.STUDY, now),
+            work_blocked_by=rules.block_reasons(player, Action.WORK, now, bal),
+            study_blocked_by=rules.block_reasons(player, Action.STUDY, now, bal),
+            leisure_blocked_by=rules.block_reasons(player, Action.LEISURE, now, bal),
             qol_base=structural, qol_base_effective=effective,
             qol_current=qol_current(player, now, bal, effective=effective),
             energy_regen_per_cycle=rules.energy_regen(player, now, bal),
@@ -151,7 +153,7 @@ def perform_action(player_id: int, action: Action, *, burnout_risk=1,
 
     if effect is not None and action is not Action.LEISURE:
         raise ValueError("Só a ação de Lazer aplica efeito de QoL próprio (04 §19).")
-    reasons = rules.block_reasons(player, action, now)
+    reasons = rules.block_reasons(player, action, now, bal)
     if reasons:
         player.save()
         return _refuse(reasons[0], reasons=reasons)

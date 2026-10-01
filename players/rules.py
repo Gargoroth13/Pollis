@@ -9,11 +9,11 @@ Todo valor gravado é quantizado a 6 casas: o estado em memória é idêntico ao
 """
 from __future__ import annotations
 
-import enum
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Callable, Dict, List, Optional
 
 from core.breakdown import Calc, Explained
+from .actions import Action  # noqa: F401  (reexportado: rules.Action)
 from .balance import Balance
 from .models import Player
 from .qol import qol_base_effective
@@ -29,13 +29,6 @@ def clamp(x: Decimal, low: Decimal, high: Decimal) -> Decimal:
     return max(low, min(high, x))
 
 
-class Action(str, enum.Enum):
-    """Ações com custo fixo de Energia (04 §2.2). Tratamento depende do sistema de dinheiro: ver CHANGELOG."""
-    WORK = "work"
-    STUDY = "study"
-    LEISURE = "leisure"
-
-
 def energy_cost(action: Action, bal: Balance) -> Decimal:
     return {Action.WORK: bal.energy_cost_work, Action.STUDY: bal.energy_cost_study,
             Action.LEISURE: bal.energy_cost_leisure}[action]
@@ -43,12 +36,14 @@ def energy_cost(action: Action, bal: Balance) -> Decimal:
 
 # --- Bloqueios (04 §6, §7.3, §12, §14) -------------------------------------
 
-def block_reasons(player: Player, action: Action, at: int) -> List[str]:
+def block_reasons(player: Player, action: Action, at: int, bal: Balance) -> List[str]:
     """Motivos pelos quais a ação não pode ser feita agora, em ordem fixa (determinística)."""
     reasons: List[str] = []
+    # [ABERTO 04 §14] quais ações a hospitalização bloqueia ainda não está fechado: ver
+    # Balance.hospitalization_blocked_actions e a seção "Decisões de design a fechar" do CHANGELOG.
+    if player.is_hospitalized(at) and action.value in bal.hospitalization_blocked_actions:
+        reasons.append("HOSPITALIZED")
     if action is Action.WORK:
-        if player.is_hospitalized(at):
-            reasons.append("HOSPITALIZED")
         if player.health_critical:
             reasons.append("HEALTH_CRITICAL")
         if player.burnout_active:

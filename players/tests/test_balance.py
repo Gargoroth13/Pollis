@@ -45,8 +45,25 @@ class OverrideTests(SimpleTestCase):
             {"energy_cost_work": 500},                                      # custo acima do máximo
             {"energy_regen_modifier_cap": 1},
             {"hospitalization_duration_seconds": 0},
+            {"hospitalization_blocked_actions": ["work", "fly"]},           # ação inexistente
+            {"hospitalization_blocked_actions": []},                        # 04 §14: trabalho é incompatível
+            {"hospitalization_blocked_actions": ["study"]},                 # idem: tem de incluir work
         ]
         for overrides in bad:
             with override_settings(POLIS_BALANCE=overrides):
                 with self.assertRaises(ImproperlyConfigured, msg=str(overrides)):
                     get_balance()
+
+
+class OpenDesignDecisionTests(SimpleTestCase):
+    """
+    [ABERTO] Decisões de design que o documento NÃO fechou. Estes testes NÃO afirmam que a regra é
+    definitiva: documentam a interpretação mínima atual e garantem que continua sendo configuração.
+    """
+
+    def test_hospitalization_default_is_the_minimal_reading_of_04_section_14(self):
+        self.assertEqual(get_balance().hospitalization_blocked_actions, ("work",))   # só o que o texto cita
+
+    @override_settings(POLIS_BALANCE={"hospitalization_blocked_actions": ["work", "study", "leisure"]})
+    def test_the_set_can_be_widened_without_code_changes(self):
+        self.assertEqual(get_balance().hospitalization_blocked_actions, ("work", "study", "leisure"))

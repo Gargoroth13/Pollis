@@ -15,13 +15,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields, replace
 from decimal import Decimal
+from typing import Tuple
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from core.breakdown import D
+from .actions import ACTION_NAMES
 
 _INT_FIELDS = {"burnout_recovery_wait_seconds", "hospitalization_duration_seconds"}
+_TUPLE_FIELDS = {"hospitalization_blocked_actions"}
 
 
 @dataclass(frozen=True)
@@ -61,6 +64,10 @@ class Balance:
     health_nutrition_penalty_max: Decimal = D(8)       # [PROV 04 §17/§27] penalidade com Nutrição = 0
     health_burnout_penalty: Decimal = D(0)             # [PROV 04 §10/§27] 0 = "ainda não definida"
     hospitalization_duration_seconds: int = 6 * 3600   # [PROV 04 §14/§27]
+    # [ABERTO 04 §14] Quais ações são incompatíveis com a hospitalização? O 04 diz apenas "ações
+    # incompatíveis com a internação, INCLUINDO trabalho" e não lista as demais. ("work",) é a
+    # interpretação mínima (só o que o texto cita), NÃO uma decisão. Valores: work, study, leisure.
+    hospitalization_blocked_actions: Tuple[str, ...] = ("work",)
 
     # --- Nutrição (04 §15) ------------------------------------------------
     nutrition_max: Decimal = D(100)                    # [04 §15]
@@ -95,6 +102,10 @@ class Balance:
             e.append("lazer deve reduzir (ou não alterar) o Burnout (04 §19)")
         if self.burnout_recovery_wait_seconds < 0 or self.hospitalization_duration_seconds <= 0:
             e.append("durações inválidas")
+        if not set(self.hospitalization_blocked_actions) <= ACTION_NAMES:
+            e.append(f"hospitalization_blocked_actions só aceita {sorted(ACTION_NAMES)}")
+        if "work" not in self.hospitalization_blocked_actions:
+            e.append("hospitalization_blocked_actions deve incluir 'work' (04 §14: trabalho é incompatível)")
         if not 0 <= self.nutrition_initial <= self.nutrition_max:
             e.append("nutrition_initial fora de 0..nutrition_max")
         if not 0 <= self.health_initial <= self.health_max:
@@ -113,6 +124,12 @@ def get_balance() -> Balance:
     unknown = set(overrides) - _FIELD_NAMES
     if unknown:
         raise ImproperlyConfigured(f"POLIS_BALANCE tem chaves desconhecidas: {sorted(unknown)}")
-    converted = {k: int(v) if k in _INT_FIELDS else D(str(v) if isinstance(v, float) else v)
-                 for k, v in overrides.items()}
+    converted = {}
+    for k, v in overrides.items():
+        if k in _INT_FIELDS:
+            converted[k] = int(v)
+        elif k in _TUPLE_FIELDS:
+            converted[k] = tuple(v)
+        else:
+            converted[k] = D(str(v) if isinstance(v, float) else v)
     return replace(Balance(), **converted).validate()
