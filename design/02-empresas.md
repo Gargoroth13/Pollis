@@ -432,6 +432,10 @@ O Advogado realiza trabalhos consumindo Energia.
 
 Cada trabalho reduz o risco de Burnout dos funcionários da empresa.
 
+O risco de Burnout é um **multiplicador** aplicado aos ganhos de Burnout das ações de **Trabalhar e Estudar** definidos no documento 04 (§7.1). O valor padrão é 100% (sem redução) e o efeito do Advogado o reduz. Esse multiplicador **não afeta** a redução de Burnout causada por Lazer.
+
+Exemplo: com o risco em 50%, Trabalhar aumenta o Burnout em 2,5 em vez de 5; com o risco no piso de 1%, aumenta em 0,05.
+
 O efeito depende de:
 
 skill relevante;
@@ -441,7 +445,7 @@ outros parâmetros definidos pelo sistema.
 
 O efeito é diário e é reiniciado a cada novo ciclo diário.
 
-O risco de Burnout nunca pode ser reduzido abaixo de 1%.
+O risco de Burnout nunca pode ser reduzido abaixo de 1% (multiplicador mínimo de 0,01).
 
 A quantidade de Advogados disponíveis é limitada pela estrela da empresa.
 

@@ -159,17 +159,17 @@ A QoL Atual pode mudar sem alterar permanentemente a QoL Base estrutural.
 
 ## 4.4 Regra de efeitos temporários por categoria
 
-Efeitos temporários de bônus são organizados por categoria.
+Efeitos temporários são organizados por categoria, sejam positivos (bônus) ou negativos (penalidades).
 
-Um jogador pode possuir no máximo **um efeito de bônus ativo por categoria**.
+Um jogador pode possuir no máximo **um efeito temporário ativo por categoria**, independentemente de o efeito ser positivo ou negativo.
 
-Quando um novo efeito da mesma categoria é aplicado, **o novo efeito substitui o anterior**. O efeito anterior não é somado ao novo.
+Quando um novo efeito da mesma categoria é aplicado, **o novo efeito substitui o anterior**, qualquer que seja o sinal de cada um. O efeito anterior não é somado ao novo.
 
-Exemplo: um novo bônus de Comida substitui o bônus anterior de Comida; um novo bônus de Lazer substitui o bônus anterior de Lazer.
+Exemplo: um novo efeito de Comida substitui o efeito anterior de Comida, seja um bônus ou uma penalidade; um novo efeito de Lazer substitui o efeito anterior de Lazer. Um efeito negativo de Comida substitui um bônus de Comida ativo, e vice-versa.
 
 Efeitos de categorias diferentes podem coexistir.
 
-Essa regra vale para buffs temporários em geral e não apenas para QoL.
+Essa regra vale para efeitos temporários em geral (buffs e debuffs) e não apenas para QoL.
 
 ---
 
