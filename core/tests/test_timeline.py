@@ -8,7 +8,7 @@ from core.timeline import (
     describe, game_ts, local_dt, next_tick_at, ticks_between, weekday_of,
 )
 
-H, D, W, M = TickKind.HOURLY, TickKind.DAILY, TickKind.WEEKLY, TickKind.MONTHLY
+T, H, D, W, M = (TickKind.TEN_MINUTES, TickKind.HOURLY, TickKind.DAILY, TickKind.WEEKLY, TickKind.MONTHLY)
 SP = ZoneInfo("America/Sao_Paulo")
 NY = ZoneInfo("America/New_York")
 IN = ZoneInfo("Asia/Kolkata")
@@ -57,6 +57,12 @@ class TicksBetweenTests(SimpleTestCase):
         self.assertEqual(list(ticks_between(MONDAY, t, [H])), [Tick(t, H)])
         self.assertEqual(list(ticks_between(t, t + SECONDS_PER_HOUR, [H])), [Tick(t + SECONDS_PER_HOUR, H)])
 
+    def test_ten_minute_ticks_are_every_600_absolute_seconds(self):
+        ts = [t.at for t in ticks_between(MONDAY, MONDAY + 3600, [T])]
+        self.assertEqual(ts, [MONDAY + 600 * i for i in range(1, 7)])
+        self.assertEqual(next_tick_at(MONDAY + 599, T), MONDAY + 600)
+        self.assertEqual(next_tick_at(MONDAY + 600, T), MONDAY + 1200)
+
     def test_empty_when_end_not_after_start(self):
         self.assertEqual(list(ticks_between(100, 100)), [])
         self.assertEqual(list(ticks_between(100, 50)), [])
@@ -64,7 +70,7 @@ class TicksBetweenTests(SimpleTestCase):
     def test_one_week_counts(self):
         ts = list(ticks_between(MONDAY, NEXT_MONDAY))
         by = lambda k: sum(1 for t in ts if t.kind == k)
-        self.assertEqual((by(H), by(D), by(W), by(M)), (168, 7, 1, 0))
+        self.assertEqual((by(T), by(H), by(D), by(W), by(M)), (1008, 168, 7, 1, 0))
 
     def test_weekly_tick_is_monday_midnight_local(self):
         weekly = list(ticks_between(MONDAY, MONDAY + 13 * SECONDS_PER_WEEK, [W]))
@@ -98,7 +104,7 @@ class TicksBetweenTests(SimpleTestCase):
         t = game_ts(2026, 6, 1)  # 1º de junho de 2026 é segunda-feira
         self.assertEqual(weekday_of(t), 0)
         ts = list(ticks_between(t - 1, t))
-        self.assertEqual([x.kind for x in ts], [H, D, W, M])
+        self.assertEqual([x.kind for x in ts], [T, H, D, W, M])
         self.assertTrue(all(x.at == t for x in ts))
 
     def test_output_is_globally_sorted(self):

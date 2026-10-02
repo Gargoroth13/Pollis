@@ -12,6 +12,8 @@ relógio de JOGO (com velocidade 1x é exatamente o Unix time real). Inteiros
 mantêm tudo determinístico e barato de comparar.
 
 Ticks:
+- TEN_MINUTES: a cada 600 s absolutos. É o ciclo dos estados contínuos do jogador (design/04 §2.3,
+                §7, §10, §23: "a cada 10 minutos de jogo"). Alinhado ao Unix time; não muda com DST.
 - HOURLY : a cada 3600 s absolutos (alinhado à hora UTC; não muda com DST).
 - DAILY  : 00:00 local, todo dia.
 - WEEKLY : segunda-feira 00:00 local (design/07).
@@ -29,6 +31,7 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 
+SECONDS_PER_TEN_MINUTES = 600
 SECONDS_PER_HOUR = 3600
 SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR
 SECONDS_PER_WEEK = 7 * SECONDS_PER_DAY
@@ -37,15 +40,16 @@ SECONDS_PER_WEEK = 7 * SECONDS_PER_DAY
 class TickKind(IntEnum):
     """
     O valor numérico é o RANK de desempate quando vários ticks caem no mesmo
-    instante (ex.: dia 1 que cai numa segunda é HOURLY+DAILY+WEEKLY+MONTHLY):
-    do menor período para o maior. Ordem provisória: design/04 §27 ainda a
-    lista como questão em aberto.
+    instante (ex.: dia 1 que cai numa segunda é TEN_MINUTES+HOURLY+DAILY+WEEKLY+MONTHLY):
+    do menor período para o maior. Dependências entre sistemas no mesmo instante devem
+    ser registradas explicitamente por quem as tiver (design/04 §23).
     """
 
-    HOURLY = 1
-    DAILY = 2
-    WEEKLY = 3
-    MONTHLY = 4
+    TEN_MINUTES = 1
+    HOURLY = 2
+    DAILY = 3
+    WEEKLY = 4
+    MONTHLY = 5
 
 
 WEEKDAY_NAMES = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
@@ -98,6 +102,8 @@ def _midnight_ts(d: date, tz: tzinfo) -> int:
 
 def next_tick_at(after: int, kind: TickKind, tz: Optional[tzinfo] = None) -> int:
     """Primeiro instante de tick do tipo `kind` estritamente depois de `after`."""
+    if kind is TickKind.TEN_MINUTES:
+        return (after // SECONDS_PER_TEN_MINUTES + 1) * SECONDS_PER_TEN_MINUTES
     if kind is TickKind.HOURLY:
         return (after // SECONDS_PER_HOUR + 1) * SECONDS_PER_HOUR
     tz = tz or game_tz()

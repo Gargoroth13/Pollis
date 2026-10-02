@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     # Apps do jogo
     "accounts",
     "core",  # motor do jogo: tempo, ticks, (futuro) Action Registry e auditoria
+    "players",  # estado do jogador: energia, QoL, saúde, nutrição, burnout
 ]
 
 MIDDLEWARE = [
