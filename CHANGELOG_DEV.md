@@ -16,6 +16,7 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 ### Decisões estruturais confirmadas pelo Game Director (2026-10-01)
 1. **Risco de Burnout (`02 §9.2`):** é um **multiplicador** sobre os *ganhos* de Burnout de **Trabalhar e Estudar** (`04 §7.1`), com **piso de 1%** (mínimo 0,01); o Lazer **não** é afetado. Para eliminar a ambiguidade entre os documentos, o texto do `02 §9.2` foi **atualizado** (com exemplo: risco 50% → Trabalhar dá +2,5 em vez de +5).
 2. **Efeitos temporários (`04 §4.4`):** a regra de **um único efeito ativo por categoria é GLOBAL**, para efeitos positivos **e** negativos; um novo efeito da mesma categoria sempre substitui o anterior, qualquer que seja o sinal. O texto do `04 §4.4` foi **atualizado** para falar em "efeito temporário" (antes dizia "bônus").
+3. **Hospitalização (`04 §14`):** bloqueia **Trabalhar, Estudar e Lazer**. O texto do `04 §14` foi **atualizado** (antes: "ações incompatíveis com internação, incluindo trabalho"). A lista segue configurável (`Balance.hospitalization_blocked_actions`) por causa do Tratamento e de outras ações futuras ainda não definidas; a validação continua exigindo `work`. A duração segue `[PROV]`.
 
 ### Interpretações de implementação (derivadas do texto do `04`; não contestadas)
 1. **Ordem do ciclo (`§23`):** Saúde (lê o estado do *início*) → Burnout → Nutrição → Energia (usa a QoL Base efetiva do *novo* estado). Fica numa única função, `rules.advance_cycle`.
@@ -23,12 +24,8 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 3. Saúde Crítica e Hospitalização são estados independentes (Saúde = 0 implica os dois).
 4. A hospitalização termina por **duração** (o `§14` a declara parametrizada), não por limiar de Saúde.
 
-### Decisões de design a fechar — **ABERTAS; não são regra definitiva; fechar antes do merge**
-1. **Quais ações a hospitalização bloqueia?** O `04 §14` diz apenas "ações incompatíveis com a internação, *incluindo* trabalho" e não lista as demais.
-   - **Definido pelo documento:** Trabalho é incompatível (a validação da configuração o exige).
-   - **Em aberto:** Estudar, Lazer e quaisquer outras ações.
-   - **Estado atual do código:** só Trabalho, como **interpretação mínima** (apenas o que o texto cita), **não como decisão**. Vive em `Balance.hospitalization_blocked_actions` (categoria `[ABERTO]`), exposto no snapshot (`study_blocked_by`, `leisure_blocked_by`) e coberto por testes `test_OPEN_DECISION_*`, que documentam a interpretação sem afirmá-la como regra.
-   - **Para fechar:** definir a lista e ajustar o `04 §14`; no código, é mudar um valor.
+### Decisões de design a fechar
+Nenhuma aberta no momento. *(A da hospitalização, `04 §14`, foi fechada em 2026-10-01: ver acima.)* Ao surgir uma, entra aqui com a categoria `[ABERTO]` do código (`players/balance.py`), separada dos `[PROV]` numéricos.
 
 ### Parâmetros provisórios `[PROV]` (`04 §27`: calibráveis; valores só para o sistema rodar)
 São **numéricos**, e ficam separados das decisões estruturais e da decisão em aberto acima. Todos em `players/balance.py`, sobrescrevíveis por `POLIS_BALANCE`:

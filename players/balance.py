@@ -1,13 +1,17 @@
 """
 Parâmetros do estado do jogador (design/04, FINAL — BOT TEST).
 
-Duas categorias, deliberadamente separadas:
+Categorias, deliberadamente separadas:
 
-  [04]   valor DEFINIDO no documento. Não é decisão minha nem de calibração livre.
-  [PROV] parâmetro que o 04 §27 declara CALIBRÁVEL pelo Bot Test e para o qual não há valor.
-         O 04 §29.8 pede que permaneçam calibráveis; §27 pede calibrar "com observação de
-         comportamento e dados dos Bots em vez de valores arbitrários". Por isso o valor abaixo é só o
-         ponto de partida para o sistema rodar, e CADA [PROV] está listado em CHANGELOG_DEV.md.
+  [04]     valor DEFINIDO no documento. Não é decisão minha nem de calibração livre.
+  [PROV]   parâmetro NUMÉRICO que o 04 §27 declara CALIBRÁVEL pelo Bot Test e para o qual não há valor.
+           O 04 §29.8 pede que permaneçam calibráveis; §27 pede calibrar "com observação de
+           comportamento e dados dos Bots em vez de valores arbitrários". O valor é só o ponto de
+           partida para o sistema rodar; CADA [PROV] está listado em CHANGELOG_DEV.md.
+  [ABERTO] DECISÃO DE DESIGN ainda não fechada (o documento não especifica a regra). Fica como
+           configuração, com a interpretação mínima como padrão e NUNCA como regra definitiva, para
+           que fechar a decisão seja mudar um valor. Nenhuma aberta no momento; ao surgir uma, é
+           listada em CHANGELOG_DEV.md em "Decisões de design a fechar".
 
 Sobrescrever sem mexer em código: settings.POLIS_BALANCE = {"nutrition_decay_per_cycle": 1, ...}
 """
@@ -64,10 +68,9 @@ class Balance:
     health_nutrition_penalty_max: Decimal = D(8)       # [PROV 04 §17/§27] penalidade com Nutrição = 0
     health_burnout_penalty: Decimal = D(0)             # [PROV 04 §10/§27] 0 = "ainda não definida"
     hospitalization_duration_seconds: int = 6 * 3600   # [PROV 04 §14/§27]
-    # [ABERTO 04 §14] Quais ações são incompatíveis com a hospitalização? O 04 diz apenas "ações
-    # incompatíveis com a internação, INCLUINDO trabalho" e não lista as demais. ("work",) é a
-    # interpretação mínima (só o que o texto cita), NÃO uma decisão. Valores: work, study, leisure.
-    hospitalization_blocked_actions: Tuple[str, ...] = ("work",)
+    # [04 §14] Ações bloqueadas pela hospitalização: Trabalhar, Estudar e Lazer (decisão do Game Director,
+    # 2026-10-01). Segue configurável porque o 04 ainda não define o Tratamento e outras ações futuras.
+    hospitalization_blocked_actions: Tuple[str, ...] = ("work", "study", "leisure")
 
     # --- Nutrição (04 §15) ------------------------------------------------
     nutrition_max: Decimal = D(100)                    # [04 §15]

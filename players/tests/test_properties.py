@@ -150,4 +150,7 @@ class PropertyTests(TestCase):
         for seed in range(1, 11):
             run_sequence(f"x{seed}", seed)
         coverage = self._equivalence("x", range(1, 11), 4000)
-        self.assertTrue({"BURNOUT_ACTIVE_STATE", "CRITICAL_STATE", "HOSPITALIZED_STATE", "INSUFFICIENT_ENERGY"} <= coverage, coverage)
+        # Os três estados com histerese E as recusas que cada um produz (INSUFFICIENT_ENERGY é exigido
+        # no teste de balanceamento padrão; aqui a hospitalização recusa antes de a energia faltar).
+        self.assertTrue({"BURNOUT_ACTIVE_STATE", "CRITICAL_STATE", "HOSPITALIZED_STATE",
+                         "BURNOUT_ACTIVE", "HEALTH_CRITICAL", "HOSPITALIZED"} <= coverage, coverage)

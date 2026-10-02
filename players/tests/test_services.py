@@ -62,7 +62,8 @@ class SyncTests(PlayerTestCase):
         change_health(self.player.pk, -100, "t")
         s = self.snap()
         self.assertEqual(s.work_blocked_by, ["HOSPITALIZED", "HEALTH_CRITICAL", "BURNOUT_ACTIVE"])
-        self.assertEqual(s.study_blocked_by, ["BURNOUT_ACTIVE"])
+        self.assertEqual(s.study_blocked_by, ["HOSPITALIZED", "BURNOUT_ACTIVE"])
+        self.assertEqual(s.leisure_blocked_by, ["HOSPITALIZED"])          # Lazer só não é bloqueado pelo Burnout
 
 
 class AtomicityTests(PlayerTestCase):

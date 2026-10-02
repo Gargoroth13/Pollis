@@ -147,31 +147,35 @@ class HospitalizationTests(PlayerTestCase):
         self.assertFalse(s.hospitalized)
 
     def test_blocks_work_and_reports_reasons_in_fixed_order(self):
-        """04 §14: trabalho é incompatível com a hospitalização (parte DEFINIDA do documento)."""
         change_health(self.player.pk, -100, "t")
         r = perform_action(self.player.pk, Action.WORK)
         self.assertEqual((r.code, r.detail["reasons"]), ("HOSPITALIZED", ["HOSPITALIZED", "HEALTH_CRITICAL"]))
 
-    # --- [ABERTO 04 §14]: quais OUTRAS ações a hospitalização bloqueia ainda não foi decidido -----------
-    def test_OPEN_DECISION_default_reading_leaves_study_and_leisure_available(self):
-        """Interpretação MÍNIMA provisória, não regra definitiva (ver CHANGELOG, 'Decisões de design a fechar')."""
-        change_health(self.player.pk, -100, "t")
-        s = self.snap()
-        self.assertEqual((s.study_blocked_by, s.leisure_blocked_by), ([], []))
-        self.assertTrue(perform_action(self.player.pk, Action.STUDY).ok)
-        self.assertTrue(perform_action(self.player.pk, Action.LEISURE).ok)
-
-    @override_settings(POLIS_BALANCE={"hospitalization_blocked_actions": ["work", "study", "leisure"]})
-    def test_OPEN_DECISION_is_configuration_not_hardcoded(self):
+    def test_blocks_work_study_and_leisure(self):
+        """04 §14: enquanto hospitalizado, o jogador não pode Trabalhar, Estudar nem fazer Lazer."""
         change_health(self.player.pk, -100, "t")
         before = self.state().energy
-        for action in (Action.STUDY, Action.LEISURE):
+        for action in (Action.WORK, Action.STUDY, Action.LEISURE):
             r = perform_action(self.player.pk, action)
             self.assertEqual((r.ok, r.code), (False, "HOSPITALIZED"), action)
         self.assertEqual(self.state().energy, before)                       # recusa não custa Energia
         s = self.snap()
         self.assertEqual((s.study_blocked_by, s.leisure_blocked_by), (["HOSPITALIZED"], ["HOSPITALIZED"]))
-        self.clk.advance(seconds=HOSPITAL)                                   # ao fim da internação, tudo libera
+        self.assertEqual(s.work_blocked_by[0], "HOSPITALIZED")
+
+    def test_everything_is_released_when_the_hospitalization_ends(self):
+        change_health(self.player.pk, -100, "t")
+        self.clk.advance(seconds=HOSPITAL)
+        s = self.snap()
+        self.assertEqual((s.work_blocked_by, s.study_blocked_by, s.leisure_blocked_by), ([], [], []))
+        for action in (Action.WORK, Action.STUDY, Action.LEISURE):
+            self.assertTrue(perform_action(self.player.pk, action).ok, action)
+
+    @override_settings(POLIS_BALANCE={"hospitalization_blocked_actions": ["work"]})
+    def test_the_blocked_set_is_configurable(self):
+        change_health(self.player.pk, -100, "t")
+        self.assertEqual(perform_action(self.player.pk, Action.WORK).code, "HOSPITALIZED")
+        self.assertTrue(perform_action(self.player.pk, Action.STUDY).ok)
         self.assertTrue(perform_action(self.player.pk, Action.LEISURE).ok)
 
     def test_recovers_by_normal_rules_and_ends_after_the_duration(self):

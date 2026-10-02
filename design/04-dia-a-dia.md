@@ -381,7 +381,7 @@ Quando `Saúde = 0`, o jogador entra em **hospitalização**.
 
 Hospitalização é um estado distinto de Saúde Crítica.
 
-Enquanto hospitalizado, o jogador não pode realizar ações incompatíveis com internação, incluindo trabalho.
+Enquanto hospitalizado, o jogador não pode realizar as ações de **Trabalhar, Estudar e Lazer**.
 
 A recuperação durante hospitalização utiliza as regras normais de Saúde e assistência médica.
 

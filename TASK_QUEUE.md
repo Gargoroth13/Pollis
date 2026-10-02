@@ -72,7 +72,6 @@ Entregue: app `players` (`Player`, `QolEffect`, `rules`, `services`, `qol`, `bal
 estruturado do doc 20) e `TickKind.TEN_MINUTES`. Parâmetros `[PROV]` e interpretações: `CHANGELOG_DEV.md` (2026-10-01).
 Fica para quando o sistema dependente existir: Tratamento (dinheiro), auto-consumo de alimentos (Inventário),
 Recuperação Regional (saúde/médicos), bloqueio por Viagem (Geografia).
-**Antes do merge:** fechar a decisão de design aberta sobre hospitalização (`04 §14`), registrada em `CHANGELOG_DEV.md`.
 
 ---
 

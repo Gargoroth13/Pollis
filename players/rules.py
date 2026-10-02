@@ -39,8 +39,7 @@ def energy_cost(action: Action, bal: Balance) -> Decimal:
 def block_reasons(player: Player, action: Action, at: int, bal: Balance) -> List[str]:
     """Motivos pelos quais a ação não pode ser feita agora, em ordem fixa (determinística)."""
     reasons: List[str] = []
-    # [ABERTO 04 §14] quais ações a hospitalização bloqueia ainda não está fechado: ver
-    # Balance.hospitalization_blocked_actions e a seção "Decisões de design a fechar" do CHANGELOG.
+    # 04 §14: a hospitalização bloqueia Trabalhar, Estudar e Lazer (Balance.hospitalization_blocked_actions).
     if player.is_hospitalized(at) and action.value in bal.hospitalization_blocked_actions:
         reasons.append("HOSPITALIZED")
     if action is Action.WORK:
