@@ -174,7 +174,8 @@ Não implementar ainda os sistemas FUTURO apenas por conveniência.
 |---|---|
 | 1. ciclo temporal, lazy | **feito** (P0.03): ticks horário/diário/semanal/mensal em calendário real, `catch_up` por entidade, `advance_world`. Scheduled events pontuais: pendentes |
 | 2. Energia/QoL/Saúde/Jogador | **feito** (P0.04), sobre o `04` FINAL: Energia, QoL Base/efetiva/Atual, Burnout Ativo, Saúde Crítica, Hospitalização, Nutrição. Pendente: Tratamento, auto-consumo de alimentos, Viagem (dependem de outros sistemas) |
-| 3–9 | não iniciados |
+| 3. Skills | **feito** (P0.05), sobre o `01` (REVIEW): 3 skills, ganho por atividade, requisitos, Especialização (`02 §13`); decisões abertas do `01` isoladas |
+| 4–9 | não iniciados |
 
 O código anterior ao design atual foi removido por decisão do Game Director (2026-09-30); `design/` é a única base.
 

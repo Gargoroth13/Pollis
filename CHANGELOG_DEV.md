@@ -4,6 +4,74 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-02 — Skills (P0.05) sobre o `01` (REVIEW)
+
+**Princípio:** o `01` está em REVIEW. Foi implementado **somente o que ele já estabelece**. Onde o documento diz que algo será definido/calibrado, há um parâmetro ou um ponto de extensão **neutro**; nenhum exemplo conceitual virou regra. As regras do `04` (P0.04) não foram alteradas; só ganharam os pontos de integração necessários.
+
+### Decisões do `01` implementadas
+1. Exatamente **3 skills** (Inteligência, Físico, Carisma); restrição no banco impede uma quarta.
+2. Progressão **infinita**: nenhuma regra faz clamp superior (a coluna tem 26 dígitos inteiros).
+3. O jogador **não distribui pontos**: não existe ação de "treinar"; a skill cresce porque a **atividade** foi feita.
+4. **Estudar** desenvolve as 3 skills (`01 §1.4`); **Trabalhar** desenvolve a skill que o **cargo** informar (`01 §1.2`); o ganho do Trabalho é **menor** que o do Estudo (validado na configuração).
+5. **Múltiplas skills** por atividade, quando ela as declarar.
+6. **Requisitos mínimos** de uma ou mais skills, todas exigidas (`01 §1.9`), com detalhamento do que falta.
+7. Fórmula de ganho `ganho_base × QoL_base × qualidade_da_escola` (`01 §1.3`), com **detalhamento estruturado** (doc 20), inclusive o diminishing returns como componente.
+8. Skill como **multiplicador de produção** e como **base do teto salarial** (`01 §1.6-1.7`): só os pontos de uso/cálculo; ver extensão abaixo.
+9. **Especialização do `02 §13`** (FINAL): ganho pelo trabalho, decadência diária, **piso de 50%** do máximo histórico, **recuperação a 1,5×**. Mais um **perfil emergente** descritivo (`01 §1.1`).
+
+### Integração com o P0.04 (sem caminho paralelo)
+- Novo `players/hooks.py`: `perform_action` aceita `activity: ActivityContext` e executa hooks **na mesma transação**, **só após o sucesso** da ação, em ordem determinística. Recusas (energia, burnout, hospitalização) **nunca** geram skill; falha em qualquer hook desfaz a ação inteira.
+- `create_player` passou a ser atômico e chama hooks de criação (é onde as 3 skills nascem).
+- Jogador humano e Bot usam exatamente o mesmo caminho (testado).
+- A decadência da Especialização roda no **tick diário** do escopo `player` do P0.04. Único ajuste em teste do P0.04: `kinds_for("player")` deixou de ser exatamente `[TEN_MINUTES]`, porque outros sistemas agora somam outros kinds.
+
+### Ambiguidades e interpretações técnicas (reversíveis; **confirmar**)
+1. **"Especialização" tem dois sentidos.** `01 §1.1`: concentração que "surge naturalmente" (sem mecânica). `02 §13` (FINAL): valor próprio por atividade/produto. `03 §14` fala em cursos que aumentam "especializações". Implementei o perfil emergente (só leitura) **e** a mecânica do `02 §13`. **Não implementados:** ganho por curso (`03 §14`) e o fator `f(skill, especialização)` da produção, pois dependem de Escolas/Empresas e seus valores não existem.
+2. **"QoL_base" (`01 §1.3`) × `04`, que agora distingue QoL Base / Base efetiva / Atual.** Virou configuração `[ABERTO]` `qol_source`: padrão `"base"` (leitura literal, estrutural); alternativa `"base_effective"`. A QoL Atual (buffs temporários) **não** é oferecida, por oscilar o ganho.
+3. **"qualidade_da_escola" aparece na fórmula geral**, mas só faz sentido para estudo. Tratada como **fator de entrada** (`ActivityContext.school_quality`), valor 1 quando não se aplica; o sistema de Escolas a fornecerá.
+4. **Várias skills em uma atividade:** cada skill recebe o **seu próprio** ganho base inteiro (sem dividir). O `01` não diz. Por skill é parametrizável.
+5. **Trabalhar/Lazer sem skill declarada não desenvolve nada.** Quem define a skill relevante é o cargo (Empresas) e a atividade de lazer. Lazer **não tem ganho padrão** (`01 §2` deixa em aberto); pedir skill no Lazer sem informar o ganho é erro explícito, não um valor inventado.
+6. **Ganho é por execução da ação** (não por energia nem por dia). Coerente com `03` ("mais energia dedicada → mais ganho diário").
+7. **Skills nunca diminuem** (o `01` não define decadência de skill). Só a Especialização decai.
+8. **Especialização:** só o **Trabalho** a desenvolve (`02 §13`: "através do trabalho"); a chave é opaca (atividade ou produto). "Dia sem uso" = dia de calendário do jogo (fuso do jogo) sem trabalhar naquela área, decaindo no tick que abre o dia seguinte; o dia do uso e o seguinte não decaem. A **forma** da decadência (pontos por dia) é suposição minha; o `02` só diz "decadência diária baixa".
+9. **Teto salarial:** implementado só o **cálculo** (`nível × multiplicador`). O limite é diário com contador de recebido no dia; esse contador pertence ao sistema de pagamento (dinheiro), inexistente.
+10. **Requisitos:** só **E** (todas as skills). O `01` não define "OU".
+11. **Precisão:** a coluna aceita níveis enormes, mas o **SQLite de desenvolvimento** guarda decimais como ponto flutuante (~15 dígitos significativos). Em PostgreSQL (produção) é exato.
+12. Consequência natural do `04`: com Burnout Ativo o Estudo é bloqueado, então não gera skill.
+
+### Decisões abertas do `01`: isoladas, NÃO fechadas
+| Decisão aberta | Como ficou |
+|---|---|
+| Fórmula do diminishing returns | Ponto de extensão `skills.curves.register_progress_curve`; única curva embutida é `"none"` (fator 1). Curva que devolva fator ≤ 0 é rejeitada (pararia a progressão infinita) |
+| Fórmula Skill → produção | Ponto de extensão `register_production_curve`; padrão `"none"` (fator 1) |
+| Multiplicador salarial definitivo | Parâmetro `salary_cap_multiplier`, `[PROV]` 1,5 (o "atualmente considerado" do `01`) |
+| Distribuição de cargos entre INT/FIS/CAR | Não implementada (pertence a Empresas); o cargo informa a skill via `ActivityContext` |
+| Quais atividades usam várias skills | `ActivityContext.skills`, definido por quem conhece a atividade |
+| Ganhos definitivos de skill | Parâmetros `[PROV]` abaixo |
+| Balanceamento de freelance | Não implementado |
+| Atividades não especificadas | Sem ganho padrão; ganho explícito por atividade |
+
+### Parâmetros provisórios `[PROV]` (numéricos, sobrescrevíveis por `POLIS_SKILLS_BALANCE`)
+| Parâmetro | Valor | Observação |
+|---|---|---|
+| `initial_level` | 0 | o nível inicial virá do contexto de nascimento (hook `register_initial_level_provider`) |
+| `base_gain.study` (cada skill) | 1,0 | `1` é só a unidade de referência; o `01 §1.3` usa "1.0" como exemplo conceitual |
+| `base_gain.work` (cada skill) | 0,5 | só respeita "menor que o estudo" |
+| `salary_cap_multiplier` | 1,5 | não definitivo (`01 §2`) |
+| `specialization_gain_per_work` | 1 | `02 §13` deixa para o balanceamento |
+| `specialization_decay_per_day` | 0,1 | idem |
+
+`[02 §13]` (definidos): `specialization_floor_ratio` 0,5 e `specialization_recovery_multiplier` 1,5. `[ABERTO]` (configuração, não regra): `qol_source`, `progress_curve`, `production_curve`.
+
+### Sugestões para o Game Director (**NÃO implementadas**; só para decisão)
+- **Diminishing returns:** o `01` já cita uma fórmula em faixas como não definitiva. Candidatas: (a) faixas por nível; (b) contínua, ex. `1 / (1 + nível / k)`; (c) logarítmica. Qualquer uma deve manter o fator estritamente positivo para preservar a progressão infinita. Sugiro escolher depois de observar a distribuição de níveis nos Bots.
+- **Razão Trabalho/Estudo:** com os valores atuais, Estudar custa 10 de Energia e rende 0,5 por skill; Trabalhar custa 20 e rende 0,25 na skill do cargo. Por Energia, estudar rende **4×** mais. Vale confirmar se essa proporção é a intenção antes de calibrar.
+- **Ordem de grandeza dos requisitos:** com QoL 0,50 e os ganhos atuais, o exemplo conceitual do `01` (Inteligência ≥ 100) exigiria ~200 estudos, e o Burnout do `04` bloqueia o Estudo após ~34 seguidos (+3 cada). Os níveis "100" e "75" do `01` são só exemplos; os níveis reais dos cargos precisam nascer da calibração.
+- **Multiplicador salarial:** manter como parâmetro e avaliar se vira parâmetro de lei (`07`/`11`), como o `01 §1.7` sugere.
+- **Freelance:** definir "desenvolvimento mínimo" como razão do ganho do Trabalho antes de implementá-lo.
+
+---
+
 ## 2026-10-01 — `04` fechado como FINAL e estado do jogador (P0.04)
 
 ### Decisão do Game Director

@@ -75,7 +75,7 @@ Recuperação Regional (saúde/médicos), bloqueio por Viagem (Geografia).
 
 ---
 
-## [ ] P0.05 — Skills
+## [x] P0.05 — Skills  *(concluído em 2026-10-02, sobre o `01` em REVIEW)*
 
 Implementar `01 — Skills`.
 
@@ -86,6 +86,11 @@ Critérios:
 - especialização;
 - requisitos baseados em skill;
 - testes.
+
+Entregue: app `skills` (3 skills, ganho por atividade com detalhamento, requisitos, Especialização do `02 §13`, perfil
+emergente), `players/hooks.py` (integração sem caminho paralelo). Decisões abertas do `01` isoladas como pontos de extensão,
+não fechadas: ver `CHANGELOG_DEV.md` (2026-10-02). Depende de outros sistemas: cargo/skill relevante (Empresas), qualidade da
+escola e cursos (Escolas), teto salarial diário (dinheiro), nível inicial (criação do jogador).
 
 ---
 
