@@ -47,6 +47,42 @@ class NoCeilingTests(SkillTestCase):
         self.assertGreaterEqual(PlayerSkill._meta.get_field("level").max_digits - PlayerSkill._meta.get_field("level").decimal_places, 20)
 
 
+@override_settings(POLIS_BALANCE={"nutrition_decay_per_cycle": 0})   # isola do P0.04: sem fome, o jogador segue saudável
+class SkillsNeverDecayTests(SkillTestCase):
+    """
+    Decisão do Game Director (2026-10-02): Inteligência, Físico e Carisma NUNCA diminuem. A única progressão
+    com decadência é a Especialização (02 §13).
+    """
+
+    def test_skill_levels_do_not_decay_with_time_or_inactivity(self):
+        for skill, level in ((INT, 40), (PHY, D("12.5")), (CHA, 7)):
+            self.set_level(skill, level)
+        before = self.levels()
+        from players.services import sync_player
+        for _ in range(8):
+            self.clk.advance(days=100)
+            sync_player(self.player.pk)                  # 800 dias de jogo, catch-up diário/horário/10 min
+        self.assertEqual(self.levels(), before)
+
+    def test_only_the_specialization_decays_in_the_same_period(self):
+        from skills.models import Specialization
+        from players.hooks import ActivityContext
+        self.act(Action.WORK, activity=ActivityContext(skills=("physical",), specialization_key="product:x"))
+        skills_before = self.levels()
+        self.clk.advance(days=400)
+        from players.services import sync_player
+        sync_player(self.player.pk)
+        spec = Specialization.objects.get(player=self.player)
+        self.assertLess(spec.value, spec.historic_max)                       # a Especialização decaiu...
+        self.assertEqual(self.levels(), skills_before)                       # ...as skills não
+
+    def test_no_tick_handler_touches_skill_levels(self):
+        from core.ticks import registry
+        from core.timeline import TickKind
+        names = [r.name for r in registry.handlers_for("player", TickKind.DAILY)]
+        self.assertEqual(names, ["specialization_decay"])                    # o único handler de skills é o da Especialização
+
+
 class DiminishingReturnsExtensionPointTests(SkillTestCase):
     """
     01 §1.5: a fórmula do diminishing returns NÃO está fechada. Estas curvas existem SÓ para provar que o

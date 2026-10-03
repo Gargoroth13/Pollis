@@ -27,8 +27,6 @@ from core.breakdown import D
 from . import curves
 from .constants import SKILL_NAMES
 
-QOL_SOURCES = ("base", "base_effective")
-
 
 def _default_base_gain() -> Dict[str, Dict[str, Decimal]]:
     return {
@@ -48,8 +46,9 @@ class SkillBalance:
 
     # --- Ganho (01 §1.3) --------------------------------------------------
     # ganho_base = QoL_base × qualidade_da_escola × ganho_base_da_atividade   [01 §1.3]
+    # Decisões do Game Director (2026-10-02): QoL_base = QoL Base ESTRUTURAL (não a efetiva nem a Atual);
+    # a qualidade da escola só entra em atividades educacionais (nas demais o fator é 1).
     base_gain: Dict[str, Dict[str, Decimal]] = field(default_factory=_default_base_gain)  # [PROV] por atividade e skill
-    qol_source: str = "base"                            # [ABERTO] 01 §1.3 diz "QoL_base"; o 04 agora distingue Base / Base efetiva
     progress_curve: str = "none"                        # [ABERTO] 01 §1.5: fórmula do diminishing returns NÃO fechada ("none" = fator 1)
 
     # --- Produção e salário (01 §1.6-1.7) ---------------------------------
@@ -76,8 +75,6 @@ class SkillBalance:
         for skill in set(work) & set(study):
             if not work[skill] < study[skill]:
                 e.append(f"01 §1.2: o ganho do Trabalho deve ser MENOR que o do Estudo ({skill})")
-        if self.qol_source not in QOL_SOURCES:
-            e.append(f"qol_source deve ser um de {QOL_SOURCES}")
         if self.progress_curve not in curves.progress_curve_names():
             e.append(f"progress_curve desconhecida: {self.progress_curve}")
         if self.production_curve not in curves.production_curve_names():
@@ -111,7 +108,7 @@ def get_skill_balance() -> SkillBalance:
             for activity, per_skill in value.items():
                 merged.setdefault(activity, {}).update({k: D(str(v) if isinstance(v, float) else v) for k, v in per_skill.items()})
             changes[key] = merged
-        elif key in ("qol_source", "progress_curve", "production_curve"):
+        elif key in ("progress_curve", "production_curve"):
             changes[key] = value
         else:
             changes[key] = D(str(v) if isinstance((v := value), float) else v)

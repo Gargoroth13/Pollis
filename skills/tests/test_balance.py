@@ -13,7 +13,7 @@ class SkillBalanceTests(SimpleTestCase):
 
     def test_open_decisions_default_to_the_most_neutral_setting(self):
         b = get_skill_balance()
-        self.assertEqual((b.progress_curve, b.production_curve, b.qol_source), ("none", "none", "base"))
+        self.assertEqual((b.progress_curve, b.production_curve), ("none", "none"))
 
     def test_work_gain_is_smaller_than_study_gain_by_default(self):
         b = get_skill_balance()
@@ -40,7 +40,7 @@ class SkillBalanceTests(SimpleTestCase):
             {"base_gain": {"work": {"industry": 1}}},                        # só existem 3 skills
             {"base_gain": {"work": {"physical": 1}}},                        # trabalho não pode ser >= estudo (01 §1.2)
             {"base_gain": {"work": {"physical": -1}}},
-            {"qol_source": "current"},
+            {"qol_source": "base_effective"},                                # decisão: a QoL do ganho NÃO é configurável
             {"progress_curve": "inventada"},
             {"salary_cap_multiplier": -1},
             {"specialization_floor_ratio": 2},

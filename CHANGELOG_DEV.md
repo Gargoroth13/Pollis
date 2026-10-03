@@ -15,7 +15,7 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 4. **Estudar** desenvolve as 3 skills (`01 §1.4`); **Trabalhar** desenvolve a skill que o **cargo** informar (`01 §1.2`); o ganho do Trabalho é **menor** que o do Estudo (validado na configuração).
 5. **Múltiplas skills** por atividade, quando ela as declarar.
 6. **Requisitos mínimos** de uma ou mais skills, todas exigidas (`01 §1.9`), com detalhamento do que falta.
-7. Fórmula de ganho `ganho_base × QoL_base × qualidade_da_escola` (`01 §1.3`), com **detalhamento estruturado** (doc 20), inclusive o diminishing returns como componente.
+7. Fórmula de ganho `ganho_base × QoL_base × qualidade_da_escola` (`01 §1.3`), com **detalhamento estruturado** (doc 20), inclusive o diminishing returns como componente. `QoL_base` = QoL Base **estrutural** e a escola só entra em atividades **educacionais** (decisões do Game Director de 2026-10-02).
 8. Skill como **multiplicador de produção** e como **base do teto salarial** (`01 §1.6-1.7`): só os pontos de uso/cálculo; ver extensão abaixo.
 9. **Especialização do `02 §13`** (FINAL): ganho pelo trabalho, decadência diária, **piso de 50%** do máximo histórico, **recuperação a 1,5×**. Mais um **perfil emergente** descritivo (`01 §1.1`).
 
@@ -25,14 +25,22 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 - Jogador humano e Bot usam exatamente o mesmo caminho (testado).
 - A decadência da Especialização roda no **tick diário** do escopo `player` do P0.04. Único ajuste em teste do P0.04: `kinds_for("player")` deixou de ser exatamente `[TEN_MINUTES]`, porque outros sistemas agora somam outros kinds.
 
+### Decisões do Game Director sobre Skills (2026-10-02)
+Fecham itens que estavam como interpretação minha ou como `[ABERTO]`. Os valores provisórios de ganho, diminishing returns, Skill → produção, Especialização, salário e freelance **seguem abertos e calibráveis**: nada neles foi alterado.
+1. **QoL usada no ganho de Skill: QoL Base estrutural.** Não a Base efetiva (que cai com o Burnout Ativo) nem a QoL Atual (efeitos temporários, Saúde Crítica). *Implementação:* o hook usa `qol_base`; a opção de configuração `qol_source` foi **removida** (deixou de ser decisão aberta) e passar a chave agora é erro de configuração.
+2. **Skills não decaem.** Inteligência, Físico e Carisma nunca diminuem; a **única** progressão com decadência é a Especialização. *Implementação:* já era assim; passou a ser travado por testes (800 dias de jogo sem queda; só o handler de Especialização roda no tick diário).
+3. **Atividade com múltiplas skills: cada skill declarada recebe o seu próprio ganho, sem divisão automática.** *Implementação:* já era assim; travado por teste (1, 2 ou 3 skills dão o mesmo ganho em cada uma).
+4. **Qualidade da Escola só participa de atividades educacionais.** Para Trabalho e demais atividades o fator é neutro (1). *Implementação:* hoje a única atividade educacional é a ação **Estudar**; informar `school_quality` diferente de 1 em Trabalho ou Lazer é **erro explícito** (não é ignorado em silêncio). Quando surgirem outras atividades educacionais (cursos, grupos de estudo), será preciso marcá-las como tais.
+*O texto de `design/01-skills.md` não foi alterado (segue REVIEW). Sugestão de ajuste, se desejado: §1.3 (QoL_base = QoL Base estrutural; escola só em educacionais) e a menção de que skills não decaem.*
+
 ### Ambiguidades e interpretações técnicas (reversíveis; **confirmar**)
 1. **"Especialização" tem dois sentidos.** `01 §1.1`: concentração que "surge naturalmente" (sem mecânica). `02 §13` (FINAL): valor próprio por atividade/produto. `03 §14` fala em cursos que aumentam "especializações". Implementei o perfil emergente (só leitura) **e** a mecânica do `02 §13`. **Não implementados:** ganho por curso (`03 §14`) e o fator `f(skill, especialização)` da produção, pois dependem de Escolas/Empresas e seus valores não existem.
-2. **"QoL_base" (`01 §1.3`) × `04`, que agora distingue QoL Base / Base efetiva / Atual.** Virou configuração `[ABERTO]` `qol_source`: padrão `"base"` (leitura literal, estrutural); alternativa `"base_effective"`. A QoL Atual (buffs temporários) **não** é oferecida, por oscilar o ganho.
-3. **"qualidade_da_escola" aparece na fórmula geral**, mas só faz sentido para estudo. Tratada como **fator de entrada** (`ActivityContext.school_quality`), valor 1 quando não se aplica; o sistema de Escolas a fornecerá.
-4. **Várias skills em uma atividade:** cada skill recebe o **seu próprio** ganho base inteiro (sem dividir). O `01` não diz. Por skill é parametrizável.
+2. ~~**"QoL_base" (`01 §1.3`) × `04`** (QoL Base / Base efetiva / Atual).~~ **Fechada pelo Game Director (2026-10-02):** QoL Base estrutural (decisão 1 acima).
+3. ~~**"qualidade_da_escola" na fórmula geral.**~~ **Fechada pelo Game Director (2026-10-02):** só em atividades educacionais; neutro (1) nas demais (decisão 4 acima).
+4. ~~**Várias skills em uma atividade.**~~ **Fechada pelo Game Director (2026-10-02):** cada skill declarada recebe o seu próprio ganho, sem dividir (decisão 3 acima). O ganho base **por skill** segue parametrizável (`[PROV]`).
 5. **Trabalhar/Lazer sem skill declarada não desenvolve nada.** Quem define a skill relevante é o cargo (Empresas) e a atividade de lazer. Lazer **não tem ganho padrão** (`01 §2` deixa em aberto); pedir skill no Lazer sem informar o ganho é erro explícito, não um valor inventado.
 6. **Ganho é por execução da ação** (não por energia nem por dia). Coerente com `03` ("mais energia dedicada → mais ganho diário").
-7. **Skills nunca diminuem** (o `01` não define decadência de skill). Só a Especialização decai.
+7. ~~**Skills nunca diminuem.**~~ **Fechada pelo Game Director (2026-10-02):** skills não decaem; só a Especialização (decisão 2 acima).
 8. **Especialização:** só o **Trabalho** a desenvolve (`02 §13`: "através do trabalho"); a chave é opaca (atividade ou produto). "Dia sem uso" = dia de calendário do jogo (fuso do jogo) sem trabalhar naquela área, decaindo no tick que abre o dia seguinte; o dia do uso e o seguinte não decaem. A **forma** da decadência (pontos por dia) é suposição minha; o `02` só diz "decadência diária baixa".
 9. **Teto salarial:** implementado só o **cálculo** (`nível × multiplicador`). O limite é diário com contador de recebido no dia; esse contador pertence ao sistema de pagamento (dinheiro), inexistente.
 10. **Requisitos:** só **E** (todas as skills). O `01` não define "OU".
@@ -61,7 +69,7 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 | `specialization_gain_per_work` | 1 | `02 §13` deixa para o balanceamento |
 | `specialization_decay_per_day` | 0,1 | idem |
 
-`[02 §13]` (definidos): `specialization_floor_ratio` 0,5 e `specialization_recovery_multiplier` 1,5. `[ABERTO]` (configuração, não regra): `qol_source`, `progress_curve`, `production_curve`.
+`[02 §13]` (definidos): `specialization_floor_ratio` 0,5 e `specialization_recovery_multiplier` 1,5. `[ABERTO]` (configuração, não regra): `progress_curve` e `production_curve`. *(`qol_source` deixou de existir: decisão 1 de 2026-10-02.)*
 
 ### Sugestões para o Game Director (**NÃO implementadas**; só para decisão)
 - **Diminishing returns:** o `01` já cita uma fórmula em faixas como não definitiva. Candidatas: (a) faixas por nível; (b) contínua, ex. `1 / (1 + nível / k)`; (c) logarítmica. Qualquer uma deve manter o fator estritamente positivo para preservar a progressão infinita. Sugiro escolher depois de observar a distribuição de níveis nos Bots.

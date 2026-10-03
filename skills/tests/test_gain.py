@@ -70,6 +70,18 @@ class ActivityDrivesSkillsTests(SkillTestCase):
         self.assertEqual(list(self.gains(r)), ["intelligence", "charisma"])           # ordem determinística
         self.assertEqual(self.levels(), {INT: D("0.25"), PHY: 0, CHA: D("0.25")})
 
+    def test_each_declared_skill_gets_its_own_full_gain_never_split(self):
+        """Decisão do GD: nada de dividir o ganho entre as skills. 1, 2 ou 3 skills => o mesmo ganho em CADA uma."""
+        gains = {}
+        for n, skills in enumerate((("intelligence",), ("intelligence", "physical"), ("intelligence", "physical", "charisma"))):
+            player = self.new_player(f"multi{n}")
+            self.act(Action.WORK, player=player, activity=ActivityContext(skills=skills))
+            gains[len(skills)] = self.levels(player)[INT]
+        self.assertEqual(set(gains.values()), {D("0.25")})                 # igual com 1, 2 e 3 skills
+        three = self.new_player("three")
+        self.act(Action.STUDY, player=three)                               # Estudar: 3 skills, cada uma com 0,5
+        self.assertEqual(self.levels(three), {INT: D("0.5"), PHY: D("0.5"), CHA: D("0.5")})
+
     def test_leisure_has_no_skill_gain_unless_the_activity_defines_one(self):
         """01 §2: 'quais atividades existem fora de trabalho e estudo e quais skills desenvolvem' está em aberto."""
         self.assertEqual(self.act(Action.LEISURE).detail["hooks"], {})
@@ -94,9 +106,29 @@ class ActivityDrivesSkillsTests(SkillTestCase):
         with self.assertRaises(ValueError):
             self.act(Action.STUDY, activity=ActivityContext(base_gain={"physical": D(-1)}))
 
-    def test_school_quality_scales_the_gain(self):
+    def test_school_quality_scales_the_gain_of_an_educational_activity(self):
         self.act(Action.STUDY, activity=ActivityContext(school_quality=D("0.5")))
         self.assertEqual(self.levels()[INT], D("0.25"))          # 1 × QoL 0,5 × escola 0,5
+
+    def test_school_quality_is_neutral_outside_educational_activities(self):
+        """Decisão do GD: só Estudar usa a qualidade da escola; Trabalho e demais atividades têm fator 1."""
+        work = self.act(Action.WORK, activity=ActivityContext(skills=("physical",)))
+        self.assertEqual(work.detail["hooks"]["skills"]["gains"]["physical"]["gain"].step("school_quality").amount, 1)
+        lei = self.act(Action.LEISURE, activity=ActivityContext(skills=("charisma",), base_gain={"charisma": D(1)}))
+        self.assertEqual(lei.detail["hooks"]["skills"]["gains"]["charisma"]["gain"].step("school_quality").amount, 1)
+        study = self.act(Action.STUDY, activity=ActivityContext(school_quality=D("0.5")))
+        self.assertEqual(study.detail["hooks"]["skills"]["gains"]["physical"]["gain"].step("school_quality").amount, D("0.5"))
+
+    def test_a_school_quality_on_a_non_educational_activity_is_an_error_not_silently_applied(self):
+        for action, activity in ((Action.WORK, ActivityContext(skills=("physical",), school_quality=D("0.5"))),
+                                 (Action.LEISURE, ActivityContext(skills=("charisma",), base_gain={"charisma": D(1)}, school_quality=D(2)))):
+            with self.assertRaises(ValueError):
+                self.act(action, activity=activity)
+        self.assertEqual((self.levels(), self.state().energy), ({INT: 0, PHY: 0, CHA: 0}, 100))   # nada aplicado nem gasto
+
+    def test_negative_school_quality_is_rejected_even_for_study(self):
+        with self.assertRaises(ValueError):
+            self.act(Action.STUDY, activity=ActivityContext(school_quality=D(-1)))
 
     def test_structural_qol_raises_the_gain(self):
         from players import qol
@@ -112,24 +144,49 @@ class ActivityDrivesSkillsTests(SkillTestCase):
         self.assertEqual(g["gain"].computed_at, self.clk.now())
 
 
-class QolSourceTests(SkillTestCase):
-    """[ABERTO] 01 §1.3 escreve 'QoL_base'; o 04 distingue QoL Base (estrutural) e Base efetiva (com Burnout)."""
+class QolUsedByTheGainTests(SkillTestCase):
+    """
+    Decisão do Game Director (2026-10-02): o ganho de skill usa a QoL BASE ESTRUTURAL. Não usa a Base efetiva
+    (penalidade de Burnout) nem a QoL Atual (efeitos temporários, Saúde Crítica).
+    """
 
-    def test_default_reads_qol_base_literally_so_burnout_does_not_change_the_gain(self):
-        self.set_state(burnout=95, burnout_active=False)
-        self.act(Action.STUDY)                      # burnout +3 => ainda < 100
-        self.assertEqual(self.levels()[INT], D("0.5"))
+    LEISURE = ActivityContext(skills=("physical",), base_gain={"physical": D(1)})
 
-    @override_settings(POLIS_SKILLS_BALANCE={"qol_source": "base_effective"})
-    def test_base_effective_includes_the_burnout_penalty(self):
-        self.set_state(burnout=100, burnout_active=True)       # estudo bloqueado em burnout ativo; usa lazer com base explícita
-        self.act(Action.LEISURE, activity=ActivityContext(skills=("physical",), base_gain={"physical": D(1)}))
-        self.assertEqual(self.levels()[PHY], D("0.4"))          # 1 × (0,5 − penalidade 0,1)
+    def test_burnout_active_does_not_change_the_gain(self):
+        """A Base EFETIVA cairia 0,1 em Burnout Ativo; a estrutural não muda: ganho = 1 × 0,5."""
+        self.set_state(burnout=100, burnout_active=True)
+        self.act(Action.LEISURE, activity=self.LEISURE)
+        self.assertEqual(self.levels()[PHY], D("0.5"))
 
-    def test_temporary_effects_never_enter_either_reading(self):
+    def test_temporary_effects_do_not_change_the_gain(self):
         apply_temporary_effect(self.player.pk, "food", "f", D("0.4"), HOUR)
-        self.act(Action.STUDY)
-        self.assertEqual(self.levels()[INT], D("0.5"))
+        apply_temporary_effect(self.player.pk, "leisure", "l", D("-0.3"), HOUR)
+        self.act(Action.LEISURE, activity=self.LEISURE)
+        self.assertEqual(self.levels()[PHY], D("0.5"))
+
+    def test_critical_health_does_not_change_the_gain(self):
+        from players.services import change_health
+        change_health(self.player.pk, -85, "t")                          # Saúde 15: Crítica (debuff só na QoL Atual)
+        self.assertTrue(self.snap().health_critical)
+        self.act(Action.LEISURE, activity=self.LEISURE)
+        self.assertEqual(self.levels()[PHY], D("0.5"))
+
+    def test_the_structural_base_is_what_scales_the_gain(self):
+        from players import qol
+        qol.register_qol_base_provider("housing", lambda p, a: D("0.5"))
+        self.act(Action.LEISURE, activity=self.LEISURE)
+        self.assertEqual(self.levels()[PHY], D("1.0"))                   # QoL Base 1,0
+
+    def test_breakdown_shows_the_structural_base_not_a_derived_level(self):
+        g = self.act(Action.LEISURE, activity=self.LEISURE).detail["hooks"]["skills"]["gains"]["physical"]["gain"]
+        base = g.step("qol_base").detail
+        self.assertEqual([s.key for s in base.steps], ["baseline"])      # só estrutural: nada de 'burnout'
+
+    def test_the_source_of_the_qol_is_no_longer_configurable(self):
+        from django.core.exceptions import ImproperlyConfigured
+        with override_settings(POLIS_SKILLS_BALANCE={"qol_source": "base_effective"}):
+            with self.assertRaises(ImproperlyConfigured):
+                get_skill_balance()
 
 
 class SameRuleForEveryAgentTests(SkillTestCase):

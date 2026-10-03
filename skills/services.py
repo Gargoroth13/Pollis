@@ -19,7 +19,7 @@ from players import services as player_services
 from players.actions import Action
 from players.hooks import ActionHookContext
 from players.models import Player
-from players.qol import qol_base, qol_base_effective
+from players.qol import qol_base
 from players.rules import q
 
 from . import rules
@@ -107,6 +107,23 @@ def _base_gain(ctx: ActionHookContext, skill: Skill, sbal: SkillBalance) -> Deci
     return gain
 
 
+def _school_quality(ctx: ActionHookContext) -> Decimal:
+    """
+    A qualidade da escola só participa de atividades EDUCACIONAIS (hoje, a ação Estudar). Para Trabalho e
+    qualquer outra atividade o fator é neutro (1): informar outro valor é erro de quem chama, não é ignorado
+    em silêncio.
+    """
+    requested = D(ctx.activity.school_quality) if ctx.activity is not None else D(1)
+    if requested < 0:
+        raise ValueError("school_quality não pode ser negativa.")
+    if ctx.action is not Action.STUDY:
+        if requested != 1:
+            raise ValueError("A qualidade da escola só vale para atividades educacionais (Estudar); "
+                             "para as demais o fator é neutro (1).")
+        return D(1)
+    return requested
+
+
 def _use_specialization(ctx: ActionHookContext, key: str, sbal: SkillBalance) -> Dict[str, Any]:
     if not key or len(key) > 64:
         raise ValueError("specialization_key deve ter de 1 a 64 caracteres.")
@@ -128,11 +145,10 @@ def on_action(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
     skills = _resolve_skills(ctx)
     gains: Dict[str, Any] = {}
     if skills:
-        school_quality = D(act.school_quality) if act is not None else D(1)
-        if school_quality < 0:
-            raise ValueError("school_quality não pode ser negativa.")
-        qol = (qol_base(ctx.player, ctx.now, ctx.bal) if sbal.qol_source == "base"
-               else qol_base_effective(ctx.player, ctx.now, ctx.bal))
+        school_quality = _school_quality(ctx)
+        # Decisão do Game Director: o ganho usa a QoL BASE ESTRUTURAL, nunca a Base efetiva (Burnout) nem a Atual
+        # (buffs/debuffs temporários, Saúde Crítica).
+        qol = qol_base(ctx.player, ctx.now, ctx.bal)
         rows = ensure_skill_rows(ctx.player)
         for skill in skills:
             row = rows[skill]
