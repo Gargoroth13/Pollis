@@ -22,8 +22,9 @@ from core import clock as game_clock
 from core.breakdown import D, Explained
 from core.ticks import catch_up
 
-from . import rules
+from . import hooks, rules
 from .balance import get_balance
+from .hooks import ActionHookContext, ActivityContext
 from .models import FOOD, LEISURE, Player, QolEffect
 from .qol import qol_base, qol_base_effective, qol_current
 from .rules import Action, q
@@ -71,8 +72,9 @@ def _apply_effect(player: Player, category: str, spec: EffectSpec, now: int) -> 
     )
 
 
+@transaction.atomic
 def create_player(user, *, now: Optional[int] = None) -> Player:
-    """Estado inicial do 04 §24."""
+    """Estado inicial do 04 §24. Outros sistemas inicializam o seu estado via hooks de criação."""
     bal = get_balance()
     now = game_clock.now() if now is None else now
     player = Player(
@@ -81,6 +83,7 @@ def create_player(user, *, now: Optional[int] = None) -> Player:
     )
     rules.update_health_flags(player, now, bal)
     player.save()
+    hooks.run_player_created_hooks(player, now)
     return player
 
 
@@ -139,11 +142,14 @@ def get_snapshot(player_id: int) -> PlayerSnapshot:
 
 @transaction.atomic
 def perform_action(player_id: int, action: Action, *, burnout_risk=1,
-                   effect: Optional[EffectSpec] = None) -> ActionResult:
+                   effect: Optional[EffectSpec] = None,
+                   activity: Optional[ActivityContext] = None) -> ActionResult:
     """
     Trabalhar, Estudar ou Lazer: custo FIXO de Energia (04 §2.2: o jogador não escolhe quanto gastar),
     alteração de Burnout (+5/+3/-10) e, no Lazer, o efeito temporário da atividade (categoria Lazer).
     `burnout_risk`: multiplicador de risco de Burnout (02 §9.2), 1 = 100%.
+    `activity`: o que a atividade oferece a OUTROS sistemas (ex.: skills que desenvolve). Os hooks
+    registrados (players.hooks) reagem a ela dentro desta mesma transação, depois do sucesso da ação.
     """
     bal = get_balance()
     risk = D(burnout_risk)
@@ -169,10 +175,11 @@ def perform_action(player_id: int, action: Action, *, burnout_risk=1,
         player.last_work_at = now
     if effect is not None:
         _apply_effect(player, LEISURE, effect, now)
+    hook_results = hooks.run_action_hooks(ActionHookContext(player, action, now, bal, activity))
     player.save()
     return ActionResult(True, "OK", {
         "energy": player.energy, "energy_spent": cost, "burnout": player.burnout,
-        "burnout_active": player.burnout_active, "burnout_change": change,
+        "burnout_active": player.burnout_active, "burnout_change": change, "hooks": hook_results,
     })
 
 

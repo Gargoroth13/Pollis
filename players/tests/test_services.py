@@ -117,4 +117,4 @@ class CycleHandlerTests(PlayerTestCase):
         """A ordem interna do ciclo é regra do design (04 §23): vive em rules.advance_cycle, não em prioridades."""
         names = [r.name for r in registry.handlers_for("player", TickKind.TEN_MINUTES)]
         self.assertEqual(names, ["cycle"])
-        self.assertEqual(registry.kinds_for("player"), [TickKind.TEN_MINUTES])
+        self.assertIn(TickKind.TEN_MINUTES, registry.kinds_for("player"))   # outros sistemas podem somar outros kinds
