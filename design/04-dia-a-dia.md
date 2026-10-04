@@ -496,9 +496,11 @@ Os grids/coordenadas da geografia são a base da distância.
 
 Regra do Bot Test:
 
-**1 unidade de distância de grid = 40 minutos de viagem.**
+`tempo-base de viagem = distância em grid × minutos_por_unidade`
 
-`tempo de viagem = distância em grid × 40 minutos de jogo`
+`minutos_por_unidade` é um **parâmetro de cenário**. O valor inicial de calibração do Bot Test é **15 minutos de jogo por unidade de distância de grid**; não é um valor definitivo de balanceamento.
+
+A Geografia fornece apenas a distância. O cálculo final de transporte/viagem aplicará os modificadores sobre o tempo-base.
 
 A distância deve ser fornecida pela Geografia e não armazenada como atributo independente inventado no jogador.
 
