@@ -79,6 +79,18 @@ class HierarchyTests(GeoTestCase):
         for s in State.objects.all():
             self.assertEqual(s.capital.state_id, s.id)                        # 08 §2
 
+    def test_capital_is_the_first_city_in_the_default_scenario(self):
+        self.world(states=2)
+        for s in State.objects.all():
+            self.assertEqual(s.capital.index, 0)
+
+    def test_capital_is_scenario_configuration_not_a_universal_rule(self):
+        """Decisão do GD (2026-10-03): 'primeira cidade' é interpretação do cenário padrão, não regra do jogo."""
+        sc = self.world(states=2, cities_per_state=3, capital_city_index=2)
+        for s in State.objects.all():
+            self.assertEqual((s.capital.index, s.capital.state_id), (2, s.id))
+        self.assertTrue(check_integrity(sc).ok)
+
     def test_reference_city_sits_at_origin(self):
         """04 §21: 'a cidade de referência em (0,0)' é só uma coordenada, sem bônus nem penalidade."""
         self.world(states=2)

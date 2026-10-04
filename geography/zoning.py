@@ -1,9 +1,11 @@
 """
 Zoneamento (design/08 §16, §23.4; consumido por 10 §22).
 
-  - Cada lote tem regras PADRÃO de uso: por padrão cada categoria só admite o próprio uso ("os diferentes usos
-    devem permanecer relativamente separados"). O 08 diz "relativamente", então a matriz é PARAMETRIZÁVEL
-    (Scenario.zoning_permissions) e o padrão é a separação estrita ([ABERTO]).
+  - Cada lote tem regras PADRÃO de uso: sem outras regras, a categoria do lote admite o seu próprio uso. A MISTURA de
+    usos é permitida CONFORME O ZONEAMENTO (decisão do Game Director, 2026-10-03; 08 §16 diz "relativamente separados"):
+    a matriz é parametrizável (Scenario.zoning_permissions) e as misturas entram por ela ou por overrides de lei.
+    NÃO existe regra de DISTÂNCIA entre tipos de uso (ex.: "indústria a X do residencial"): a decisão sobre um lote
+    depende só do lote e do uso. Restrições assim virão de leis/zoneamento quando esse sistema existir.
   - O zoneamento NÃO é imutável: leis, projetos públicos e mecânicas políticas poderão alterar permissões
     (liberar, restringir, criar exceções territoriais). Por isso há um PONTO DE EXTENSÃO: provedores de override.
     O sistema de leis (P1.12) ainda não existe e não há regra de precedência entre leis no design, então esta

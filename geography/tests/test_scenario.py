@@ -18,9 +18,16 @@ class ScenarioConfigTests(SimpleTestCase):
         self.assertEqual((s.neighborhoods_per_city, s.lot_capacity[Category.RESIDENTIAL], s.resource_rarity[Resource.IRON]), (25, 50, D("0.20")))
         self.assertEqual(sum(s.neighborhood_type_counts.values()), 25)
 
-    def test_open_decisions_default_to_the_most_literal_reading(self):
+    def test_decided_defaults(self):
+        """Decisões do Game Director (2026-10-03): distância euclidiana; capital = 1ª cidade (cenário); 15 min/unidade."""
         s = get_scenario()
-        self.assertEqual((s.lot_composition, s.zoning_permissions, s.distance_metric), (None, None, "euclidean"))
+        self.assertEqual((s.distance_metric, s.zoning_permissions, s.capital_city_index, s.travel_minutes_per_unit),
+                         ("euclidean", None, 0, D(15)))
+
+    def test_lot_composition_is_no_longer_configurable(self):
+        """Decisão: leitura A. A leitura B (todas as categorias em todos os bairros) foi descartada."""
+        with self.assertRaises(ImproperlyConfigured):
+            get_scenario(lot_composition={"residential": {"residential": 1, "commercial": 1}})
 
     @override_settings(POLIS_GEOGRAPHY={"lot_capacity": {"residential": 7}, "resource_rarity": {"gold": 0.5}})
     def test_overrides_merge_by_key(self):
@@ -40,7 +47,9 @@ class ScenarioConfigTests(SimpleTestCase):
             {"distance_metric": "chebyshev"},
             {"state_spacing": 0}, {"hotspots_per_resource": 0},
             {"zoning_permissions": {"commercial": ["castle"]}},
-            {"lot_composition": {"residential": {"residential": 1}}},                 # faltam os outros tipos de bairro
+            {"capital_city_index": 5},                                                # só 2 cidades por estado
+            {"capital_city_index": -1},
+            {"travel_minutes_per_unit": 0}, {"travel_minutes_per_unit": -3},
         ]
         for overrides in bad:
             with self.assertRaises((ImproperlyConfigured, ValueError), msg=str(overrides)):
@@ -53,23 +62,34 @@ class ScenarioConfigTests(SimpleTestCase):
         self.assertEqual(types[-1], Category.RURAL)
 
 
-class OpenLotCompositionDecisionTests(GeoTestCase):
+class LotCompositionReadingATests(GeoTestCase):
     """
-    [ABERTO 08 §4/§6/§11] Quantos lotes de cada categoria tem um bairro? O padrão é a leitura literal; estas
-    alternativas provam que fechar a decisão é MUDAR UM VALOR do cenário, sem tocar em código.
+    Decisão do Game Director (2026-10-03): leitura A. Cada bairro tem um tipo predominante e a quantidade de lotes
+    correspondente à capacidade DAQUELE tipo. Quantos bairros de cada tipo existem nas 25 posições segue sendo
+    cenário provisório.
     """
 
-    def test_alternative_every_neighborhood_has_every_urban_category(self):
-        urban = {"residential": 2, "commercial": 2, "industrial": 1, "institutional": 1}
-        comp = {t: dict(urban) for t in ("institutional", "commercial", "residential", "industrial")}
-        comp["rural"] = {"rural": 6}
-        comp["special"] = {"special": 3}
-        sc = self.world(lot_composition=comp)
-        hood = Neighborhood.objects.filter(zoning="residential").first()
-        self.assertEqual(hood.lot_capacity(), urban)
-        self.assertTrue(check_integrity(sc).ok)
+    def test_every_neighborhood_holds_only_lots_of_its_own_type_with_that_types_capacity(self):
+        sc = self.world()
+        for hood in Neighborhood.objects.all():
+            cap = hood.lot_capacity()
+            want = sc.rural_lots_per_neighborhood if hood.zoning == "rural" else sc.lot_capacity[Category(hood.zoning)]
+            self.assertEqual(cap, {hood.zoning: want}, hood.name)
 
-    def test_alternative_special_lots_only_in_special_neighborhoods(self):
+    def test_reading_b_never_happens_no_neighborhood_mixes_categories(self):
+        self.world()
+        self.assertEqual(max(len(h.lot_capacity()) for h in Neighborhood.objects.all()), 1)
+
+    def test_special_lots_exist_only_in_special_neighborhoods(self):
         sc = self.world(neighborhood_type_counts={"institutional": 1, "commercial": 1, "residential": 2, "special": 1, "rural": 1})
         self.assertEqual(set(Lot.objects.filter(category="special").values_list("neighborhood__zoning", flat=True)), {"special"})
         self.assertTrue(check_integrity(sc).ok)
+
+    def test_how_many_neighborhoods_of_each_type_is_still_scenario_configuration(self):
+        """A mistura de tipos dentro das posições da cidade NÃO virou regra: muda com o cenário."""
+        a = self.world(neighborhood_type_counts={"institutional": 1, "commercial": 1, "residential": 2, "industrial": 1, "rural": 1})
+        count_a = Neighborhood.objects.filter(zoning="residential").count()
+        from geography.tests.base import wipe_world
+        wipe_world()
+        self.world(neighborhood_type_counts={"institutional": 1, "commercial": 1, "residential": 4})
+        self.assertNotEqual(Neighborhood.objects.filter(zoning="residential").count(), count_a)

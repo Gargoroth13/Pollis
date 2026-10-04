@@ -8,7 +8,7 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ### Escopo
 - **Implementado:** o `08` (hierarquia, coordenadas, bairros, lotes, capacidades, zoneamento-base, áreas rurais, recursos espaciais).
-- **Fora, de propósito:** o `10` (propriedade, leilões, "lotes começam do governo", imóveis) é do **P1.07**. A conversão **distância → tempo de viagem** (1 unidade = 40 min) é do `04 §21`: aqui só existe a distância derivada das coordenadas (`services.distance_between`). O bloqueio de Trabalho por Viagem, pendente desde o P0.04, **continua pendente**.
+- **Fora, de propósito:** o `10` (propriedade, leilões, "lotes começam do governo", imóveis) é do **P1.07**. **Veículos e modificadores de viagem** são do sistema de viagem/transporte. A Geografia fornece **a distância** e o **tempo-base** (`distância × minutos_por_unidade`, `04 §21`); o bloqueio de Trabalho por Viagem, pendente desde o P0.04, **continua pendente**.
 
 ### Decisões do `08` implementadas
 1. **Estado → Cidade → Bairro → Lote**, cada nível com coordenadas X/Y; a **distância é sempre derivada** das coordenadas (nenhum atributo "distância até a capital", `08 §17`). Cada estado tem uma capital que pertence a ele.
@@ -19,32 +19,21 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 6. **Cenário parametrizado** (`§19`): seed, tamanho do mundo e demais valores são do cenário, não regra permanente. Geração **determinística**, **atômica** e que **nunca sobrescreve** um mundo existente. Comandos `generate_world` e `check_world`.
 7. **Integridade territorial** com relatório estruturado (códigos estáveis): estado sem cidade/capital, capital de outro estado, nº de bairros, plano de tipos, composição e índices dos lotes, sobreposição de coordenadas, depósito fora de lote rural, frequência de recursos. Valida o mundo **contra o cenário em vigor**.
 
-### Decisão de design a fechar — **ABERTA; o código usa a leitura mais literal, que NÃO é regra definitiva**
-**Quantos lotes de cada categoria tem um bairro?** O `08` admite mais de uma leitura:
-- `§4` lista, **para cada bairro**, "capacidade residencial, comercial, industrial, institucional" e "especial, quando aplicável";
-- `§6` dá a tabela "Tipo de lote → capacidade";
-- `§11` diz "um bairro **especial** possui 10 lotes especiais";
-- `§4` também dá a cada bairro um **tipo predominante** (e `§16` fala em usos "relativamente separados").
-
-| Leitura | Efeito |
-|---|---|
-| **A (padrão atual):** um bairro de tipo T tem `capacidade[T]` lotes de T | Bairro residencial = 50 lotes residenciais; especial = 10 especiais; exige definir **quantos bairros de cada tipo** por cidade (`[PROV]` abaixo) |
-| **B:** todo bairro tem todas as categorias | ~115 lotes por bairro; "tipo predominante" vira só um rótulo |
-| **C:** bairros urbanos têm as 4 categorias; especial/rural à parte | usa literalmente o "quando aplicável" do `§4` |
-
-Vive em `Scenario.lot_composition` (`None` = leitura A). **Trocar de leitura é mudar um valor do cenário, sem tocar em código** (testado com B e C; a integridade passa a validar a nova regra). **Preciso da sua decisão antes do merge.**
-
-### Outras decisões abertas isoladas como configuração `[ABERTO]`
-- **Métrica de distância** (`04 §21` diz "distância em grid" a partir de X/Y): padrão `euclidean`; alternativa `manhattan`.
-- **"Usos relativamente separados"** (`08 §16`): padrão = separação estrita; a matriz é parametrizável.
-- **Precedência entre leis de zoneamento:** o design não define. Se dois overrides discordarem, o sistema **falha** (`ZoningConflict`) em vez de decidir sozinho. O sistema de leis (P1.12) deve defini-la.
+### Decisões do Game Director sobre Geografia (2026-10-03)
+Fecham o que estava como `[ABERTO]` ou como interpretação minha. **Não há decisão de design aberta no P0.06.**
+1. **Composição dos lotes: leitura A.** Cada bairro tem um **tipo predominante** e a quantidade de lotes da capacidade **daquele tipo**. A leitura B (todas as categorias em todos os bairros) está **descartada**. *Implementação:* a opção `lot_composition` foi **removida** (passá-la é erro de configuração). **Quantos bairros de cada tipo** existem nas 25 posições de uma cidade **segue como configuração provisória de cenário** (`neighborhood_type_counts`), para não transformar uma escolha do Bot Test em regra do jogo.
+2. **Distância: euclidiana como padrão.** *Implementação:* `distance_metric` continua uma configuração do cenário (para calibração), com `euclidean` como padrão.
+3. **Usos relativamente separados:** a **mistura é permitida conforme o zoneamento**; **não há regra rígida de distância entre tipos de uso**. Restrições de distância virão de leis/zoneamento quando esse sistema existir. *Implementação:* a decisão de zoneamento de um lote depende **só do lote e do uso** (testado: mudar a vizinhança não a altera). A matriz de permissões segue parametrizável; sem outras regras, cada categoria admite o próprio uso, e as misturas entram por essa matriz ou por overrides de lei.
+4. **Recursos naturais concentrados em lotes rurais:** interpretação confirmada.
+5. **Capital estadual:** a primeira cidade do estado no cenário padrão, **como configuração/interpretação do cenário, não regra universal**. *Implementação:* deixou de ser fixa no gerador e virou `Scenario.capital_city_index` (padrão 0; a integridade só exige que a capital pertença ao estado).
+6. **Escala espacial e tempo de viagem.** A escala espacial (`city_radius`, `state_spacing`, `city_spacing`, `lot_spacing`) **não foi alterada** e fica registrada como **parâmetro de cenário/calibração do Bot Test**. **Correção do Game Director:** o tempo-base de viagem é `distância × minutos_por_unidade`, com **15 minutos por unidade** como valor **inicial de calibração** (não balanceamento definitivo), em vez dos 40 minutos que o `04 §21` trazia. *Implementação:* `Scenario.travel_minutes_per_unit` (padrão 15) e `services.base_travel_minutes`. **O texto do `04 §21` foi atualizado** para a fórmula parametrizada. Veículos e seus modificadores **não** foram implementados: o cálculo final de viagem poderá aplicá-los depois sobre o tempo-base.
 
 ### Interpretações técnicas (reversíveis; **confirmar**)
-1. **Recursos só em lotes rurais.** O `§5` fala em "eventuais recursos" no lote, e o `§12` diz que é o lote **rural** que permite explorar recursos; restringi ao rural.
+1. ~~**Recursos só em lotes rurais.**~~ **Confirmada pelo Game Director (2026-10-03)** (decisão 4).
 2. **Raridade = fração global dos lotes rurais** que têm o depósito (arredondada ao lote). O `§15` avisa que não é "necessariamente probabilidade literal independente".
 3. Um lote pode ter **vários recursos**; `richness` (0,001 a 1) é o tamanho **relativo** ao lote mais rico daquele recurso. A conversão para quantidades pertence a Produtos/Empresas (`22`).
-4. **Capital estadual = primeira cidade do estado** (o `08 §2` exige capital, não diz qual).
-5. **Cidade de referência em (0,0)** (`04 §21`) = primeira cidade do primeiro estado; é só uma coordenada, **sem bônus nem penalidade**.
+4. ~~**Capital estadual = primeira cidade do estado.**~~ **Confirmada como configuração do cenário** (decisão 5): `capital_city_index`.
+5. **Cidade de referência em (0,0)** (`04 §21`) = primeira cidade do primeiro estado; é só uma coordenada de layout, **sem bônus nem penalidade**, e **independente** de qual cidade é a capital.
 6. **Não há entidade "País" nem "capital nacional"** (`08 §2` a cita só na distância; é assunto político, `06`).
 7. O algoritmo de recursos (concentrações gaussianas sorteadas com seed, escolha dos lotes de maior valor) é **minha escolha**: o `08` exige o comportamento, não o método. Idem o layout em espiral.
 8. Coordenadas com 3 casas decimais, para o mundo não depender do último bit do ponto flutuante.
@@ -63,11 +52,13 @@ Em `geography/balance.py`, sobrescrevíveis por `POLIS_GEOGRAPHY`. O doc não fo
 | `hotspots_per_resource` / `hotspot_sigma` | 3 / 2 | concentrações regionais |
 | raridade do **petróleo** | 3% | o `08 §14` só diz "raro" e remete a Produtos |
 | `seed` | 1 | |
+| `capital_city_index` | 0 | índice da cidade-capital em cada estado (decisão 5) |
+| `travel_minutes_per_unit` | 15 | valor **inicial de calibração** do Bot Test (decisão 6), não definitivo |
 
 ### Observações e sugestões (**NÃO implementadas**)
-- **Escala:** com `city_radius` 1,5 e 40 min por unidade (`04 §21`), ir do centro à borda de uma cidade levaria ~60 min, e entre bairros opostos até ~2 h. Para uma "cidade" isso parece grande; vale definir a escala antes de calibrar viagem.
+- **Escala:** a escala espacial foi **mantida** (decisão 6). Com `city_radius` 1,5 e 15 min por unidade, ir do centro à borda de uma cidade leva ~22,5 min, e entre bairros opostos até ~45 min; entre cidades do mesmo estado (`city_spacing` 6), ~90 min. São números de **calibração do Bot Test**, não regra.
 - **Raridade × geografia:** a frequência é calculada sobre os lotes **rurais**. Se o mundo tiver poucos lotes rurais, os recursos raros (diamante 1%) podem sair com 0 ou 1 depósito.
-- **Sugestão:** quando a leitura dos lotes for decidida, fixar também quantos bairros de cada tipo existem por cidade (hoje `[PROV]`).
+- **Sugestão:** a fixar quando o design definir: quantos bairros de cada tipo existem por cidade (hoje `[PROV]`, decisão 1).
 
 ---
 

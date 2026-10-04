@@ -6,10 +6,10 @@ Cenário do mundo (design/08). Mesmas categorias de players/balance.py e skills/
            "não deve ser tratado como regra permanente do mundo final". O sistema precisa de um número para
            gerar um mundo; NÃO é decisão de design. Listado em CHANGELOG_DEV.md.
   [ABERTO] DECISÃO DE DESIGN não fechada. Configuração com a interpretação mais literal como padrão, nunca como
-           regra definitiva.
+           regra definitiva. (Nenhuma aberta no momento: as três do P0.06 foram fechadas em 2026-10-03.)
 
 Sobrescrever sem mexer em código: settings.POLIS_GEOGRAPHY = {"states": 3, "seed": 7, "lot_capacity": {"rural": 10}, ...}
-Unidade de distância: "unidade de grid" (04 §21: 1 unidade = 40 min de viagem).
+Unidade de distância: "unidade de grid". Tempo-base de viagem = distância × travel_minutes_per_unit (04 §21; 15 é o valor inicial de calibração).
 """
 from __future__ import annotations
 
@@ -63,21 +63,31 @@ class Scenario:
     hotspots_per_resource: int = 3                      # concentrações regionais por recurso (08 §13)
     hotspot_sigma: Decimal = D(2)                       # alcance de cada concentração, em unidades de grid
 
-    # --- Decisões em aberto ------------------------------------------------
-    # [ABERTO 08 §4/§6/§11] Quantos lotes de cada categoria tem um bairro? Padrão (None) = leitura LITERAL: um bairro de
-    # tipo T tem lot_capacity[T] lotes de T. Alternativas plausíveis (todos os bairros com todas as categorias; bairros
-    # urbanos com 4 categorias + especial/rural à parte): ver CHANGELOG_DEV.md. Formato: {tipo: {categoria: quantidade}}.
-    lot_composition: Optional[Dict[Category, Dict[Category, int]]] = None
-    # [ABERTO 04 §21 / 08 §17] a métrica não é definida: "distância em grid" a partir de X/Y.
+    # Capital de cada estado (08 §2 exige UMA capital, sem dizer qual): índice, dentro do estado, da cidade que é a capital.
+    # 0 = a primeira. É configuração do CENÁRIO, não regra universal do jogo.
+    capital_city_index: int = 0
+    # Tempo-base de viagem = distância × minutos_por_unidade (04 §21). 15 é só o valor INICIAL de calibração do Bot Test,
+    # não balanceamento definitivo. Veículos e demais modificadores NÃO existem aqui: pertencem ao sistema de viagem.
+    travel_minutes_per_unit: Decimal = D(15)
+
+    # --- Decididas pelo Game Director (2026-10-03) ---------------------------
+    # Composição de lotes: leitura A. Cada bairro tem um tipo predominante e a quantidade de lotes da capacidade desse
+    # tipo (lot_capacity; rural: rural_lots_per_neighborhood). NÃO há opção de composição: a leitura B (todas as
+    # categorias em todos os bairros) foi descartada. QUANTOS bairros de cada tipo existem nas 25 posições de uma
+    # cidade segue sendo cenário provisório (neighborhood_type_counts), não regra do jogo.
+    # Métrica de distância: euclidiana por padrão (a configuração existe para calibração do Bot Test).
     distance_metric: str = "euclidean"
-    # [ABERTO 08 §16] "usos relativamente separados": None = separação estrita (cada categoria só admite a si mesma).
+    # Usos "relativamente separados" (08 §16): a mistura é permitida CONFORME O ZONEAMENTO. Não há regra de distância
+    # entre tipos de uso; restrições assim virão de leis/zoneamento quando esse sistema existir. None = cada categoria
+    # admite o próprio uso e as misturas entram por esta matriz ou por overrides de lei.
     zoning_permissions: Optional[Dict[Category, Tuple[Category, ...]]] = None
 
     # ------------------------------------------------------------------
     def expected_composition(self, neighborhood_type: Category) -> Dict[Category, int]:
-        """Quantos lotes de cada categoria um bairro deste tipo deve ter, segundo ESTE cenário."""
-        if self.lot_composition is not None:
-            return {c: n for c, n in self.lot_composition[neighborhood_type].items() if n > 0}
+        """
+        Quantos lotes de cada categoria um bairro deste tipo tem (leitura A): só lotes do próprio tipo, na
+        quantidade da capacidade daquele tipo.
+        """
         n = self.rural_lots_per_neighborhood if neighborhood_type is Category.RURAL else self.lot_capacity[neighborhood_type]
         return {neighborhood_type: n} if n > 0 else {}
 
@@ -102,10 +112,6 @@ class Scenario:
             e.append("type_order_from_center deve conter todos os tipos com bairros")
         if len(set(self.type_order_from_center)) != len(self.type_order_from_center):
             e.append("type_order_from_center não pode repetir tipos")
-        if self.lot_composition is not None:
-            for t in used:
-                if t not in self.lot_composition:
-                    e.append(f"lot_composition não define o tipo de bairro '{t.value}'")
         if any(not 0 <= r <= 1 for r in self.resource_rarity.values()):
             e.append("resource_rarity deve estar em [0, 1]")
         if set(self.resource_rarity) - set(Resource):
@@ -115,6 +121,10 @@ class Scenario:
         for name in ("state_spacing", "city_spacing", "city_radius", "lot_spacing", "hotspot_sigma"):
             if getattr(self, name) <= 0:
                 e.append(f"{name} deve ser > 0")
+        if not 0 <= self.capital_city_index < self.cities_per_state:
+            e.append(f"capital_city_index deve estar em [0, cities_per_state) = [0, {self.cities_per_state})")
+        if self.travel_minutes_per_unit <= 0:
+            e.append("travel_minutes_per_unit deve ser > 0")
         if self.hotspots_per_resource < 1:
             e.append("hotspots_per_resource deve ser >= 1")
         if self.zoning_permissions is not None and any(not set(v) <= set(Category) for v in self.zoning_permissions.values()):
@@ -150,13 +160,11 @@ def get_scenario(**overrides) -> Scenario:
             changes[key] = {**base.resource_rarity, **{(k if isinstance(k, Resource) else Resource(k)): D(str(v) if isinstance(v, float) else v) for k, v in value.items()}}
         elif key == "type_order_from_center":
             changes[key] = tuple(_cat(c) for c in value)
-        elif key == "lot_composition":
-            changes[key] = None if value is None else {_cat(t): {_cat(c): int(n) for c, n in comp.items()} for t, comp in value.items()}
         elif key == "zoning_permissions":
             changes[key] = None if value is None else {_cat(c): tuple(_cat(x) for x in uses) for c, uses in value.items()}
-        elif key in ("state_spacing", "city_spacing", "city_radius", "lot_spacing", "hotspot_sigma"):
+        elif key in ("state_spacing", "city_spacing", "city_radius", "lot_spacing", "hotspot_sigma", "travel_minutes_per_unit"):
             changes[key] = D(str(value) if isinstance(value, float) else value)
-        elif key in ("seed", "states", "cities_per_state", "neighborhoods_per_city", "rural_lots_per_neighborhood", "hotspots_per_resource"):
+        elif key in ("seed", "states", "cities_per_state", "neighborhoods_per_city", "rural_lots_per_neighborhood", "hotspots_per_resource", "capital_city_index"):
             changes[key] = int(value)
         else:
             changes[key] = value

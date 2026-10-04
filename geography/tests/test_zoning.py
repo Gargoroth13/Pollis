@@ -38,6 +38,24 @@ class ZoningTests(GeoTestCase):
         self.assertTrue(zoning.is_use_allowed(self.com, Category.RESIDENTIAL, sc))
         self.assertFalse(zoning.is_use_allowed(self.res, Category.COMMERCIAL, sc))      # a recíproca não vem de graça
 
+    def test_mixing_is_allowed_when_the_zoning_allows_it(self):
+        """Decisão do GD (2026-10-03): 'usos relativamente separados' = mistura conforme o zoneamento."""
+        sc = get_scenario(**{"zoning_permissions": {"commercial": ["commercial", "residential"], "residential": ["residential", "commercial"]}})
+        self.assertTrue(zoning.is_use_allowed(self.com, Category.RESIDENTIAL, sc))
+        self.assertTrue(zoning.is_use_allowed(self.res, Category.COMMERCIAL, sc))
+
+    def test_there_is_no_distance_rule_between_uses(self):
+        """
+        Não há regra de distância entre tipos de uso: a decisão sobre um lote depende SÓ do lote e do uso, não de que
+        outros lotes existem por perto. Mudar a vizinhança não muda a decisão.
+        """
+        before = zoning.decide(self.res, Category.INDUSTRIAL)
+        neighbors = Lot.objects.filter(neighborhood=self.res.neighborhood).exclude(pk=self.res.pk)
+        neighbors.update(category="industrial")                           # vizinhança toda industrial
+        self.assertEqual(zoning.decide(Lot.objects.get(pk=self.res.pk), Category.INDUSTRIAL), before)
+        Lot.objects.filter(neighborhood__city=self.res.neighborhood.city).exclude(pk=self.res.pk).update(category="residential")
+        self.assertEqual(zoning.decide(Lot.objects.get(pk=self.res.pk), Category.INDUSTRIAL), before)
+
     def test_a_law_can_liberate_a_use(self):
         """08 §16: leis e projetos 'poderão liberar determinados usos'."""
         zoning.register_zoning_override("law_a", lambda lot, use: True if (lot.category == "commercial" and use is Category.RESIDENTIAL) else None)

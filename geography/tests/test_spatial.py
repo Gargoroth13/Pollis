@@ -88,3 +88,41 @@ class DistanceBetweenPlacesTests(GeoTestCase):
         self.world()
         a, b = City.objects.order_by("index")
         self.assertEqual(services.distance_between(a, b), abs(a.x - b.x) + abs(a.y - b.y))
+
+
+class BaseTravelTimeTests(GeoTestCase):
+    """
+    04 §21 (corrigido pelo Game Director em 2026-10-03): tempo-base = distância × minutos_por_unidade, parâmetro de
+    cenário com 15 como valor INICIAL de calibração. A Geografia fornece só a distância: sem veículos nem modificadores.
+    """
+
+    def test_default_is_fifteen_minutes_per_unit(self):
+        from geography.balance import get_scenario
+        self.assertEqual(get_scenario().travel_minutes_per_unit, 15)
+
+    def test_base_time_is_distance_times_minutes_per_unit(self):
+        a, b = P(x=D(0), y=D(0)), P(x=D(3), y=D(4))                       # distância 5
+        self.assertEqual(services.base_travel_minutes(a, b), D(75))        # 5 × 15
+
+    def test_zero_distance_takes_no_time_and_time_is_symmetric(self):
+        a, b = P(x=D("1.5"), y=D("2")), P(x=D("-3"), y=D("0.5"))
+        self.assertEqual(services.base_travel_minutes(a, a), 0)
+        self.assertEqual(services.base_travel_minutes(a, b), services.base_travel_minutes(b, a))
+
+    @override_settings(POLIS_GEOGRAPHY={"travel_minutes_per_unit": 40})
+    def test_minutes_per_unit_is_a_scenario_parameter_that_can_be_calibrated(self):
+        self.assertEqual(services.base_travel_minutes(P(x=D(0), y=D(0)), P(x=D(3), y=D(4))), D(200))   # 5 × 40
+
+    @override_settings(POLIS_GEOGRAPHY={"travel_minutes_per_unit": 10, "distance_metric": "manhattan"})
+    def test_it_follows_the_scenarios_distance_metric(self):
+        self.assertEqual(services.base_travel_minutes(P(x=D(0), y=D(0)), P(x=D(3), y=D(4))), D(70))    # 7 × 10
+
+    def test_between_real_places_it_is_derived_from_their_coordinates(self):
+        self.world()
+        a, b = City.objects.order_by("index")
+        self.assertEqual(services.base_travel_minutes(a, b), spatial.distance(a, b) * 15)
+
+    def test_the_geography_has_no_vehicle_or_modifier_concept(self):
+        """Veículos e seus modificadores ficam fora do P0.06: a Geografia só devolve o tempo-base."""
+        public = [n for n in dir(services) if not n.startswith("_")]
+        self.assertFalse([n for n in public if any(w in n.lower() for w in ("vehicle", "veiculo", "modifier", "speed"))])

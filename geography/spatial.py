@@ -31,7 +31,7 @@ def q3(v) -> Decimal:
 def distance(a: Located, b: Located, metric: str = "euclidean") -> Decimal:
     """
     Distância em unidades de grid, derivada das coordenadas. Decimal exato (sqrt do Decimal é determinístico).
-    A métrica não é definida pelo design ([ABERTO]); ver Scenario.distance_metric.
+    Métrica padrão: euclidiana (decisão do Game Director, 2026-10-03); configurável no cenário (Scenario.distance_metric).
     """
     if metric not in DISTANCE_METRICS:
         raise ValueError(f"Métrica desconhecida: {metric}")

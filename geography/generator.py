@@ -50,11 +50,12 @@ def generate_world(scenario: Optional[Scenario] = None) -> WorldSummary:
 
     for si, spt in enumerate(state_pts):
         state = State.objects.create(name=f"Estado {si + 1}", x=spt[0], y=spt[1])
-        first_city: Optional[City] = None
+        capital: Optional[City] = None
         for ci, cpt in enumerate(city_pts):
             cx, cy = spatial.add(spt, cpt)
             city = City.objects.create(state=state, index=ci, name=f"Cidade {si + 1}.{ci + 1}", x=cx, y=cy)
-            first_city = first_city or city
+            if ci == sc.capital_city_index:
+                capital = city
             Neighborhood.objects.bulk_create([
                 Neighborhood(city=city, index=ni, name=f"Bairro {si + 1}.{ci + 1}.{ni + 1:02d}",
                              x=spatial.add((cx, cy), hpt)[0], y=spatial.add((cx, cy), hpt)[1], zoning=types[ni].value)
@@ -68,7 +69,7 @@ def generate_world(scenario: Optional[Scenario] = None) -> WorldSummary:
                     lots.append(Lot(neighborhood=hood, index=li, category=categories[li].value, x=lx, y=ly,
                                     occupation=Occupation.EMPTY.value))  # 10 §2: todos os lotes começam vazios
             Lot.objects.bulk_create(lots)
-        state.capital = first_city  # [PROV] o 08 exige uma capital por estado, sem dizer qual: a primeira cidade
+        state.capital = capital  # o 08 §2 exige uma capital por estado, sem dizer qual: vem do cenário (capital_city_index)
         state.save(update_fields=["capital"])
 
     deposits = _generate_resources(sc)
