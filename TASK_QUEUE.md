@@ -94,7 +94,7 @@ escola e cursos (Escolas), teto salarial diário (dinheiro), nível inicial (cri
 
 ---
 
-## [ ] P0.06 — Geografia
+## [x] P0.06 — Geografia  *(concluído em 2026-10-03, sobre o `08` FINAL; aguardando decisão de design aberta)*
 
 Implementar `08 — Geografia`.
 
@@ -105,6 +105,11 @@ Critérios:
 - áreas rurais;
 - recursos espaciais conforme documentação;
 - testes de integridade territorial.
+
+Entregue: app `geography` (hierarquia com coordenadas, bairros concentrados, lotes e capacidades, zoneamento parametrizável com
+ponto de extensão para leis, recursos espaciais, cenário/seed, geração determinística, integridade, comandos `generate_world` e
+`check_world`). **Antes do merge:** fechar a composição de lotes por bairro (`08 §4/§6/§11`), registrada em `CHANGELOG_DEV.md`
+(2026-10-03). Fora: propriedade/leilão (P1.07), tempo de viagem (`04 §21`).
 
 ---
 

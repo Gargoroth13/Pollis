@@ -4,6 +4,73 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-03 — Geografia (P0.06) sobre o `08` (FINAL)
+
+### Escopo
+- **Implementado:** o `08` (hierarquia, coordenadas, bairros, lotes, capacidades, zoneamento-base, áreas rurais, recursos espaciais).
+- **Fora, de propósito:** o `10` (propriedade, leilões, "lotes começam do governo", imóveis) é do **P1.07**. A conversão **distância → tempo de viagem** (1 unidade = 40 min) é do `04 §21`: aqui só existe a distância derivada das coordenadas (`services.distance_between`). O bloqueio de Trabalho por Viagem, pendente desde o P0.04, **continua pendente**.
+
+### Decisões do `08` implementadas
+1. **Estado → Cidade → Bairro → Lote**, cada nível com coordenadas X/Y; a **distância é sempre derivada** das coordenadas (nenhum atributo "distância até a capital", `08 §17`). Cada estado tem uma capital que pertence a ele.
+2. **25 bairros por cidade** (`§3.1`), **concentrados** em torno de uma região central (quantis de Rayleigh + ângulo áureo: espiral, sem grade uniforme e sem aleatoriedade). **Sem classe social** de bairro (`§4`).
+3. **6 categorias de lote** e **capacidades base** 50 / 30 / 20 / 5 / 10 (residencial, comercial, industrial, institucional, especial); **rural** sem valor fixo ("definida pela estrutura territorial"). Lotes **começam vazios** (`10 §2`); o estado de ocupação existe, as transições são do P1.07.
+4. **Zoneamento** parametrizável (`§16`): por padrão cada categoria só admite o próprio uso; **ponto de extensão** para leis/projetos alterarem permissões. O sistema imobiliário deve **consultar** este módulo (`10 §22`).
+5. **Recursos**: 9 minerais com as raridades do `§15` e **petróleo exclusivamente em Extrativismo** (`§12`). Distribuição **espacial concentrada** (campo de concentrações regionais, não sorteio independente por lote, `§13`): há regiões ricas e regiões sem ocorrência, e a **frequência global é exata** (`§23.3`).
+6. **Cenário parametrizado** (`§19`): seed, tamanho do mundo e demais valores são do cenário, não regra permanente. Geração **determinística**, **atômica** e que **nunca sobrescreve** um mundo existente. Comandos `generate_world` e `check_world`.
+7. **Integridade territorial** com relatório estruturado (códigos estáveis): estado sem cidade/capital, capital de outro estado, nº de bairros, plano de tipos, composição e índices dos lotes, sobreposição de coordenadas, depósito fora de lote rural, frequência de recursos. Valida o mundo **contra o cenário em vigor**.
+
+### Decisão de design a fechar — **ABERTA; o código usa a leitura mais literal, que NÃO é regra definitiva**
+**Quantos lotes de cada categoria tem um bairro?** O `08` admite mais de uma leitura:
+- `§4` lista, **para cada bairro**, "capacidade residencial, comercial, industrial, institucional" e "especial, quando aplicável";
+- `§6` dá a tabela "Tipo de lote → capacidade";
+- `§11` diz "um bairro **especial** possui 10 lotes especiais";
+- `§4` também dá a cada bairro um **tipo predominante** (e `§16` fala em usos "relativamente separados").
+
+| Leitura | Efeito |
+|---|---|
+| **A (padrão atual):** um bairro de tipo T tem `capacidade[T]` lotes de T | Bairro residencial = 50 lotes residenciais; especial = 10 especiais; exige definir **quantos bairros de cada tipo** por cidade (`[PROV]` abaixo) |
+| **B:** todo bairro tem todas as categorias | ~115 lotes por bairro; "tipo predominante" vira só um rótulo |
+| **C:** bairros urbanos têm as 4 categorias; especial/rural à parte | usa literalmente o "quando aplicável" do `§4` |
+
+Vive em `Scenario.lot_composition` (`None` = leitura A). **Trocar de leitura é mudar um valor do cenário, sem tocar em código** (testado com B e C; a integridade passa a validar a nova regra). **Preciso da sua decisão antes do merge.**
+
+### Outras decisões abertas isoladas como configuração `[ABERTO]`
+- **Métrica de distância** (`04 §21` diz "distância em grid" a partir de X/Y): padrão `euclidean`; alternativa `manhattan`.
+- **"Usos relativamente separados"** (`08 §16`): padrão = separação estrita; a matriz é parametrizável.
+- **Precedência entre leis de zoneamento:** o design não define. Se dois overrides discordarem, o sistema **falha** (`ZoningConflict`) em vez de decidir sozinho. O sistema de leis (P1.12) deve defini-la.
+
+### Interpretações técnicas (reversíveis; **confirmar**)
+1. **Recursos só em lotes rurais.** O `§5` fala em "eventuais recursos" no lote, e o `§12` diz que é o lote **rural** que permite explorar recursos; restringi ao rural.
+2. **Raridade = fração global dos lotes rurais** que têm o depósito (arredondada ao lote). O `§15` avisa que não é "necessariamente probabilidade literal independente".
+3. Um lote pode ter **vários recursos**; `richness` (0,001 a 1) é o tamanho **relativo** ao lote mais rico daquele recurso. A conversão para quantidades pertence a Produtos/Empresas (`22`).
+4. **Capital estadual = primeira cidade do estado** (o `08 §2` exige capital, não diz qual).
+5. **Cidade de referência em (0,0)** (`04 §21`) = primeira cidade do primeiro estado; é só uma coordenada, **sem bônus nem penalidade**.
+6. **Não há entidade "País" nem "capital nacional"** (`08 §2` a cita só na distância; é assunto político, `06`).
+7. O algoritmo de recursos (concentrações gaussianas sorteadas com seed, escolha dos lotes de maior valor) é **minha escolha**: o `08` exige o comportamento, não o método. Idem o layout em espiral.
+8. Coordenadas com 3 casas decimais, para o mundo não depender do último bit do ponto flutuante.
+9. A "capacidade" do bairro é **derivada** dos lotes existentes, nunca guardada em duplicidade.
+
+### Parâmetros de cenário `[PROV]` (o `08 §19`: mapa de teste não é regra permanente)
+Em `geography/balance.py`, sobrescrevíveis por `POLIS_GEOGRAPHY`. O doc não fornece nenhum deles:
+
+| Parâmetro | Valor | Observação |
+|---|---|---|
+| `states` / `cities_per_state` | 2 / 2 | mundo padrão: 4 cidades, 100 bairros, **3420 lotes** |
+| `neighborhood_type_counts` | institucional 3, comercial 5, residencial 10, especial 1, industrial 3, rural 3 | soma 25; só vale na leitura A |
+| `type_order_from_center` | institucional → comercial → residencial → especial → industrial → rural | centro para a periferia |
+| `rural_lots_per_neighborhood` | 40 | `§6`: "definida pela estrutura territorial" |
+| `state_spacing` / `city_spacing` / `city_radius` / `lot_spacing` | 20 / 6 / 1,5 / 0,01 | unidades de grid |
+| `hotspots_per_resource` / `hotspot_sigma` | 3 / 2 | concentrações regionais |
+| raridade do **petróleo** | 3% | o `08 §14` só diz "raro" e remete a Produtos |
+| `seed` | 1 | |
+
+### Observações e sugestões (**NÃO implementadas**)
+- **Escala:** com `city_radius` 1,5 e 40 min por unidade (`04 §21`), ir do centro à borda de uma cidade levaria ~60 min, e entre bairros opostos até ~2 h. Para uma "cidade" isso parece grande; vale definir a escala antes de calibrar viagem.
+- **Raridade × geografia:** a frequência é calculada sobre os lotes **rurais**. Se o mundo tiver poucos lotes rurais, os recursos raros (diamante 1%) podem sair com 0 ou 1 depósito.
+- **Sugestão:** quando a leitura dos lotes for decidida, fixar também quantos bairros de cada tipo existem por cidade (hoje `[PROV]`).
+
+---
+
 ## 2026-10-02 — Skills (P0.05) sobre o `01` (REVIEW)
 
 **Princípio:** o `01` está em REVIEW. Foi implementado **somente o que ele já estabelece**. Onde o documento diz que algo será definido/calibrado, há um parâmetro ou um ponto de extensão **neutro**; nenhum exemplo conceitual virou regra. As regras do `04` (P0.04) não foram alteradas; só ganharam os pontos de integração necessários.
