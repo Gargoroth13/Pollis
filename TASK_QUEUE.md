@@ -106,6 +106,45 @@ Critérios:
 - recursos espaciais conforme documentação;
 - testes de integridade territorial.
 
+- ## P0.06.1 — Localização do jogador e viagem básica
+
+**Objetivo:** complementar a Geografia com a localização física do jogador e implementar o núcleo mínimo de viagem necessário para que outros sistemas possam depender de localização.
+
+**Escopo:**
+
+* Vincular cada jogador a um `Lote` como sua localização atual.
+* Definir a localização inicial do jogador.
+* Permitir iniciar uma viagem para outro `Lote`.
+* Calcular a distância entre origem e destino usando a métrica de distância definida pela Geografia.
+* Calcular o tempo-base de viagem usando `distância × minutos_por_unidade`, com `15` minutos por unidade como parâmetro padrão atual.
+* Registrar o estado de viagem do jogador (`em_viagem` ou equivalente).
+* Impedir ações incompatíveis enquanto o jogador estiver viajando.
+* Concluir a viagem de acordo com o sistema de tempo/ticks existente e atualizar a localização do jogador para o lote de destino.
+* Garantir que a viagem respeite os mesmos princípios de atomicidade, determinismo e uso do sistema de tempo já estabelecidos.
+* Criar testes para localização inicial, início de viagem, cálculo de distância, duração, conclusão da viagem e bloqueio de ações durante viagem.
+
+**Fora do escopo:**
+
+* Veículos e seus modificadores de velocidade.
+* Transporte público.
+* Compra, venda ou aluguel de imóveis.
+* Sistema imobiliário completo.
+* Regras avançadas de transporte.
+* Qualquer mecânica de `10 — Imóveis e Zonas` que não seja necessária para estabelecer a localização do jogador.
+* Reduções de tempo de viagem provenientes de veículos ou outros sistemas futuros.
+
+**Dependências:**
+
+* `03 — Sistema de tempo`
+* `04 — Jogador e ações`
+* `08 — Geografia`
+
+**Resultado esperado:**
+Ao final desta task, todo jogador possui uma localização física válida dentro do mundo e pode se deslocar entre lotes utilizando uma viagem baseada na distância geográfica. Sistemas futuros podem utilizar a localização do jogador sem precisar implementar novamente essa fundação.
+
+**Observação:** `15 minutos por unidade de distância` é um parâmetro inicial de calibração do Bot Test, não um valor definitivo de balanceamento.
+
+
 Entregue: app `geography` (hierarquia com coordenadas, bairros concentrados, lotes e capacidades, zoneamento parametrizável com
 ponto de extensão para leis, recursos espaciais, cenário/seed, geração determinística, integridade, comandos `generate_world` e
 `check_world`), mais o tempo-base de viagem (`distância × minutos_por_unidade`, 15 inicial). Decisões do Game Director em
