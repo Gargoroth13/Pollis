@@ -141,6 +141,8 @@ Implementar `03`.
 
 ## [ ] P1.07 — Imóveis e zonas
 
+> **Requisito herdado do P0.06:** o `Player` ainda não tem localização. Este bloco (ou o de Viagem) precisa criar o vínculo jogador ↔ lote/bairro e o estado "em viagem", dos quais dependem moradia/QoL e o bloqueio de Trabalho por Viagem do `04`. Ver `CHANGELOG_DEV.md` (2026-10-03). A Viagem não tem bloco próprio na fila.
+
 Implementar `10`.
 
 ## [ ] P1.08 — Contratos

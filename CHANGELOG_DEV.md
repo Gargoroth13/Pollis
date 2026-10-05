@@ -39,6 +39,11 @@ Fecham o que estava como `[ABERTO]` ou como interpretação minha. **Não há de
 8. Coordenadas com 3 casas decimais, para o mundo não depender do último bit do ponto flutuante.
 9. A "capacidade" do bairro é **derivada** dos lotes existentes, nunca guardada em duplicidade.
 
+### Pendências registradas na aprovação do P0.06 (nenhuma corrigida agora, por decisão do Game Director)
+1. **Portabilidade de floats nos depósitos.** A distribuição de recursos usa ponto flutuante (campo gaussiano e ordenação por valor); o resultado é determinístico na **mesma plataforma**, mas pode diferir no último bit entre máquinas/builds diferentes e, em empates próximos, mudar quais lotes recebem o depósito. O layout espacial já é protegido por arredondamento a 3 casas. **Adiado** até haver Bot Test multi-máquina/distribuído.
+2. **Vínculo de localização do jogador — REQUISITO para o bloco de Imóveis (P1.07) e para o sistema de Viagem; não implementado.** Hoje o `Player` não tem posição. Será preciso: onde o jogador está/reside (lote/bairro), o estado "em viagem" e o destino. Dele dependem o **bloqueio de Trabalho por Viagem** (`04 §6`, `§20`, pendente desde o P0.04), moradia/QoL estrutural e o tempo de viagem sobre o tempo-base de `geography.services.base_travel_minutes`. A Viagem **não tem bloco próprio na fila**: precisa ser priorizada.
+3. **Comentários de teste `[ABERTO]`.** Restam 2 comentários em testes que ainda usam essa marca para decisões já fechadas. **Limpeza futura**, sem efeito em comportamento.
+
 ### Parâmetros de cenário `[PROV]` (o `08 §19`: mapa de teste não é regra permanente)
 Em `geography/balance.py`, sobrescrevíveis por `POLIS_GEOGRAPHY`. O doc não fornece nenhum deles:
 
