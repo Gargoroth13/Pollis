@@ -44,3 +44,14 @@ python manage.py world_clock set-speed 86400   # produção: tempo real
 python manage.py advance_world                 # processa ticks pendentes do mundo
 python manage.py advance_world --loop --interval 5
 ```
+
+## Mundo (geografia)
+
+```bash
+python manage.py generate_world                      # gera o mundo do cenário padrão e confere a integridade
+python manage.py generate_world --seed 7 --states 3  # variações; nunca sobrescreve um mundo existente
+python manage.py check_world                         # integridade territorial do mundo existente
+```
+
+Parâmetros do cenário em `settings.POLIS_GEOGRAPHY` (ver `geography/balance.py`).
+

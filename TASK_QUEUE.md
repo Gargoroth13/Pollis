@@ -94,7 +94,7 @@ escola e cursos (Escolas), teto salarial diário (dinheiro), nível inicial (cri
 
 ---
 
-## [ ] P0.06 — Geografia
+## [x] P0.06 — Geografia  *(concluído em 2026-10-03, sobre o `08` FINAL; decisões do Game Director aplicadas)*
 
 Implementar `08 — Geografia`.
 
@@ -105,6 +105,11 @@ Critérios:
 - áreas rurais;
 - recursos espaciais conforme documentação;
 - testes de integridade territorial.
+
+Entregue: app `geography` (hierarquia com coordenadas, bairros concentrados, lotes e capacidades, zoneamento parametrizável com
+ponto de extensão para leis, recursos espaciais, cenário/seed, geração determinística, integridade, comandos `generate_world` e
+`check_world`), mais o tempo-base de viagem (`distância × minutos_por_unidade`, 15 inicial). Decisões do Game Director em
+`CHANGELOG_DEV.md` (2026-10-03). Fora: propriedade/leilão (P1.07), veículos e modificadores de viagem (sistema de viagem).
 
 ---
 
@@ -135,6 +140,8 @@ Implementar mercado e estatísticas de `17`.
 Implementar `03`.
 
 ## [ ] P1.07 — Imóveis e zonas
+
+> **Requisito herdado do P0.06:** o `Player` ainda não tem localização. Este bloco (ou o de Viagem) precisa criar o vínculo jogador ↔ lote/bairro e o estado "em viagem", dos quais dependem moradia/QoL e o bloqueio de Trabalho por Viagem do `04`. Ver `CHANGELOG_DEV.md` (2026-10-03). A Viagem não tem bloco próprio na fila.
 
 Implementar `10`.
 
