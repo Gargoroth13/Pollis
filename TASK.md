@@ -176,6 +176,7 @@ Não implementar ainda os sistemas FUTURO apenas por conveniência.
 | 2. Energia/QoL/Saúde/Jogador | **feito** (P0.04), sobre o `04` FINAL: Energia, QoL Base/efetiva/Atual, Burnout Ativo, Saúde Crítica, Hospitalização, Nutrição. Pendente: Tratamento, auto-consumo de alimentos, Viagem (dependem de outros sistemas) |
 | 3. Skills | **feito** (P0.05), sobre o `01` (REVIEW): 3 skills, ganho por atividade, requisitos, Especialização (`02 §13`); decisões abertas do `01` isoladas |
 | 4. Geografia | **feito** (P0.06), sobre o `08`: Estado→Cidade→Bairro→Lote, zoneamento, recursos, integridade. Composição de lotes (leitura A), distância euclidiana e tempo-base de viagem (15 min/unidade, calibrável) fechados pelo Game Director |
+| 4b. Localização e viagem | **feito** (P0.06.1): lote atual do jogador, localização inicial, viagem entre lotes (`distância × minutos_por_unidade`, 15 inicial), bloqueio por presença, chegada pelo sistema de tempo. Aguardam aprovação 3 decisões `[ABERTO]` (localização inicial, presença por ação, estados que impedem partir) |
 | 5–9 | não iniciados |
 
 O código anterior ao design atual foi removido por decisão do Game Director (2026-09-30); `design/` é a única base.

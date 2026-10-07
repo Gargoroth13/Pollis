@@ -71,7 +71,7 @@ Critérios:
 Entregue: app `players` (`Player`, `QolEffect`, `rules`, `services`, `qol`, `balance`), `core.breakdown` (detalhamento
 estruturado do doc 20) e `TickKind.TEN_MINUTES`. Parâmetros `[PROV]` e interpretações: `CHANGELOG_DEV.md` (2026-10-01).
 Fica para quando o sistema dependente existir: Tratamento (dinheiro), auto-consumo de alimentos (Inventário),
-Recuperação Regional (saúde/médicos), bloqueio por Viagem (Geografia).
+Recuperação Regional (saúde/médicos). *(O bloqueio por Viagem foi implementado no P0.06.1.)*
 
 ---
 
@@ -106,7 +106,7 @@ Critérios:
 - recursos espaciais conforme documentação;
 - testes de integridade territorial.
 
-- ## P0.06.1 — Localização do jogador e viagem básica
+- ## [x] P0.06.1 — Localização do jogador e viagem básica  *(concluído em 2026-10-06; 3 decisões `[ABERTO]` aguardam aprovação)*
 
 **Objetivo:** complementar a Geografia com a localização física do jogador e implementar o núcleo mínimo de viagem necessário para que outros sistemas possam depender de localização.
 
@@ -122,6 +122,8 @@ Critérios:
 * Concluir a viagem de acordo com o sistema de tempo/ticks existente e atualizar a localização do jogador para o lote de destino.
 * Garantir que a viagem respeite os mesmos princípios de atomicidade, determinismo e uso do sistema de tempo já estabelecidos.
 * Criar testes para localização inicial, início de viagem, cálculo de distância, duração, conclusão da viagem e bloqueio de ações durante viagem.
+
+**Entregue:** app `travel` (`PlayerLocation`, `Journey`, serviços, handler de chegada, integridade) e pontos de integração aditivos em `players.hooks`. Decisões abertas e interpretações: `CHANGELOG_DEV.md` (2026-10-06).
 
 **Fora do escopo:**
 
@@ -180,7 +182,7 @@ Implementar `03`.
 
 ## [ ] P1.07 — Imóveis e zonas
 
-> **Requisito herdado do P0.06:** o `Player` ainda não tem localização. Este bloco (ou o de Viagem) precisa criar o vínculo jogador ↔ lote/bairro e o estado "em viagem", dos quais dependem moradia/QoL e o bloqueio de Trabalho por Viagem do `04`. Ver `CHANGELOG_DEV.md` (2026-10-03). A Viagem não tem bloco próprio na fila.
+> **Herdado do P0.06/P0.06.1:** a localização do jogador (lote atual) e a viagem já existem (`travel`). Este bloco precisa do vínculo de **residência/moradia** (`05` "Residência ativa"), distinto da localização, de que dependem moradia/QoL estrutural. Ver `CHANGELOG_DEV.md` (2026-10-06).
 
 Implementar `10`.
 
