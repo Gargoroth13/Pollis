@@ -106,6 +106,13 @@ def _assert_invariants(now, pk, bal):
 
 
 class PropertyTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from geography.balance import get_scenario
+        from geography.generator import generate_world
+        from geography.tests.base import SMALL
+        generate_world(get_scenario(**SMALL))  # todo jogador precisa de localização válida (04 §24)
+
     SEEDS = range(1, 21)
 
     def _equivalence(self, prefix, seeds, noise_base):

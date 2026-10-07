@@ -12,6 +12,7 @@ O tempo vem SEMPRE de core.clock (injetável), lido uma vez por chamada.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -55,10 +56,32 @@ def _locked(player_id: int) -> Player:
 
 
 def _catch_up(player: Player, now: int) -> None:
-    """Processa os ciclos de 10 min pendentes (lazy, 04 §22)."""
+    """Processa os ciclos de 10 min pendentes (lazy, 04 §22) e roda os hooks de acesso (On Access)."""
     ctx = CycleContext(player, get_balance())
     result = catch_up(PLAYER, player.processed_until, ctx, until=now)
     player.processed_until = max(player.processed_until, result.processed_until)
+    hooks.run_access_hooks(player, now)  # ex.: concluir o que venceu entre o último ciclo e `now`
+
+
+@contextmanager
+def locked_player(player_id: int):
+    """
+    Sessão de serviço para OUTROS sistemas (ex.: viagem): transação atômica, linha do jogador travada e catch-up até
+    AGORA; salva o jogador ao sair. Dá a eles o mesmo caminho de perform_action, sem duplicar a lógica.
+    Devolve (player, now, bal).
+    """
+    with transaction.atomic():
+        player = _locked(player_id)
+        now = game_clock.now()
+        _catch_up(player, now)
+        yield player, now, get_balance()
+        player.save()
+
+
+def _block_reasons(player: Player, action: Action, now: int, bal, activity) -> List[str]:
+    """Motivos do próprio players (04) + os acrescentados por outros sistemas via provedores de bloqueio."""
+    reasons = rules.block_reasons(player, action, now, bal)
+    return reasons + [r for r in hooks.run_block_providers(player, action, now, activity) if r not in reasons]
 
 
 def _apply_effect(player: Player, category: str, spec: EffectSpec, now: int) -> None:
@@ -130,9 +153,9 @@ def get_snapshot(player_id: int) -> PlayerSnapshot:
             at=now, energy=player.energy, health=player.health, nutrition=player.nutrition,
             burnout=player.burnout, burnout_active=player.burnout_active,
             health_critical=player.health_critical, hospitalized=player.is_hospitalized(now),
-            work_blocked_by=rules.block_reasons(player, Action.WORK, now, bal),
-            study_blocked_by=rules.block_reasons(player, Action.STUDY, now, bal),
-            leisure_blocked_by=rules.block_reasons(player, Action.LEISURE, now, bal),
+            work_blocked_by=_block_reasons(player, Action.WORK, now, bal, None),
+            study_blocked_by=_block_reasons(player, Action.STUDY, now, bal, None),
+            leisure_blocked_by=_block_reasons(player, Action.LEISURE, now, bal, None),
             qol_base=structural, qol_base_effective=effective,
             qol_current=qol_current(player, now, bal, effective=effective),
             energy_regen_per_cycle=rules.energy_regen(player, now, bal),
@@ -159,7 +182,7 @@ def perform_action(player_id: int, action: Action, *, burnout_risk=1,
 
     if effect is not None and action is not Action.LEISURE:
         raise ValueError("Só a ação de Lazer aplica efeito de QoL próprio (04 §19).")
-    reasons = rules.block_reasons(player, action, now, bal)
+    reasons = _block_reasons(player, action, now, bal, activity)
     if reasons:
         player.save()
         return _refuse(reasons[0], reasons=reasons)
