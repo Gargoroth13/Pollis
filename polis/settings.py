@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "players",  # estado do jogador: energia, QoL, saúde, nutrição, burnout
     "skills",  # Inteligência, Físico e Carisma (design/01) e Especialização (02 §13)
     "geography",  # Estado → Cidade → Bairro → Lote, zoneamento e recursos (design/08)
+    "travel",  # localização do jogador e viagem básica (design/04 §20-21)
 ]
 
 MIDDLEWARE = [
