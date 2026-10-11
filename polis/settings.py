@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "skills",  # Inteligência, Físico e Carisma (design/01) e Especialização (02 §13)
     "geography",  # Estado → Cidade → Bairro → Lote, zoneamento e recursos (design/08)
     "travel",  # localização do jogador e viagem básica (design/04 §20-21)
+    "catalog",  # catálogo central de Produtos, Receitas e usos (design/22)
 ]
 
 MIDDLEWARE = [
