@@ -260,6 +260,8 @@ O jogador precisa possuir ou alugar uma unidade residencial para possuir uma mor
 
 A residência ativa é utilizada pelos sistemas que dependem do local de moradia.
 
+Exceção (decisão do Game Director): a **moradia inicial** do jogador é garantida, básica e neutra em QoL, e **não consome** capacidade residencial normal nem de população (ver 04 §24). Não depende de propriedade nem de aluguel.
+
 A localização da residência também influencia sistemas como deslocamento para o trabalho e outras interações geográficas.
 
 15. Propriedade ativa

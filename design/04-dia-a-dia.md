@@ -213,7 +213,7 @@ O jogador não pode trabalhar enquanto:
 - estiver em Burnout Ativo;
 - estiver em Saúde Crítica;
 - estiver hospitalizado;
-- estiver em viagem quando o trabalho exigir presença física no local.
+- estiver em viagem (o Trabalho **exige** presença física no local; ver §20).
 
 ---
 
@@ -486,6 +486,16 @@ A viagem utiliza o tempo de jogo e não o relógio do computador do jogador.
 
 O jogador não pode executar ações que dependam de presença física no local de origem enquanto estiver viajando.
 
+Quais ações dependem de presença física (decisão do Game Director):
+
+- **Trabalho** exige presença; **Estudo** exige presença;
+- **Lazer** não exige presença; **Tratamento** não exige presença;
+- as demais atividades definem individualmente se exigem presença.
+
+O bloqueio por presença ocorre **antes** de qualquer custo de Energia, ganho de skill ou outro efeito da ação.
+
+**Nenhum estado atual impede iniciar uma viagem**: hospitalizado, Saúde Crítica e Burnout Ativo podem viajar (por exemplo, para buscar tratamento melhor). Não existem restrições físicas novas para viajar.
+
 Viajar não aplica automaticamente uma penalidade de "dia perdido".
 
 # 21. Distância e tempo de viagem
@@ -507,6 +517,12 @@ A distância deve ser fornecida pela Geografia e não armazenada como atributo i
 A cidade de referência em (0,0) continua sendo apenas uma coordenada geográfica; estar distante da capital não gera automaticamente bônus ou penalidade de QoL.
 
 Veículos, infraestrutura, estradas, transporte público e outros modificadores podem futuramente transformar o tempo base de viagem.
+
+**Custo monetário.** Viajar custa **tempo e dinheiro**. O custo-base é proporcional à distância:
+
+`custo-base de viagem = distância em grid × custo_por_unidade`
+
+`custo_por_unidade` é um **parâmetro de cenário**; o valor inicial é de calibração do Bot Test, não um valor definitivo de balanceamento. Veículos e outros sistemas futuros poderão **reduzir o custo** e também **modificar o tempo** de viagem. Combustível, manutenção e transporte completo não fazem parte do Bot Test inicial.
 
 ---
 
@@ -591,6 +607,8 @@ A QoL Base inicial segue:
 `0,50 + modificadores estruturais aplicáveis`
 
 O jogador possui localização inicial física no mundo conforme as regras de Geografia e criação do jogador.
+
+**Decisão do Game Director:** o jogador pode começar na **capital**; não há distribuição aleatória de localização inicial. A moradia inicial é **garantida**, **básica** e **neutra em QoL**, e **não consome** capacidade de lotes residenciais nem de população. Muitos jogadores começarem na capital não é um problema de capacidade.
 
 ---
 

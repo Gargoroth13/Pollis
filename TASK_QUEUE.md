@@ -106,24 +106,25 @@ Critérios:
 - recursos espaciais conforme documentação;
 - testes de integridade territorial.
 
-- ## [x] P0.06.1 — Localização do jogador e viagem básica  *(concluído em 2026-10-06; 3 decisões `[ABERTO]` aguardam aprovação)*
+- ## [x] P0.06.1 — Localização do jogador e viagem básica  *(concluído em 2026-10-06; revisado em 2026-10-07 com as decisões do Game Director)*
 
 **Objetivo:** complementar a Geografia com a localização física do jogador e implementar o núcleo mínimo de viagem necessário para que outros sistemas possam depender de localização.
 
 **Escopo:**
 
 * Vincular cada jogador a um `Lote` como sua localização atual.
-* Definir a localização inicial do jogador.
+* Definir a localização inicial do jogador (decisão do GD: pode ser a capital; moradia inicial garantida, básica, neutra em QoL, sem consumir capacidade).
 * Permitir iniciar uma viagem para outro `Lote`.
 * Calcular a distância entre origem e destino usando a métrica de distância definida pela Geografia.
 * Calcular o tempo-base de viagem usando `distância × minutos_por_unidade`, com `15` minutos por unidade como parâmetro padrão atual.
+* Calcular o custo monetário da viagem, parametrizado pela distância (`custo_por_unidade`, valor de calibração do Bot Test), com ponto de extensão para modificadores futuros de veículos.
 * Registrar o estado de viagem do jogador (`em_viagem` ou equivalente).
-* Impedir ações incompatíveis enquanto o jogador estiver viajando.
+* Impedir ações que exigem presença (Trabalho e Estudo; Lazer e Tratamento não) enquanto o jogador estiver viajando. Nenhum estado do jogador impede iniciar a viagem.
 * Concluir a viagem de acordo com o sistema de tempo/ticks existente e atualizar a localização do jogador para o lote de destino.
 * Garantir que a viagem respeite os mesmos princípios de atomicidade, determinismo e uso do sistema de tempo já estabelecidos.
 * Criar testes para localização inicial, início de viagem, cálculo de distância, duração, conclusão da viagem e bloqueio de ações durante viagem.
 
-**Entregue:** app `travel` (`PlayerLocation`, `Journey`, serviços, handler de chegada, integridade) e pontos de integração aditivos em `players.hooks`. Decisões abertas e interpretações: `CHANGELOG_DEV.md` (2026-10-06).
+**Entregue:** app `travel` (`PlayerLocation`, `Journey`, serviços, handler de chegada, integridade) e pontos de integração aditivos em `players.hooks`. Decisões do Game Director e interpretações técnicas: `CHANGELOG_DEV.md` (2026-10-06, revisão de 2026-10-07).
 
 **Fora do escopo:**
 
@@ -134,10 +135,11 @@ Critérios:
 * Regras avançadas de transporte.
 * Qualquer mecânica de `10 — Imóveis e Zonas` que não seja necessária para estabelecer a localização do jogador.
 * Reduções de tempo de viagem provenientes de veículos ou outros sistemas futuros.
+* Combustível, manutenção e transporte completo.
 
 **Dependências:**
 
-* `03 — Sistema de tempo`
+* **P0.03 — Fundação temporal** (motor de tempo/ticks, `core`). *(O arquivo `03` do `design/` é Escolas, não o sistema de tempo.)*
 * `04 — Jogador e ações`
 * `08 — Geografia`
 
