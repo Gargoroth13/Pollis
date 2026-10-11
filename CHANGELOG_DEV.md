@@ -4,6 +4,73 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-11 — Produtos, Receitas e usos (P1.01)
+
+### Escopo
+- **Implementado:** app `catalog` — `Product`, `Recipe`, `RecipeInput` e `FoodProfile` com **identificadores estáveis**, carga **idempotente e atômica** (`sync_catalog`), ligação com os **recursos da Geografia**, **consultas derivadas** (receita, usos, consumidores, matérias-primas transitivas), **relatório de integridade** com códigos estáveis (`check_catalog`) e testes.
+- **Fora, como pedido:** inventário (P1.02), empresas e produção (P1.04), mercado e preços (P1.05), veículos. Nenhum desses sistemas foi tocado; `players`, `geography` e `travel` não mudaram.
+- **Fonte:** o `design/22-Receitas-Produção.md` **atual**, que o Game Director declarou **não ser um catálogo completo nem definitivo**. Entrou **somente** o que ele declara: **73 produtos** = 29 matérias-primas (10 Agropecuária, 10 Extrativismo, 9 Mineração), **41 receitas** (12 Produção, 7 Alimentícia, 15 Bens de consumo, 4 Tecnológica, 3 Milícia) e 3 produtos militares do Exército (sem receita, comprados pelo governo). O `22` **não foi editado**.
+
+### Decisões do Game Director (2026-10-11) aplicadas
+1. **Completude:** nada foi inventado (receitas, usos comerciais, quantidades, atributos). As lacunas conhecidas estão registradas abaixo, com `código`, quem as cita e **quais etapas dependem delas**; também vivem no código (`catalog.definitions.KNOWN_GAPS`) e saem como pendência de design em `check_catalog`. Um teste exige que cada código esteja neste arquivo.
+2. **Normalização de nomes** quando é claramente a mesma entidade. **Identidade = `key`** (slug estável, independente do nome; o `save` recusa mudar a `key`; renomear só muda o `name`). As variantes como aparecem no `22` ficam em `Product.source_names`, e um teste lê o `22` e confere o catálogo contra ele (se o arquivo mudar, o teste obriga a atualizar). Normalizações realizadas:
+
+| `key` | Nome de apresentação | Variantes no `22` |
+|---|---|---|
+| `shoes` | Calçados | Calçado, Calçados |
+| `eggs` | Ovos | Ovo, Ovos |
+| `chemicals` | Químicos | Químico, Químicos |
+| `hospital_supplies` | Materiais hospitalares | Materiais hospitalares, Materiais Hospitalares |
+| `coffee_bean` | Grão de café | Grão de café, Grão de Café |
+
+   **Distinções preservadas:** o "Kit Médico" da **milícia** (`militia_medical_kit`, nome de apresentação "Kit médico (milícia)") e os "Kits médicos" do **Exército** (`military_medical_kits`, "Kits médicos militares") são entidades **diferentes** (origem diferente); o qualificador no nome é só para não colidirem. As chaves dos 10 recursos espaciais são os valores de `geography.constants.Resource` (`oil`, `iron`, ...).
+3. **Matéria-prima sem uso e produto sem consumidor** (Diamante, Prata, Látex, Resina, Óleo natural; e 17 produtos sem uso declarado) carregam normalmente e saem como **pendência de design**, **não** como erro. **Nenhuma permissão de compra/venda é inferida**: `uses_of` devolve só usos declarados (insumo de receita; consumo como alimento) e lista vazia significa nenhuma permissão. Erro (impede a carga): referência quebrada, chave duplicada, ciclo, inconsistência estrutural.
+4. **Valores numéricos não inventados:** quantidade de insumo, rendimento, ganho de Nutrição, intensidade de QoL e estrela das Matrizes ficam **não especificados** (`NULL`/`None`), **distintos de zero**: o modelo e o relatório os distinguem (zero é um valor especificado; `NULL` nunca é lido como zero). Quem precisa deles **recusa** com `UNSPECIFIED_DESIGN_VALUE` e a lista do que falta (`check_production_ready`, `check_consumption_ready`), em vez de prosseguir em silêncio. Hoje **nenhum produto está pronto para produção e nenhum alimento para consumo**: é o comportamento correto, e muda sozinho quando o design especificar os valores. Nenhum `[PROV]` foi escolhido.
+
+### Interpretações técnicas (reversíveis; não são regra de gameplay)
+5. **Uma receita por produto** (como no `22`); se o design admitir receitas alternativas, a relação muda.
+6. **Usos são derivados, não armazenados:** insumo de receita (a partir de `RecipeInput`) e consumo como alimento (a partir de `FoodProfile`). Não há tabela de "usos" paralela: usos comerciais novos entram quando o design os declarar (ver `GAP_COMMERCIAL_USES_UNDECLARED`).
+7. **Restrições de banco:** quantidade e rendimento, quando especificados, são **> 0**; Nutrição e intensidade **>= 0** (a intensidade é uma magnitude: o sentido vem de `qol_effect`, inclusive `debuff`); estrela entre 1 e 5. Zero em quantidade/rendimento é recusado por ser sem sentido; o design não diz o contrário.
+8. **Estrela:** `NULL` significa "não especificada" (Matrizes) ou "não se aplica" (milícia — o `22` diz "Não existe" — e compra do governo); é erro (`STARS_NOT_APPLICABLE`) dar estrela a esses últimos.
+9. **Níveis de Nutrição e tipos de efeito de QoL são os qualitativos do `22`** ("nada", "quase nada", "pouca", "média", "bastante"; "sem efeito", "pequeno buff", "buff médio", "debuff"), **sem ordem numérica** definida.
+10. **A carga nunca apaga Produto** (inventário e estoque vão referenciá-lo); um produto no banco sem definição aparece como erro `PRODUCT_NOT_IN_DEFINITIONS`. A carga é por comando (`sync_catalog`, como `generate_world`), não automática em migração; testes carregam o catálogo por classe.
+11. **Dependência de `players`:** só do tipo `ActionResult` (recusas como código, padrão do projeto).
+
+### Relatório de integridade (`check_catalog [--pending]`)
+- **Erros:** `DUPLICATE_KEY`, `DUPLICATE_RESOURCE_LINK`, `INGREDIENT_NOT_FOUND`, `DUPLICATE_INPUT`, `RAW_WITH_RECIPE`, `PROCURED_WITH_RECIPE`, `PRODUCED_WITHOUT_RECIPE`, `RECIPE_CYCLE`, `INVALID_QUANTITY`, `INVALID_YIELD`, `INVALID_STARS`, `STARS_NOT_APPLICABLE`, `INVALID_FOOD_VALUE`, `RESOURCE_ON_NON_RAW`, `RESOURCE_UNKNOWN`, `RESOURCE_SECTOR_MISMATCH`, `RESOURCE_WITHOUT_PRODUCT`, e, contra o `22`: `EMPTY_CATALOG`, `CATALOG_NOT_SYNCED`, `PRODUCT_NOT_IN_DEFINITIONS`, `PRODUCT_DIFFERS_FROM_DEFINITIONS`.
+- **Pendências de design (nunca reprovam):** `RAW_MATERIAL_WITHOUT_USE` (5), `PRODUCT_WITHOUT_DECLARED_USE` (17), `RECIPE_QUANTITIES_UNSPECIFIED` (41), `RECIPE_YIELD_UNSPECIFIED` (41), `MIN_STARS_UNSPECIFIED` (29), `FOOD_NUTRITION_UNSPECIFIED` (7), `FOOD_QOL_INTENSITY_UNSPECIFIED` (7) e as lacunas globais abaixo.
+
+### Lacunas conhecidas do `22` (rastreabilidade; **não resolvidas**)
+| Código | Lacuna | Citada em | Bloqueia |
+|---|---|---|---|
+| `GAP_FINISHINGS_UNDEFINED` | **Acabamentos** (insumo da Construtora) não existe no `22` | `02 §2.5` | P1.04, P1.07 |
+| `GAP_OPERATIONAL_MATERIALS_UNDEFINED` | **Materiais operacionais** e consumo por funcionário não definidos | `02 §10`, `§20` | P1.04 |
+| `GAP_MATRIZ_STARS_UNDEFINED` | **Estrelas das Matrizes** (matérias-primas) não definidas | `02 §5.2`, `§14` | P1.04 |
+| `GAP_PRODUCTION_QUANTITIES_UNDEFINED` | quantidade por insumo, rendimento, quantidade produzida por trabalho | `02 §5` | P1.04, P1.05 |
+| `GAP_FOOD_VALUES_UNDEFINED` | ganho de Nutrição e intensidade de QoL numéricos (e base do auto-consumo "menor ganho") | `04 §15-16`, `05 §6` | P1.02 |
+| `GAP_FOOD_PROFILE_BREAD_UNDECLARED` | Pão tem Nutrição/QoL "—" mas é insumo do Hambúrguer: é consumível? | `22 §2.3` | P1.02 |
+| `GAP_COMMERCIAL_USES_UNDECLARED` | usos/consumidores comerciais ausentes; permissão de compra/venda **não** é inferida | `02 §4`, `§20` | P1.04, P1.05 |
+| `GAP_INVENTORY_CATEGORIES_UNDEFINED` | categorias de inventário e itens permanentes x consumíveis | `05 §3`, `§22` | P1.02 |
+| `GAP_BASE_PRICE_UNDEFINED` | `preco_base`/valor de referência do item (taxa do correio) | `17 §20`, `05 §12` | P1.02, P1.05 |
+| `GAP_VEHICLE_RELATION_UNDEFINED` | produto Carro x veículo ativo/viagem (veículos adiados) | `04 §21`, `05 §9` | sistema de veículos (futuro) |
+
+### Pendências registradas por etapa (decisões do Game Director a fechar **antes** de cada uma)
+- **P1.02 — Inventário:** `GAP_FOOD_VALUES_UNDEFINED` (Nutrição e intensidade numéricas; ordenação para o auto-consumo), `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED` (taxa de correio). **Se a implementação depender de números, consultar o GD antes de escolher valores `[PROV]`.**
+- **P1.04 — Empresas:** `GAP_FINISHINGS_UNDEFINED`, `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. A produção deve usar `catalog.services.check_production_ready` e **recusar** enquanto houver `UNSPECIFIED_DESIGN_VALUE`. **Consultar o GD antes de escolher `[PROV]`.**
+- **P1.05 — Mercado:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. **P1.07:** `GAP_FINISHINGS_UNDEFINED`.
+
+### Observações sobre o `22` (sem alteração do arquivo)
+- O arquivo não tem cabeçalho nem status, e a §2.3 vem antes da §2.2; o texto diz "4 sub-tipos" de Industrial e lista Milícia à parte (tratada como setor próprio, sem estrela).
+- 5 matérias-primas e 17 produtos sem uso declarado: ver pendências acima. O Pão pode não ser um alimento por omissão.
+
+### Testes
+106 testes novos em `catalog` (582 no total): definições válidas e **fiéis ao `22`** (parser do arquivo), cada código de erro e de pendência, ciclos (autorreferência, 2 e 3 elos, grafo real, losango que **não** é ciclo), erro x pendência, carga idempotente/atômica/identidade estável, restrições de banco (zero x `NULL`), usos derivados sem permissão inferida, recusas `UNSPECIFIED_DESIGN_VALUE`, ligação com a Geografia, deriva banco x definições e comandos. **Mutação:** 27 mutantes nas regras do catálogo (validação, carga, serviços, integridade, chave permanente); 3 sobreviveram na primeira rodada (remoção de receita, rendimento ignorado, zero tratado como não especificado) e ganharam teste; todos mortos.
+
+### Como usar
+`python manage.py sync_catalog` (carrega, idempotente) e `python manage.py check_catalog [--pending]`. Serviços em `catalog.services`: `recipe_of`, `uses_of`, `consumers_of`, `raw_materials_of`, `product_for_resource`, `food_of`, `check_production_ready`, `check_consumption_ready`.
+
+---
+
 ## 2026-10-06 — Localização do jogador e viagem básica (P0.06.1)
 
 ### Escopo

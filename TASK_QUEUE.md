@@ -158,11 +158,15 @@ ponto de extensão para leis, recursos espaciais, cenário/seed, geração deter
 
 # P1 — Núcleo econômico e interação
 
-## [ ] P1.01 — Produtos, Receitas e usos
+## [x] P1.01 — Produtos, Receitas e usos  *(implementado em 2026-10-11, branch `dev/p1.01-produtos-receitas`; em auditoria)*
 
 Implementar a estrutura central de `22`.
 
+**Entregue:** app `catalog` (`Product`, `Recipe`, `RecipeInput`, `FoodProfile`; ids estáveis; `sync_catalog`/`check_catalog`; consultas derivadas; integridade com erro x pendência de design). O `22` atual é **incompleto**: só entrou o que ele declara; lacunas e pendências em `CHANGELOG_DEV.md` (2026-10-11). Valores não especificados (quantidades, rendimento, Nutrição, intensidade de QoL, estrelas das Matrizes) ficam `NULL`, **distintos de zero**, e quem os usa recusa com `UNSPECIFIED_DESIGN_VALUE`.
+
 ## [ ] P1.02 — Inventário
+
+> **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FOOD_VALUES_UNDEFINED` (Nutrição e intensidade de QoL numéricas; ordenação para o auto-consumo), `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED` (taxa de correio). Ver `CHANGELOG_DEV.md` (2026-10-11).
 
 Implementar `05`.
 
@@ -172,9 +176,13 @@ Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos 
 
 ## [ ] P1.04 — Empresas
 
+> **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FINISHINGS_UNDEFINED`, `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. A produção deve consultar `catalog.services.check_production_ready` e **recusar** enquanto houver `UNSPECIFIED_DESIGN_VALUE`. Ver `CHANGELOG_DEV.md` (2026-10-11).
+
 Implementar `02` utilizando `22` como fonte de produtos/receitas.
 
 ## [ ] P1.05 — Mercado e transparência
+
+> **Pendências herdadas do P1.01:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED` (`CHANGELOG_DEV.md`, 2026-10-11).
 
 Implementar mercado e estatísticas de `17`.
 
@@ -185,6 +193,8 @@ Implementar `03`.
 ## [ ] P1.07 — Imóveis e zonas
 
 > **Herdado do P0.06/P0.06.1:** a localização do jogador (lote atual) e a viagem já existem (`travel`). Este bloco precisa do vínculo de **residência/moradia** (`05` "Residência ativa"), distinto da localização, de que dependem moradia/QoL estrutural. Ver `CHANGELOG_DEV.md` (2026-10-06).
+
+> **Pendência herdada do P1.01:** `GAP_FINISHINGS_UNDEFINED` (Acabamentos da Construtora; `CHANGELOG_DEV.md`, 2026-10-11).
 
 Implementar `10`.
 
