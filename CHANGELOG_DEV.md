@@ -48,6 +48,10 @@ Nenhuma é mais `[ABERTO]`. Os pontos de configuração antigos (`POLIS_TRAVEL_B
 ### Preservado (o que a auditoria apontou como correto)
 `PlayerLocation`; no máximo uma viagem ativa por jogador (restrição no banco); distância sempre da Geografia; `arrives_at` fixado na partida; conclusão preguiçosa por ciclo + hook de acesso; bloqueio de presença antes de Energia/skills; mesmo caminho para humano e Bot; atomicidade e determinismo; cache do catch-up; testes existentes.
 
+### Pendência documental (não bloqueadora; registrada após o merge do P0.06.1)
+- **Frase obsoleta na seção do P0.06 (2026-10-03, "Escopo"):** diz que o bloqueio de Trabalho por Viagem "continua pendente". Ele foi implementado no P0.06.1. Não corrigida de propósito, para não ampliar o escopo do merge; corrigir numa **limpeza documental posterior**. Valem as seções do P0.06.1 e da lista de pendências do P0.04 (já marcada como implementada).
+- **Lembrete:** `travel_cost_per_unit` = 10 segue **`[PROV]`** (calibração do Bot Test, não balanceamento) e a **cobrança efetiva** do custo da viagem depende da futura integração com o sistema financeiro (`register_payment_handler`); hoje `Journey.charged = False`.
+
 ### Sugestões (**NÃO implementadas**)
 - Quando o sistema de dinheiro existir, registrar o handler de pagamento (hoje o custo não é cobrado).
 - Quando existirem veículos, registrar um modificador de viagem; o sistema de Empresas/cargos deve informar `requires_presence` por cargo (`04 §6`).
