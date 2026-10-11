@@ -20,7 +20,7 @@ class Journey(models.Model):
 
     NÃO guarda a distância nem o tempo-base: 04 §21 — "a distância deve ser fornecida pela Geografia e não armazenada
     como atributo independente". O que se guarda é o que a viagem É: origem, destino e os instantes (tempo de jogo, 04 §20).
-    `arrives_at` é fixado na partida (mudar o parâmetro depois não altera uma viagem em curso).
+    `arrives_at` e `cost` são fixados na partida (mudar os parâmetros depois não altera uma viagem em curso).
     """
 
     player = models.ForeignKey("players.Player", on_delete=models.CASCADE, related_name="journeys")
@@ -29,6 +29,10 @@ class Journey(models.Model):
     departed_at = models.BigIntegerField()
     arrives_at = models.BigIntegerField()
     completed = models.BooleanField(default=False)
+    # Custo monetário calculado na partida (decisão do GD, 2026-10-07), já arredondado a centavos e fixado como `arrives_at`.
+    # `charged` diz se o sistema de dinheiro (ainda inexistente) efetivamente debitou: False = custo registrado, não cobrado.
+    cost = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    charged = models.BooleanField(default=False)
 
     class Meta:
         constraints = [

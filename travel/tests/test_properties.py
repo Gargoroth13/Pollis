@@ -48,7 +48,12 @@ def run_sequence(name, seed, *, extra_sync_seed=None, check=True):
             elif op == "food":
                 r = consume_food(player.pk, ops.randint(20, 100))
             else:
-                r = perform_action(player.pk, Action(op), activity=ActivityContext(requires_presence=ops.choice([None, None, True, False])))
+                # Presença é regra FIXA da ação (GD, 2026-10-07): a atividade não declara nada para work/study/leisure.
+                r = perform_action(player.pk, Action(op), activity=ActivityContext())
+            if r is not None and op in ("work", "study") and r.code == "TRAVELING":
+                coverage.add("PRESENCE_BLOCKED")
+            if r is not None and op == "leisure" and r.ok and Journey.objects.filter(player=player, completed=False).exists():
+                coverage.add("LEISURE_DURING_TRIP")
             responses.append((op, r.code if r else None))
             if r is not None and not r.ok:
                 coverage.add(r.code)
@@ -122,16 +127,31 @@ class PropertyTests(TestCase):
         coverage = self._equivalence("d", self.SEEDS, 2000)
         self.assertTrue({"TRIP_STARTED", "TRAVELING"} <= coverage, coverage)
 
-    @override_settings(POLIS_TRAVEL_BALANCE={"presence_dependent_by_default": {"study": True, "leisure": True}})
-    def test_presence_everywhere_and_invariants(self):
+    def test_presence_rule_and_invariants(self):
+        """Trabalho/Estudo bloqueiam em viagem; Lazer nunca. Em ambos os casos nada fica inconsistente."""
         for seed in range(1, 9):
             run_sequence(f"p{seed}", seed)
         coverage = self._equivalence("q", range(1, 9), 3000)
-        self.assertIn("TRAVELING", coverage)
+        self.assertTrue({"TRAVELING", "PRESENCE_BLOCKED", "LEISURE_DURING_TRIP"} <= coverage, coverage)
 
-    @override_settings(POLIS_GEOGRAPHY={"travel_minutes_per_unit": 1}, POLIS_TRAVEL_BALANCE={"travel_blocking_states": ["hospitalized", "health_critical", "burnout_active"]})
-    def test_blocking_states_keep_the_invariants(self):
+    @override_settings(POLIS_GEOGRAPHY={"travel_minutes_per_unit": 1})
+    def test_no_state_blocks_departure_and_invariants_hold(self):
+        """Nenhum estado impede a partida (GD, 2026-10-07): mesmo com viagens frequentes, burnout/hospitalização/saúde crítica."""
         for seed in range(1, 11):
             run_sequence(f"b{seed}", seed)
         coverage = self._equivalence("c", range(1, 11), 4000)
         self.assertTrue({"TRIP_STARTED"} <= coverage, coverage)
+
+    def test_recorded_cost_always_matches_distance_times_cost_per_unit(self):
+        """Custo monetário (GD, 2026-10-07): toda viagem registra distância × custo_por_unidade, em centavos, fixado na partida."""
+        from decimal import Decimal
+        from geography import services as geo
+        from travel import rules
+        run_sequence("cost", 3, check=False)
+        per_unit = get_scenario().travel_cost_per_unit
+        journeys = list(Journey.objects.select_related("origin", "destination").all())
+        self.assertGreater(len(journeys), 0)
+        for j in journeys:
+            expected = rules.charge_amount(geo.distance_between(j.origin, j.destination) * per_unit)
+            self.assertEqual(j.cost, expected)
+            self.assertGreaterEqual(j.cost, Decimal(0))

@@ -62,8 +62,8 @@ class DepartureTests(TravelTestCase):
         self.assertEqual((w.traveling, w.lot.pk, w.destination.pk), (True, origin.pk, self.far(origin).pk))
         self.assertEqual(self.location().pk, origin.pk)
 
-    def test_departure_costs_no_energy_burnout_money_or_health(self):
-        """O 04 não define custo de viagem: nenhum foi inventado."""
+    def test_departure_costs_no_energy_burnout_or_health(self):
+        """O custo da viagem é TEMPO e DINHEIRO (GD, 2026-10-07); Energia, Burnout e Saúde não são afetados."""
         before = self.state()
         r = self.go(self.far())
         after = self.state()
@@ -192,25 +192,219 @@ class RefusalTests(TravelTestCase):
         self.assertEqual((self.location().pk, after.energy, after.processed_until), (self.location().pk, before.energy, before.processed_until))
 
 
-class BlockedDepartureConfigTests(TravelTestCase):
-    """[ABERTO] O 04 não define estados que impeçam PARTIR: por padrão nenhum impede; é configurável."""
+class NoStateBlocksDepartureTests(TravelTestCase):
+    """Decisão do GD (2026-10-07): nenhum estado atual impede iniciar uma viagem (p.ex. viajar em busca de tratamento)."""
 
-    def test_by_default_nothing_prevents_departing(self):
-        change_health(self.player.pk, -100, "t")                                   # hospitalizado e Saúde Crítica
+    def test_hospitalized_player_can_travel(self):
+        change_health(self.player.pk, -100, "t")
+        self.assertIsNotNone(self.state().hospitalized_until)
+        self.assertTrue(self.go(self.far()).ok)
+
+    def test_health_critical_player_can_travel(self):
+        self.set_state(health=10, health_critical=True)
+        self.assertTrue(self.go(self.far()).ok)
+
+    def test_active_burnout_player_can_travel(self):
         self.set_state(burnout=100, burnout_active=True)
         self.assertTrue(self.go(self.far()).ok)
 
-    @override_settings(POLIS_TRAVEL_BALANCE={"travel_blocking_states": ["hospitalized", "health_critical", "burnout_active"]})
-    def test_configured_states_prevent_departing_in_a_fixed_order(self):
+    def test_all_states_together_can_travel(self):
         change_health(self.player.pk, -100, "t")
-        self.assertEqual(self.go(self.far()).code, "HOSPITALIZED")
-        self.clk.advance(seconds=6 * HOUR)                                         # hospitalização termina
-        self.state()                                                               # sincroniza ANTES de forçar o estado
-        self.set_state(health=10, health_critical=True, hospitalized_until=None)
-        self.assertEqual(self.go(self.far()).code, "HEALTH_CRITICAL")
-        self.set_state(health=100, health_critical=False, burnout=100, burnout_active=True)
-        self.assertEqual(self.go(self.far()).code, "BURNOUT_ACTIVE")
+        self.set_state(burnout=100, burnout_active=True)
+        self.assertTrue(self.go(self.far()).ok)
+        self.assertEqual(Journey.objects.count(), 1)
+
+    def test_departure_does_not_cure_or_change_those_states(self):
+        change_health(self.player.pk, -100, "t")
+        self.set_state(burnout=100, burnout_active=True)
+        before = self.state()
+        self.go(self.far())
+        after = self.state()
+        self.assertIsNotNone(before.hospitalized_until)
+        self.assertEqual((after.hospitalized_until, after.health_critical, after.burnout_active),
+                         (before.hospitalized_until, before.health_critical, before.burnout_active))
+
+    def test_there_is_no_balance_option_to_block_travel_by_state(self):
+        with self.assertRaises(ImportError):
+            import travel.balance  # noqa: F401
+
+
+class TravelCostTests(TravelTestCase):
+    """Decisão do GD (2026-10-07): viagem custa tempo E dinheiro; custo = distância × custo_por_unidade, parametrizado."""
+
+    def test_cost_is_distance_times_cost_per_unit_with_a_breakdown(self):
+        origin, dest = self.location(), self.far()
+        r = self.go(dest)
+        c = r.detail["travel_cost"]
+        self.assertEqual([s.key for s in c.steps], ["distance", "cost_per_unit"])
+        self.assertEqual((c.step("distance").amount, c.step("cost_per_unit").amount), (geo.distance_between(origin, dest), 10))
+        self.assertEqual(c.value, geo.distance_between(origin, dest) * 10)
+        self.assertEqual(r.detail["cost"], services.rules.charge_amount(c.value))
+        self.assertEqual(Journey.objects.get().cost, r.detail["cost"])
+
+    @override_settings(POLIS_GEOGRAPHY={"travel_cost_per_unit": "0.3333"})
+    def test_charged_amount_is_rounded_to_cents_while_the_calculation_stays_exact(self):
+        """Interpretação técnica: o cálculo (doc 20 §8) é exato; o valor cobrado/registrado vai a centavos."""
+        origin, dest = self.location(), self.far()
+        r = self.go(dest)
+        exact = r.detail["travel_cost"].value
+        self.assertEqual(exact, geo.distance_between(origin, dest) * D("0.3333"))
+        self.assertNotEqual(exact, exact.quantize(D("0.01")))                    # a conta tem mais de 2 casas
+        self.assertEqual(r.detail["cost"], exact.quantize(D("0.01")))
+        self.assertEqual(Journey.objects.get().cost, exact.quantize(D("0.01")))
+
+    def test_time_is_unchanged_by_the_cost_rule(self):
+        origin, dest = self.location(), self.far()
+        r = self.go(dest)
+        self.assertEqual(r.detail["duration_seconds"], self.expected_seconds(origin, dest))     # 15 min por unidade, como antes
+
+    @override_settings(POLIS_GEOGRAPHY={"travel_cost_per_unit": 25})
+    def test_cost_per_unit_is_a_calibrable_scenario_parameter(self):
+        origin, dest = self.location(), self.far()
+        r = self.go(dest)
+        self.assertEqual(r.detail["travel_cost"].value, geo.distance_between(origin, dest) * 25)
+
+    @override_settings(POLIS_GEOGRAPHY={"travel_cost_per_unit": 0})
+    def test_free_travel_is_valid_and_needs_no_payment(self):
+        r = self.go(self.far())
+        self.assertEqual((r.ok, r.detail["cost"], r.detail["payment"]), (True, 0, "NOT_REQUIRED"))
+
+    def test_negative_cost_per_unit_is_rejected(self):
+        from django.core.exceptions import ImproperlyConfigured
+        from geography.balance import get_scenario
+        with self.assertRaises(ImproperlyConfigured):
+            get_scenario(travel_cost_per_unit=-1)
+
+    def test_farther_costs_more_and_takes_longer(self):
+        origin = self.location()
+        near, far = self.near(origin), self.far(origin)
+        qn, qf = services.quote_travel(origin, near), services.quote_travel(origin, far)
+        self.assertLess(qn.amount, qf.amount)
+        self.assertLess(qn.duration_seconds, qf.duration_seconds)
+
+    def test_quote_is_pure_and_matches_departure(self):
+        origin, dest = self.location(), self.far()
+        q = services.quote_travel(origin, dest, T0, self.player)
         self.assertEqual(Journey.objects.count(), 0)
+        r = self.go(dest)
+        self.assertEqual((r.detail["cost"], r.detail["duration_seconds"]), (q.amount, q.duration_seconds))
+
+    def test_the_charge_is_rounded_to_cents_with_bankers_rounding_but_the_calculation_is_exact(self):
+        from decimal import Decimal
+        self.assertEqual(services.rules.charge_amount(Decimal("1.005")), Decimal("1.00"))
+        self.assertEqual(services.rules.charge_amount(Decimal("1.015")), Decimal("1.02"))
+        self.assertEqual(services.rules.travel_cost(Decimal("1.2345"), Decimal(10)).value, Decimal("12.3450"))
+
+    def test_cost_is_fixed_at_departure(self):
+        r = self.go(self.far())
+        with override_settings(POLIS_GEOGRAPHY={"travel_cost_per_unit": 1}):
+            self.assertEqual(Journey.objects.get().cost, r.detail["cost"])
+
+    def test_refused_departures_charge_nothing(self):
+        self.go(self.location())
+        self.assertEqual(Journey.objects.count(), 0)
+
+
+class PaymentIntegrationTests(TravelTestCase):
+    """O sistema de dinheiro ainda não existe: o custo é calculado e registrado; a cobrança é um ponto de integração."""
+
+    def test_without_a_money_system_the_cost_is_registered_but_not_charged(self):
+        r = self.go(self.far())
+        j = Journey.objects.get()
+        self.assertEqual((r.ok, r.detail["payment"], j.charged), (True, "NO_PAYMENT_SYSTEM", False))
+        self.assertGreater(j.cost, 0)
+
+    def test_a_payment_handler_receives_the_amount_and_the_trip_is_marked_charged(self):
+        calls = []
+        services.register_payment_handler("wallet", lambda player, amount, ctx: calls.append((player.pk, amount, ctx["at"])) or True)
+        dest = self.far()
+        r = self.go(dest)
+        self.assertEqual(calls, [(self.player.pk, r.detail["cost"], T0)])
+        self.assertEqual((r.detail["payment"], Journey.objects.get().charged), ("CHARGED", True))
+
+    def test_insufficient_funds_refuses_the_trip_and_creates_nothing(self):
+        services.register_payment_handler("wallet", lambda player, amount, ctx: False)
+        r = self.go(self.far())
+        self.assertEqual((r.ok, r.code), (False, "INSUFFICIENT_FUNDS"))
+        self.assertGreater(r.detail["cost"], 0)
+        self.assertEqual(Journey.objects.count(), 0)
+        self.assertFalse(self.where().traveling)
+
+    def test_a_failure_after_payment_rolls_the_whole_departure_back(self):
+        """Pagar e falhar ao criar a viagem não pode deixar o dinheiro debitado: tudo na mesma transação."""
+        from django.db import transaction
+        debited = []
+        def pay(player, amount, ctx):
+            debited.append(amount)
+            return True
+        services.register_payment_handler("wallet", pay)
+        with mock.patch.object(Journey.objects, "create", side_effect=RuntimeError):
+            with self.assertRaises(RuntimeError):
+                self.go(self.far())
+        self.assertEqual(Journey.objects.count(), 0)
+
+    def test_only_one_payment_handler_and_it_can_be_removed(self):
+        services.register_payment_handler("wallet", lambda *a: True)
+        with self.assertRaises(ValueError):
+            services.register_payment_handler("other", lambda *a: True)
+        services.unregister_payment_handler("wallet")
+        self.assertEqual(self.go(self.far()).detail["payment"], "NO_PAYMENT_SYSTEM")
+
+    def test_a_free_trip_never_calls_the_handler(self):
+        called = []
+        services.register_payment_handler("wallet", lambda *a: called.append(1) or True)
+        with override_settings(POLIS_GEOGRAPHY={"travel_cost_per_unit": 0}):
+            self.assertTrue(self.go(self.far()).ok)
+        self.assertEqual(called, [])
+
+
+class TravelModifierExtensionTests(TravelTestCase):
+    """04 §21: veículos e demais modificadores virão depois e reduzirão custo / modificarão tempo. A arquitetura já comporta."""
+
+    def test_no_modifiers_means_base_time_and_base_cost(self):
+        q = services.quote_travel(self.location(), self.far())
+        self.assertEqual([s.key for s in q.time.steps], ["distance", "minutes_per_unit"])
+        self.assertEqual([s.key for s in q.cost.steps], ["distance", "cost_per_unit"])
+
+    def test_a_modifier_scales_time_and_cost_and_shows_in_the_breakdown(self):
+        origin, dest = self.location(), self.far()
+        base = services.quote_travel(origin, dest)
+        services.register_travel_modifier("vehicle", lambda p, o, d: services.TravelModifier("vehicle", D("0.5"), D("0.25")))
+        q = services.quote_travel(origin, dest)
+        self.assertEqual(q.time.value, base.time.value * D("0.5"))
+        self.assertEqual(q.cost.value, base.cost.value * D("0.25"))
+        self.assertEqual([s.key for s in q.time.steps][-1], "modifier:vehicle")
+        self.assertEqual([s.key for s in q.cost.steps][-1], "modifier:vehicle")
+
+    def test_departure_uses_the_modified_values(self):
+        origin, dest = self.location(), self.far()
+        base = services.quote_travel(origin, dest)
+        services.register_travel_modifier("vehicle", lambda p, o, d: services.TravelModifier("vehicle", D("0.5"), D("0.25")))
+        r = self.go(dest)
+        self.assertEqual(r.detail["duration_seconds"], services.rules.duration_seconds(base.time.value * D("0.5")))
+        self.assertEqual(r.detail["cost"], services.rules.charge_amount(base.cost.value * D("0.25")))
+
+    def test_a_modifier_can_depend_on_the_player(self):
+        other = self.new_player("with_car")
+        services.register_travel_modifier("vehicle", lambda p, o, d: services.TravelModifier("vehicle", D("0.5"), D("0.5"))
+                                          if p is not None and p.pk == other.pk else None)
+        dest = self.far()
+        mine, theirs = self.go(dest).detail, self.go(dest, other).detail
+        self.assertLess(theirs["cost"], mine["cost"])
+        self.assertLess(theirs["duration_seconds"], mine["duration_seconds"])
+
+    def test_modifiers_apply_in_a_fixed_order_by_name_and_names_are_unique(self):
+        services.register_travel_modifier("b", lambda p, o, d: services.TravelModifier("b", D(2), D(1)))
+        services.register_travel_modifier("a", lambda p, o, d: services.TravelModifier("a", D(3), D(1)))
+        q = services.quote_travel(self.location(), self.far())
+        self.assertEqual([s.key for s in q.time.steps][2:], ["modifier:a", "modifier:b"])
+        with self.assertRaises(ValueError):
+            services.register_travel_modifier("a", lambda *x: None)
+
+    def test_a_modifier_never_makes_a_trip_instant_or_free_by_accident(self):
+        services.register_travel_modifier("tiny", lambda p, o, d: services.TravelModifier("tiny", D("0.0000001"), D(1)))
+        r = self.go(self.near())
+        self.assertGreaterEqual(r.detail["duration_seconds"], 1)
 
 
 class AtomicityTests(TravelTestCase):

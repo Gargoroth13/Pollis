@@ -33,8 +33,9 @@ class ActivityContext:
     base_gain          ganho base POR SKILL, sobrescrevendo o parâmetro de balanceamento
     school_quality     qualidade da escola (01 §1.3); 1 quando não se aplica
     specialization_key chave de Especialização (02 §13): atividade ou produto trabalhado
-    requires_presence  a atividade depende de PRESENÇA FÍSICA no local? (04 §6, §20). None = o padrão da ação, definido
-                       pelo sistema de viagem (o 04 só nomeia o Trabalho, "quando exigir presença física")
+    requires_presence  a atividade depende de PRESENÇA FÍSICA no local? (04 §6, §20). Regra fixa por ação (GD, 2026-10-07):
+                       Trabalho e Estudo exigem; Lazer e Tratamento não. Para esses, None = a regra da ação e declarar o
+                       contrário é erro (ValueError). Ação sem regra fixa: a atividade declara.
     """
     skills: Optional[Tuple[str, ...]] = None
     base_gain: Optional[Mapping[str, Decimal]] = None

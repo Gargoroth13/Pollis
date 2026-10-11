@@ -1,12 +1,11 @@
-from django.core.exceptions import ImproperlyConfigured
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase
 
 from players import hooks
 from players.actions import Action
 from players.hooks import ActivityContext
 from players.services import perform_action
 from skills.models import PlayerSkill
-from travel.balance import get_travel_balance
+from travel import rules
 
 from .base import D, T0, TravelTestCase
 
@@ -46,33 +45,50 @@ class ActionsBlockedWhileTravelingTests(TravelTestCase):
     def test_work_before_departure_is_not_affected(self):
         self.assertTrue(self.act(Action.WORK).ok)
 
-    def test_actions_that_do_not_depend_on_presence_are_not_blocked(self):
-        """O 04 só nomeia o Trabalho; Estudo e Lazer seguem permitidos por padrão ([ABERTO], configurável)."""
+    def test_study_is_blocked_while_traveling(self):
+        """Decisão do GD (2026-10-07): Estudo exige presença."""
         self.travel()
-        self.assertTrue(self.act(Action.STUDY).ok)
+        r = self.act(Action.STUDY)
+        self.assertEqual((r.ok, r.code), (False, "TRAVELING"))
+
+    def test_leisure_is_not_blocked_while_traveling(self):
+        """Decisão do GD: Lazer não exige presença."""
+        self.travel()
         self.assertTrue(self.act(Action.LEISURE).ok)
 
-    def test_the_activity_can_say_it_does_not_require_presence(self):
-        """04 §6: bloqueia 'quando o trabalho exigir presença física': um trabalho remoto passa."""
+    def test_blocked_study_costs_no_energy_and_grants_no_skills(self):
         self.travel()
-        self.assertTrue(self.act(Action.WORK, activity=ActivityContext(requires_presence=False)).ok)
+        before = {s.skill: s.level for s in PlayerSkill.objects.filter(player=self.player)}
+        self.act(Action.STUDY)
+        self.assertEqual(self.state().energy, 100)
+        self.assertEqual({s.skill: s.level for s in PlayerSkill.objects.filter(player=self.player)}, before)
 
-    def test_the_activity_can_say_it_requires_presence(self):
+    def test_presence_check_comes_before_energy(self):
+        """Bloqueio de presença vem ANTES de energia: sem energia E viajando, o motivo de presença também aparece, e nada é gasto."""
         self.travel()
-        self.assertEqual(self.act(Action.STUDY, activity=ActivityContext(requires_presence=True)).code, "TRAVELING")
-        self.assertEqual(self.act(Action.LEISURE, activity=ActivityContext(requires_presence=True)).code, "TRAVELING")
+        self.set_state(energy=0)
+        r = perform_action(self.player.pk, Action.WORK)
+        self.assertEqual(r.ok, False)
+        self.assertIn("TRAVELING", r.detail["reasons"])
+        self.assertEqual(self.state().energy, 0)
 
-    @override_settings(POLIS_TRAVEL_BALANCE={"presence_dependent_by_default": {"study": True}})
-    def test_presence_defaults_are_configurable_per_action(self):
+    def test_a_presence_free_activity_cannot_contradict_the_fixed_rule_of_work(self):
+        """Regra fixa: Trabalho/Estudo exigem; uma atividade não pode declarar o contrário (erro, não escolha silenciosa)."""
         self.travel()
-        self.assertEqual(self.act(Action.STUDY).code, "TRAVELING")
-        self.assertEqual(self.act(Action.WORK).code, "TRAVELING")                 # o resto do padrão se mantém
-        self.assertTrue(self.act(Action.LEISURE).ok)
+        with self.assertRaises(ValueError):
+            self.act(Action.WORK, activity=ActivityContext(requires_presence=False))
+        with self.assertRaises(ValueError):
+            self.act(Action.STUDY, activity=ActivityContext(requires_presence=False))
 
-    @override_settings(POLIS_TRAVEL_BALANCE={"presence_dependent_by_default": {"work": False}})
-    def test_work_can_be_configured_as_not_presence_dependent(self):
+    def test_a_presence_requiring_activity_cannot_contradict_the_fixed_rule_of_leisure(self):
         self.travel()
-        self.assertTrue(self.act(Action.WORK).ok)
+        with self.assertRaises(ValueError):
+            self.act(Action.LEISURE, activity=ActivityContext(requires_presence=True))
+
+    def test_declaring_the_same_as_the_rule_is_accepted(self):
+        self.travel()
+        self.assertEqual(self.act(Action.WORK, activity=ActivityContext(requires_presence=True)).code, "TRAVELING")
+        self.assertTrue(self.act(Action.LEISURE, activity=ActivityContext(requires_presence=False)).ok)
 
     def test_travel_reason_comes_after_the_players_own_reasons_in_a_fixed_order(self):
         self.travel()
@@ -86,9 +102,11 @@ class ActionsBlockedWhileTravelingTests(TravelTestCase):
         self.travel()
         s = get_snapshot(self.player.pk)
         self.assertIn("TRAVELING", s.work_blocked_by)
-        self.assertNotIn("TRAVELING", s.study_blocked_by + s.leisure_blocked_by)
+        self.assertIn("TRAVELING", s.study_blocked_by)
+        self.assertNotIn("TRAVELING", s.leisure_blocked_by)
         self.clk.advance(days=2)
-        self.assertNotIn("TRAVELING", get_snapshot(self.player.pk).work_blocked_by)
+        s = get_snapshot(self.player.pk)
+        self.assertNotIn("TRAVELING", s.work_blocked_by + s.study_blocked_by)
 
     def test_human_and_bot_take_the_same_path(self):
         bot = self.new_player("bot_09")
@@ -107,14 +125,29 @@ class ActionsBlockedWhileTravelingTests(TravelTestCase):
             hooks.register_block_provider("travel", lambda *a: None)
 
 
-class TravelBalanceTests(SimpleTestCase):
-    def test_defaults(self):
-        b = get_travel_balance()
-        self.assertEqual(b.presence_dependent_by_default, {"work": True, "study": False, "leisure": False})
-        self.assertEqual(b.travel_blocking_states, ())
+class PresenceRuleTests(SimpleTestCase):
+    """Regra pura: tabela fixa por ação; ação sem regra fixa exige declaração da atividade."""
 
-    def test_invalid_overrides_fail_loudly(self):
-        for overrides in ({"nope": 1}, {"travel_blocking_states": ["asleep"]}, {"presence_dependent_by_default": {"fly": True}}):
-            with override_settings(POLIS_TRAVEL_BALANCE=overrides):
-                with self.assertRaises(ImproperlyConfigured, msg=str(overrides)):
-                    get_travel_balance()
+    def test_fixed_table(self):
+        self.assertEqual(rules.PRESENCE_BY_ACTION, {"work": True, "study": True, "leisure": False, "treatment": False})
+        self.assertTrue(rules.requires_presence(Action.WORK, None))
+        self.assertTrue(rules.requires_presence(Action.STUDY, None))
+        self.assertFalse(rules.requires_presence(Action.LEISURE, None))
+
+    def test_an_action_outside_the_table_needs_the_activity_to_declare(self):
+        class Other:
+            value = "craft"
+        with self.assertRaises(ValueError):
+            rules.requires_presence(Other, None)
+        with self.assertRaises(ValueError):
+            rules.requires_presence(Other, ActivityContext())
+        self.assertTrue(rules.requires_presence(Other, ActivityContext(requires_presence=True)))
+        self.assertFalse(rules.requires_presence(Other, ActivityContext(requires_presence=False)))
+
+    def test_treatment_is_already_registered_as_not_requiring_presence(self):
+        """Tratamento ainda não é uma Action (depende de dinheiro), mas a regra já existe para quando for."""
+        class Treatment:
+            value = "treatment"
+        self.assertFalse(rules.requires_presence(Treatment, None))
+        with self.assertRaises(ValueError):
+            rules.requires_presence(Treatment, ActivityContext(requires_presence=True))

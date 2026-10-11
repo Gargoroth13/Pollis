@@ -13,6 +13,17 @@ D = Decimal
 class TravelTestCase(PlayerTestCase):
     """PlayerTestCase (mundo pequeno, relógio manual, jogador) + auxiliares determinísticos de lotes e viagem."""
 
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self._reset_travel_extensions)
+
+    @staticmethod
+    def _reset_travel_extensions():
+        for name in list(services._modifier_providers):
+            services.unregister_travel_modifier(name)
+        if services._payment_handler is not None:
+            services.unregister_payment_handler(services._payment_handler[0])
+
     def location(self, player=None):
         return PlayerLocation.objects.select_related("lot").get(player=player or self.player).lot
 

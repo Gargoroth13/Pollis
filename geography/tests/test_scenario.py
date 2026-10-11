@@ -24,6 +24,12 @@ class ScenarioConfigTests(SimpleTestCase):
         self.assertEqual((s.distance_metric, s.zoning_permissions, s.capital_city_index, s.travel_minutes_per_unit),
                          ("euclidean", None, 0, D(15)))
 
+    def test_travel_cost_per_unit_is_a_provisional_scenario_parameter(self):
+        """Decisão do GD (2026-10-07): a viagem também custa dinheiro; o valor (10) é calibração do Bot Test, não balanceamento."""
+        self.assertEqual(get_scenario().travel_cost_per_unit, D(10))
+        self.assertEqual(get_scenario(travel_cost_per_unit=0).travel_cost_per_unit, D(0))
+        self.assertEqual(get_scenario(travel_cost_per_unit="2.5").travel_cost_per_unit, D("2.5"))
+
     def test_lot_composition_is_no_longer_configurable(self):
         """Decisão: leitura A. A leitura B (todas as categorias em todos os bairros) foi descartada."""
         with self.assertRaises(ImproperlyConfigured):
@@ -50,6 +56,7 @@ class ScenarioConfigTests(SimpleTestCase):
             {"capital_city_index": 5},                                                # só 2 cidades por estado
             {"capital_city_index": -1},
             {"travel_minutes_per_unit": 0}, {"travel_minutes_per_unit": -3},
+            {"travel_cost_per_unit": -1},                                             # custo nunca negativo (0 é válido: viagem grátis)
         ]
         for overrides in bad:
             with self.assertRaises((ImproperlyConfigured, ValueError), msg=str(overrides)):

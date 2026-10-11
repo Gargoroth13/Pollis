@@ -21,9 +21,66 @@ class InitialLocationTests(TravelTestCase):
             self.assertTrue(Lot.objects.filter(pk=self.location(p).pk).exists())
         self.assertEqual(PlayerLocation.objects.count(), Player.objects.count())
 
-    def test_default_is_the_first_lot_of_the_world_in_territorial_order(self):
+    def capital_lots(self):
+        from geography.models import State
+        state = State.objects.exclude(capital=None).order_by("id").first()
+        return Lot.objects.filter(neighborhood__city_id=state.capital_id).order_by("neighborhood__index", "index")
+
+    def test_the_player_starts_in_the_capital(self):
+        """Decisão do GD (2026-10-07): o jogador pode começar na capital."""
+        from geography.models import State
+        state = State.objects.exclude(capital=None).order_by("id").first()
+        self.assertEqual(self.location().neighborhood.city_id, state.capital_id)
+        self.assertEqual(self.location().pk, self.capital_lots().first().pk)
+        self.assertEqual(services.default_initial_lot().pk, self.capital_lots().first().pk)
+
+    def test_the_capital_comes_from_the_scenario_not_from_territorial_order(self):
+        """Com capital_city_index=1 o jogador nasce na SEGUNDA cidade: seguir a capital != pegar o primeiro lote do mundo."""
+        from django.test import override_settings
+        from geography.balance import get_scenario
+        from geography.generator import generate_world
+        from geography.tests.base import SMALL, wipe_world
+        from travel.models import Journey
+        Journey.objects.all().delete()
+        PlayerLocation.objects.all().delete()
+        Player.objects.all().delete()
+        wipe_world()
+        generate_world(get_scenario(**{**SMALL, "capital_city_index": 1}))
+        first_world_lot = Lot.objects.order_by("neighborhood__city__state_id", "neighborhood__city__index",
+                                               "neighborhood__index", "index").first()
+        p = self.new_player("capital1")
+        self.assertEqual(self.location(p).neighborhood.city.index, 1)
+        self.assertNotEqual(self.location(p).pk, first_world_lot.pk)
+
+    def test_no_random_spawn_every_new_player_gets_the_same_lot(self):
+        lots = {self.location(self.new_player(f"n{i}")).pk for i in range(8)}
+        self.assertEqual(lots, {self.location().pk})
+
+    def test_many_players_in_the_capital_are_not_a_capacity_problem(self):
+        """A moradia inicial é garantida e NÃO consome a capacidade dos lotes: nenhum lote muda, nenhum jogador é recusado."""
+        from geography.models import Neighborhood
+        snapshot = lambda: (list(Lot.objects.order_by("id").values_list("id", "category", "neighborhood_id")),
+                            [n.lot_capacity() for n in Neighborhood.objects.order_by("id")])
+        before = snapshot()
+        n = 3 * Lot.objects.filter(category="residential").count()
+        for i in range(n):
+            self.new_player(f"crowd{i}")
+        self.assertGreater(n, Lot.objects.filter(category="residential").count())          # mais jogadores que lotes residenciais
+        self.assertEqual(PlayerLocation.objects.filter(lot=self.location()).count(), n + 1)
+        self.assertEqual(before, snapshot())
+
+    def test_without_a_defined_capital_it_falls_back_to_the_first_lot_of_the_world(self):
+        from geography.models import State
         first = Lot.objects.order_by("neighborhood__city__state_id", "neighborhood__city__index", "neighborhood__index", "index").first()
-        self.assertEqual(self.location().pk, first.pk)
+        State.objects.update(capital=None)
+        self.assertEqual(services.default_initial_lot().pk, first.pk)
+
+    def test_a_capital_without_lots_falls_back_to_the_first_lot_of_the_world(self):
+        from geography.models import City, State
+        first = Lot.objects.order_by("neighborhood__city__state_id", "neighborhood__city__index", "neighborhood__index", "index").first()
+        state = State.objects.exclude(capital=None).order_by("id").first()
+        empty = City.objects.create(state=state, index=99, name="vazia", x=0, y=0)
+        State.objects.filter(pk=state.pk).update(capital=empty)
         self.assertEqual(services.default_initial_lot().pk, first.pk)
 
     def test_a_creation_system_can_decide_the_initial_lot(self):
