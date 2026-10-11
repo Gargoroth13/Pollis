@@ -7,7 +7,8 @@ design (04 §23) e vive em um lugar só, em vez de espalhada em handlers com pri
 O contexto carrega o Balance já validado: um catch-up longo roda dezenas de milhares de ciclos
 e não deve revalidar a configuração em cada um.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any, Dict
 
 from core.ticks import register
 from core.timeline import TickKind
@@ -23,6 +24,9 @@ PLAYER = "player"
 class CycleContext:
     player: Player
     bal: Balance
+    # Memória de UM catch-up: um handler de outro sistema que precisa consultar o banco o faz uma vez e guarda aqui,
+    # em vez de repetir a consulta a cada ciclo (uma ausência longa processa dezenas de milhares de ciclos).
+    cache: Dict[str, Any] = field(default_factory=dict)
 
 
 @register(PLAYER, TickKind.TEN_MINUTES, "cycle", priority=10)

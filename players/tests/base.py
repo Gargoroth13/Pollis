@@ -5,9 +5,13 @@ from django.test import TestCase
 from accounts.models import Usuario
 from core.clock import ManualClock, use_clock
 from core.timeline import game_ts
+from geography.balance import get_scenario
+from geography.generator import generate_world
+from geography.tests.base import SMALL
 from players import qol, rules
 from players.models import Player
 from players.services import create_player, get_snapshot, sync_player
+from travel import services as travel_services
 
 # 12:00 em São Paulo = 15:00 UTC: exatamente numa fronteira de ciclo de 10 minutos.
 T0 = game_ts(2026, 10, 5, 12)
@@ -19,6 +23,11 @@ HOUR = 3600
 class PlayerTestCase(TestCase):
     """Relógio manual no instante T0 e um jogador recém-criado."""
 
+    @classmethod
+    def setUpTestData(cls):
+        # Todo jogador tem uma localização física válida (04 §24): é preciso haver um mundo. Mundo pequeno, uma vez por classe.
+        generate_world(get_scenario(**SMALL))
+
     def setUp(self):
         self.clk = ManualClock(T0)
         cm = use_clock(self.clk)
@@ -26,6 +35,7 @@ class PlayerTestCase(TestCase):
         self.addCleanup(cm.__exit__, None, None, None)
         self.addCleanup(qol.clear_qol_base_providers)
         self.addCleanup(rules.clear_regional_recovery_providers)
+        self.addCleanup(travel_services.clear_initial_location_providers)
         self.player = self.new_player("p1")
 
     def new_player(self, name):

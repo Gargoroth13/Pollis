@@ -4,6 +4,56 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-06 — Localização do jogador e viagem básica (P0.06.1)
+
+### Escopo
+- **Implementado:** lote de localização atual, localização inicial válida, viagem entre lotes, distância derivada da Geografia, tempo-base `distância × travel_minutes_per_unit` (15 inicial), estado de viagem, conclusão pelo sistema de tempo, bloqueio de ações incompatíveis, testes.
+- **Fora, como pedido:** veículos (apenas o ponto de extensão para modificadores), transporte público, imóveis/propriedade, residência (o `05` "Residência ativa" é conceito distinto da localização e **não** foi tocado).
+- Cumpre duas pendências anteriores: o **vínculo de localização do jogador** (registrado na aprovação do P0.06) e o **bloqueio de Trabalho por Viagem** (`04 §6`, pendente desde o P0.04).
+
+### Decisões do `04` implementadas
+1. **Localização** (`04 §24`): todo jogador tem um lote (`PlayerLocation`). Em viagem, o lote continua sendo o de **origem**; a chegada o atualiza.
+2. **Viagem** (`04 §20`): `Journey` com origem, destino e instantes em **tempo de jogo**; **no máximo uma ativa** por jogador (restrição no banco), concluídas ficam como histórico.
+3. **Tempo-base** (`04 §21`, corrigido em 2026-10-03): `distância × minutos_por_unidade`, parâmetro de **cenário da Geografia** (`travel_minutes_per_unit`, 15 como valor inicial de calibração). Devolvido com **detalhamento estruturado** (doc 20): componentes `distance` e `minutes_per_unit`, aos quais futuros modificadores são aplicados como novos passos. O custo monetário segue o mesmo formato (ver decisão 4 abaixo).
+4. **A distância não é guardada** (`04 §21`): a viagem não tem coluna de distância nem de duração; vem sempre da Geografia. Mudar o parâmetro depois **não altera** uma viagem em curso (`arrives_at` é fixado na partida).
+5. **Bloqueio** (`04 §6`, `§20`): durante a viagem o jogador não executa ação que **dependa de presença física** (Trabalho e Estudo; ver decisão 2 abaixo); a recusa é um **código** (`TRAVELING`), sem custo de Energia e sem ganho de skill. **Humano e Bot usam o mesmo caminho** (`players.services.perform_action`).
+6. **Conclusão pelo sistema de tempo**: o handler do ciclo de 10 min conclui a viagem no primeiro ciclo após a chegada (ciclos posteriores já veem o jogador no destino, em ordem) **e** o hook de acesso (On Access, `04 §22`) a conclui no **instante exato** entre ciclos. Ambos levam ao mesmo estado final; **acessar a mais nunca muda o resultado** (testado por propriedade). Cada um é necessário (testado removendo o outro).
+
+### Integração com o P0.04/P0.05 (aditiva)
+- `players.hooks`: `ActivityContext.requires_presence`, **provedores de bloqueio** (um sistema acrescenta motivos de recusa a `perform_action` e ao snapshot) e **hooks de acesso** (rodam ao fim do catch-up).
+- `players.services.locked_player`: sessão pública (transação + trava + catch-up + save) para serviços de outros sistemas, sem duplicar a lógica de `perform_action`.
+- `CycleContext.cache`: um handler consulta o banco **uma vez por catch-up**, não a cada ciclo (testado contando consultas: ~288 ciclos custam um número constante).
+- **`create_player` agora exige um mundo** (`WorldNotGenerated`): sem lote não existe localização válida, e a criação falha **inteira** (transação). Consequência: **186 testes do P0.04/P0.05 criavam jogador sem mundo**; a infraestrutura de teste passou a gerar um mundo pequeno **uma vez por classe**. Nenhuma asserção de regra mudou; a única asserção alterada foi a do P0.04 que exigia que o `cycle` fosse o *único* handler do ciclo (agora o `cycle` é o **primeiro**, e a viagem soma o seu).
+- **Custo (medido, mesma máquina, 198 testes de `players`+`skills`):** ~40 s na `main` contra ~50 s na branch (+25%), por consultas adicionais da viagem em cada catch-up (número constante por catch-up, testado).
+
+### Decisões finais do Game Director (revisão de 2026-10-07; substituem os 3 pontos `[ABERTO]` anteriores)
+Nenhuma é mais `[ABERTO]`. Os pontos de configuração antigos (`POLIS_TRAVEL_BALANCE`: `presence_dependent_by_default` e `travel_blocking_states`) **foram removidos** (`travel/balance.py` deixou de existir): deixaram de ser decisões em aberto.
+1. **Localização inicial.** O jogador pode começar na **capital** (primeiro lote territorial da cidade capital do primeiro estado, em ordem determinística; sem capital definida ou sem lotes, o primeiro lote do mundo). **Sem distribuição aleatória**. A **moradia inicial** é garantida, básica, neutra em QoL e **não consome** capacidade residencial normal nem de população: muitos jogadores na capital não são problema de capacidade. Isto é só uma **regra**: não existe sistema de residência/propriedade nem spawn sofisticado (o hook `register_initial_location_provider` continua existindo como extensão futura).
+2. **Presença física por ação** (regra fixa, `travel.rules.PRESENCE_BY_ACTION`): **Trabalho exige; Estudo exige; Lazer não; Tratamento não**; as demais atividades definem individualmente (`ActivityContext.requires_presence`). Em viagem, ação que exige presença é recusada (`TRAVELING`) **antes** de Energia, skills ou qualquer efeito.
+3. **Nenhum estado impede iniciar viagem**: hospitalizado, Saúde Crítica e Burnout Ativo podem viajar (intenção: viajar em busca de tratamento melhor). Nenhuma restrição física nova foi inventada.
+4. **Viagem custa tempo e dinheiro.** Tempo: `distância × travel_minutes_per_unit` (15, inalterado). Custo: `distância × travel_cost_per_unit`, parâmetro de **cenário da Geografia**, com **valor provisório 10 `[PROV]`**: é calibração do Bot Test, **não** balanceamento definitivo. Ambos retornam detalhamento estruturado (doc 20). A arquitetura aceita **modificadores futuros** de veículos (reduzir custo, alterar tempo): `register_travel_modifier` (fatores multiplicativos, passos `modifier:<nome>` no detalhamento). **Não implementados:** veículos, combustível, manutenção, transporte público ou transporte completo (nenhum modificador é registrado hoje).
+
+### Interpretações técnicas (reversíveis; não alteram regra de gameplay)
+5. **Não existe sistema de dinheiro** (nem saldo no `Player`). O custo é **calculado e registrado** em `Journey.cost`, e entregue ao sistema de dinheiro por um **ponto de integração**: `register_payment_handler(nome, fn(player, valor, contexto) -> bool)`. Sem handler, a viagem parte e `Journey.charged = False` (custo registrado, **não cobrado**; resultado `payment = NO_PAYMENT_SYSTEM`); com handler, saldo insuficiente recusa com `INSUFFICIENT_FUNDS` **sem criar viagem** (atômico). Nenhum dinheiro é criado ou destruído aqui (`CLAUDE.md` §5.2). Consequência a decidir quando o sistema financeiro existir: **hoje a viagem não custa dinheiro efetivo no jogo**.
+6. **Arredondamento do custo:** calculado em `Decimal` exato; o valor **cobrado/registrado** é arredondado a centavos (2 casas, arredondamento bancário). `Journey.cost` e `arrives_at` são **fixados na partida** (mudar os parâmetros depois não altera viagem em curso).
+7. **Tempo:** segundos de jogo inteiros **para cima** (a viagem nunca chega antes do calculado), mínimo de 1 s.
+8. **Sem posição intermediária, sem cancelar nem redirecionar** viagem em curso; **qualquer lote para qualquer lote**, exceto o próprio (`SAME_LOCATION`).
+9. O `04 §20` fala em presença "no local de **origem**": o bloqueio vale durante **toda** a viagem.
+10. **Tabela fixa de presença:** uma atividade que **contradiz** a regra da ação (ex.: `requires_presence=False` em Trabalho) é **erro de programação** (`ValueError`), não escolha silenciosa; ação sem regra fixa e atividade sem declaração também é erro. `treatment` já consta da tabela, mas ainda **não é uma `Action`** (depende do sistema de dinheiro, ver pendências do P0.04).
+11. **Dependência da fila:** o `TASK_QUEUE` citava "`03 — Sistema de tempo`", mas o `03` é *Escolas*; a fundação temporal é o **P0.03** (`core`). Corrigido na fila.
+
+### Parâmetros
+`travel_minutes_per_unit` = 15 (calibração, decisão de 2026-10-03, inalterado). **Novo:** `travel_cost_per_unit` = 10 `[PROV]` (cenário `geography.balance`; validado `>= 0`). Nenhuma outra configuração nova; as duas antigas de `travel` foram removidas.
+
+### Preservado (o que a auditoria apontou como correto)
+`PlayerLocation`; no máximo uma viagem ativa por jogador (restrição no banco); distância sempre da Geografia; `arrives_at` fixado na partida; conclusão preguiçosa por ciclo + hook de acesso; bloqueio de presença antes de Energia/skills; mesmo caminho para humano e Bot; atomicidade e determinismo; cache do catch-up; testes existentes.
+
+### Sugestões (**NÃO implementadas**)
+- Quando o sistema de dinheiro existir, registrar o handler de pagamento (hoje o custo não é cobrado).
+- Quando existirem veículos, registrar um modificador de viagem; o sistema de Empresas/cargos deve informar `requires_presence` por cargo (`04 §6`).
+
+---
+
 ## 2026-10-03 — Geografia (P0.06) sobre o `08` (FINAL)
 
 ### Escopo
@@ -41,7 +91,7 @@ Fecham o que estava como `[ABERTO]` ou como interpretação minha. **Não há de
 
 ### Pendências registradas na aprovação do P0.06 (nenhuma corrigida agora, por decisão do Game Director)
 1. **Portabilidade de floats nos depósitos.** A distribuição de recursos usa ponto flutuante (campo gaussiano e ordenação por valor); o resultado é determinístico na **mesma plataforma**, mas pode diferir no último bit entre máquinas/builds diferentes e, em empates próximos, mudar quais lotes recebem o depósito. O layout espacial já é protegido por arredondamento a 3 casas. **Adiado** até haver Bot Test multi-máquina/distribuído.
-2. **Vínculo de localização do jogador — REQUISITO para o bloco de Imóveis (P1.07) e para o sistema de Viagem; não implementado.** Hoje o `Player` não tem posição. Será preciso: onde o jogador está/reside (lote/bairro), o estado "em viagem" e o destino. Dele dependem o **bloqueio de Trabalho por Viagem** (`04 §6`, `§20`, pendente desde o P0.04), moradia/QoL estrutural e o tempo de viagem sobre o tempo-base de `geography.services.base_travel_minutes`. A Viagem **não tem bloco próprio na fila**: precisa ser priorizada.
+2. ~~**Vínculo de localização do jogador — REQUISITO para o bloco de Imóveis (P1.07) e para o sistema de Viagem; não implementado.**~~ **Cumprido no P0.06.1** (2026-10-06); resta a **residência/moradia** (`05`), do P1.07. Hoje o `Player` não tem posição. Será preciso: onde o jogador está/reside (lote/bairro), o estado "em viagem" e o destino. Dele dependem o **bloqueio de Trabalho por Viagem** (`04 §6`, `§20`, pendente desde o P0.04), moradia/QoL estrutural e o tempo de viagem sobre o tempo-base de `geography.services.base_travel_minutes`. A Viagem **não tem bloco próprio na fila**: precisa ser priorizada.
 3. **Comentários de teste `[ABERTO]`.** Restam 2 comentários em testes que ainda usam essa marca para decisões já fechadas. **Limpeza futura**, sem efeito em comportamento.
 
 ### Parâmetros de cenário `[PROV]` (o `08 §19`: mapa de teste não é regra permanente)
@@ -188,7 +238,7 @@ Por decisão do Game Director (2026-10-01), estas consequências **não** motiva
 - **Tratamento** (`§13`, 10 de Energia + pagamento): depende do sistema de dinheiro.
 - **Auto-consumo de alimentos** com Nutrição < 10 (`§16`): depende de Inventário (P1.02) e do catálogo.
 - **Recuperação Regional** (`§11`): hook `register_regional_recovery_provider` pronto (vale 0 enquanto não houver saúde regional/médicos).
-- **Bloqueio de Trabalho por Viagem** (`§6`, `§20`): depende de Geografia/Viagem; entra em `rules.block_reasons`.
+- ~~**Bloqueio de Trabalho por Viagem** (`§6`, `§20`)~~ **Implementado no P0.06.1** (2026-10-06), como provedor de bloqueio em `players.hooks`.
 - **Modificadores estruturais de QoL** (`§4.1`): hook `register_qol_base_provider`; cada sistema define o seu.
 - **QoL → eficiência** (`§5`): sem consumidor ainda. **Estudar/Escola** (`§8-9`): P0.05+.
 

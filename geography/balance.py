@@ -69,6 +69,10 @@ class Scenario:
     # Tempo-base de viagem = distância × minutos_por_unidade (04 §21). 15 é só o valor INICIAL de calibração do Bot Test,
     # não balanceamento definitivo. Veículos e demais modificadores NÃO existem aqui: pertencem ao sistema de viagem.
     travel_minutes_per_unit: Decimal = D(15)
+    # Custo MONETÁRIO base de viagem = distância × travel_cost_per_unit (decisão do GD, 2026-10-07: a viagem custa tempo E
+    # dinheiro). O valor é PLACEHOLDER de calibração do Bot Test, não decisão de design. Veículos futuros reduzirão
+    # custo e modificarão tempo por modificadores (travel.services.register_travel_modifier), não por este valor.
+    travel_cost_per_unit: Decimal = D(10)   # [PROV]
 
     # --- Decididas pelo Game Director (2026-10-03) ---------------------------
     # Composição de lotes: leitura A. Cada bairro tem um tipo predominante e a quantidade de lotes da capacidade desse
@@ -125,6 +129,8 @@ class Scenario:
             e.append(f"capital_city_index deve estar em [0, cities_per_state) = [0, {self.cities_per_state})")
         if self.travel_minutes_per_unit <= 0:
             e.append("travel_minutes_per_unit deve ser > 0")
+        if self.travel_cost_per_unit < 0:
+            e.append("travel_cost_per_unit deve ser >= 0")
         if self.hotspots_per_resource < 1:
             e.append("hotspots_per_resource deve ser >= 1")
         if self.zoning_permissions is not None and any(not set(v) <= set(Category) for v in self.zoning_permissions.values()):
@@ -162,7 +168,7 @@ def get_scenario(**overrides) -> Scenario:
             changes[key] = tuple(_cat(c) for c in value)
         elif key == "zoning_permissions":
             changes[key] = None if value is None else {_cat(c): tuple(_cat(x) for x in uses) for c, uses in value.items()}
-        elif key in ("state_spacing", "city_spacing", "city_radius", "lot_spacing", "hotspot_sigma", "travel_minutes_per_unit"):
+        elif key in ("state_spacing", "city_spacing", "city_radius", "lot_spacing", "hotspot_sigma", "travel_minutes_per_unit", "travel_cost_per_unit"):
             changes[key] = D(str(value) if isinstance(value, float) else value)
         elif key in ("seed", "states", "cities_per_state", "neighborhoods_per_city", "rural_lots_per_neighborhood", "hotspots_per_resource", "capital_city_index"):
             changes[key] = int(value)
