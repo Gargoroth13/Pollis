@@ -158,6 +158,10 @@ def register_payment_handler(name: str, fn: PaymentHandler) -> None:
     _payment_handler = (name, fn)
 
 
+def has_payment_handler() -> bool:
+    return _payment_handler is not None
+
+
 def unregister_payment_handler(name: str) -> None:
     global _payment_handler
     if _payment_handler is not None and _payment_handler[0] == name:
@@ -195,6 +199,26 @@ def estimate_travel(origin: Lot, destination: Lot, at: Optional[int] = None) -> 
     return quote_travel(origin, destination, at).time
 
 
+def travel_refusal(player: Player, origin: Lot, destination_lot_id: Optional[int] = None
+                   ) -> Tuple[Optional[Lot], Optional[ActionResult]]:
+    """
+    Recusas de regra de partir, para um jogador JÁ travado e processado: `(destino, recusa)`. FONTE ÚNICA de `start_travel`
+    e do Action Registry. Ordem fixa: INVALID_DESTINATION, ALREADY_TRAVELING, SAME_LOCATION. Sem `destination_lot_id`
+    verifica só a disponibilidade GERAL (ALREADY_TRAVELING); as recusas do destino exigem o destino. Não escreve nada.
+    INSUFFICIENT_FUNDS não está aqui: só o handler de pagamento sabe, e ele DEBITA (ver start_travel).
+    """
+    destination = None
+    if destination_lot_id is not None:
+        destination = Lot.objects.filter(pk=destination_lot_id).first()
+        if destination is None:
+            return None, ActionResult(False, "INVALID_DESTINATION", {"destination": destination_lot_id})
+    if Journey.objects.filter(player=player, completed=False).exists():
+        return destination, ActionResult(False, "ALREADY_TRAVELING")
+    if destination is not None and destination.pk == origin.pk:
+        return destination, ActionResult(False, "SAME_LOCATION")
+    return destination, None
+
+
 def start_travel(player_id: int, destination_lot_id: int) -> ActionResult:
     """
     Inicia uma viagem do lote atual ao lote de destino. Recusas são CÓDIGOS (como em players), não exceções.
@@ -204,13 +228,11 @@ def start_travel(player_id: int, destination_lot_id: int) -> ActionResult:
     """
     with player_services.locked_player(player_id) as (player, now, _bal):
         origin = PlayerLocation.objects.select_related("lot").get(player=player).lot
-        destination = Lot.objects.filter(pk=destination_lot_id).first()
-        if destination is None:
-            return ActionResult(False, "INVALID_DESTINATION", {"destination": destination_lot_id})
-        if Journey.objects.filter(player=player, completed=False).exists():
-            return ActionResult(False, "ALREADY_TRAVELING")
-        if destination.pk == origin.pk:
-            return ActionResult(False, "SAME_LOCATION")
+        if destination_lot_id is None:   # sem destino não há viagem (None, em travel_refusal, significa "só o geral")
+            return ActionResult(False, "INVALID_DESTINATION", {"destination": None})
+        destination, refusal = travel_refusal(player, origin, destination_lot_id)
+        if refusal is not None:
+            return refusal
         quote = quote_travel(origin, destination, now, player)
         charged = False
         payment = "NO_PAYMENT_SYSTEM"

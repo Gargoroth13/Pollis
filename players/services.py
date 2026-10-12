@@ -84,6 +84,23 @@ def _block_reasons(player: Player, action: Action, now: int, bal, activity) -> L
     return reasons + [r for r in hooks.run_block_providers(player, action, now, activity) if r not in reasons]
 
 
+def action_refusal(player: Player, action: Action, now: int, bal, activity: Optional[ActivityContext] = None
+                   ) -> Optional[ActionResult]:
+    """
+    Recusa de regra de Trabalhar/Estudar/Lazer para um jogador JÁ travado e processado até `now`, ou None se a ação pode
+    ser feita agora: primeiro os bloqueios (do players + provedores de outros sistemas; recusa com o primeiro motivo e a
+    lista completa em `reasons`), depois a Energia. FONTE ÚNICA: `perform_action` executa e o Action Registry consulta
+    exatamente esta função, sem duplicar a regra. Não escreve nada.
+    """
+    reasons = _block_reasons(player, action, now, bal, activity)
+    if reasons:
+        return _refuse(reasons[0], reasons=reasons)
+    cost = rules.energy_cost(action, bal)
+    if player.energy < cost:
+        return _refuse("INSUFFICIENT_ENERGY", energy=str(player.energy), required=str(cost))
+    return None
+
+
 def _apply_effect(player: Player, category: str, spec: EffectSpec, now: int) -> None:
     """Um efeito por categoria; o novo SUBSTITUI o anterior, nunca soma (04 §4.4)."""
     if spec.duration_seconds <= 0:
@@ -182,14 +199,11 @@ def perform_action(player_id: int, action: Action, *, burnout_risk=1,
 
     if effect is not None and action is not Action.LEISURE:
         raise ValueError("Só a ação de Lazer aplica efeito de QoL próprio (04 §19).")
-    reasons = _block_reasons(player, action, now, bal, activity)
-    if reasons:
+    refusal = action_refusal(player, action, now, bal, activity)
+    if refusal is not None:
         player.save()
-        return _refuse(reasons[0], reasons=reasons)
+        return refusal
     cost = rules.energy_cost(action, bal)
-    if player.energy < cost:
-        player.save()
-        return _refuse("INSUFFICIENT_ENERGY", energy=str(player.energy), required=str(cost))
 
     player.energy = q(player.energy - cost)
     change = rules.burnout_change(action, risk, bal)

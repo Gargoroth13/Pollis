@@ -170,11 +170,17 @@ Implementar a estrutura central de `22`.
 
 Implementar `05`.
 
-## [ ] P1.03 — Action Registry
+## [x] P1.03 — Action Registry  *(implementado em 2026-10-12, branch `dev/p1.03-action-registry`; em auditoria)*
 
 Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos e validação.
 
+**Entregue:** `players/registry.py` e `travel/registration.py`: ações `work`, `study`, `leisure`, `travel` com descritor do `21 §20` (categoria/visibilidade `UNSPECIFIED`, cooldown `NONE`), `check_action`/`available_actions`/`execute_action`, preview com `Explained`, alvo (Viajar) distinguindo disponibilidade geral de validação de destino, parâmetros internos protegidos. Disponibilidade e execução compartilham `action_refusal`/`travel_refusal`; o serviço dono revalida. Decisões e pendências em `CHANGELOG_DEV.md` (2026-10-12).
+
+> **Pendências para blocos futuros:** Empresas (P1.04) e Escolas devem plugar bloqueios/contexto de atividade pelos mecanismos existentes (provedores de bloqueio, `ActivityContext`, hooks), sem caminho de execução separado; Máscara de Ações (`21 §21`) é o **P1.19**; categoria/visibilidade/cooldown dependem de decisão do GD.
+
 ## [ ] P1.04 — Empresas
+
+> **Herdado do P1.03:** Trabalho sem emprego continua permitido hoje (P0.04). Empresas deve acrescentar emprego/contexto de atividade via provedor de bloqueio e `ActivityContext`, usando o Action Registry existente (sem caminho paralelo). Decisão do GD (2026-10-12) em `CHANGELOG_DEV.md`.
 
 > **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FINISHINGS_UNDEFINED`, `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. A produção deve consultar `catalog.services.check_production_ready` e **recusar** enquanto houver `UNSPECIFIED_DESIGN_VALUE`. Ver `CHANGELOG_DEV.md` (2026-10-11).
 

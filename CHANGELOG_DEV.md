@@ -4,6 +4,43 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-12 — Action Registry (P1.03)
+
+### Escopo
+- **Implementado:** `players/registry.py` (registro, descritor do `21 §20`, consulta e execução) e `travel/registration.py` (Viajar). Ações registradas, com **ids estáveis**: `work`, `study`, `leisure` (registradas por `players`) e `travel` (registrada por `travel`, cada app no seu `ready()`, como os hooks). `Viajar` **não** entrou no enum `Action` (não tem custo de Energia, `04 §2.2`).
+- **O registro descreve e delega; não reimplementa regra.** Disponibilidade e execução usam **a mesma função**: `players.services.action_refusal` (bloqueios e depois Energia, extraída de `perform_action`) e `travel.services.travel_refusal` (extraída de `start_travel`). A execução chama os serviços de sempre (`perform_action`, `start_travel`), que revalidam dentro da própria transação; hooks, provedores de bloqueio e atomicidade continuam valendo. Humanos e bots usam o mesmo caminho (`CLAUDE.md §5.4`).
+- **Fora, como pedido:** Action Masking (`21 §21`, P1.19), infraestrutura de bots (P1.18), inventário, empresas, mercado, sistema financeiro. Nenhum comportamento de P0.04/P0.05/P0.06/P0.06.1 mudou; os 582 testes anteriores passam **sem edição**.
+
+### Decisões do Game Director (2026-10-12) aplicadas
+1. **Trabalho sem emprego, Estudo sem matrícula e Lazer sem atividade continuam como estão** (P0.04/P0.05 não foram alteradas para bloqueá-los). **Integração futura:** Empresas (P1.04) e Escolas (P1.x) devem entrar pelos mecanismos existentes — provedores de bloqueio (`register_block_provider`), `ActivityContext` e hooks de ação — e **não** por um caminho de execução separado.
+2. **Contrato do descritor sem semântica inventada:** `category` e `visibility` valem `UNSPECIFIED` (o design não define taxonomia nem política); `cooldown` vale `NONE` (não existe mecanismo geral de cooldown; nenhum prazo foi inferido); `effects` são descritivos e executados pelo serviço dono; nenhuma regra de bot foi criada. Nenhum campo do `21 §20` ficou sem representação, então não houve conflito a consultar.
+3. **Disponibilidade geral x validação de alvo:** `available_actions` **não enumera lotes**. Sem alvo, Viajar continua disponível em geral (`target_required=True`, `target_validated=False`); com alvo, valida o destino (`INVALID_DESTINATION`, `SAME_LOCATION`). Executar sem alvo é recusado com `TARGET_REQUIRED`. **A consulta é consultiva; a execução é a autoridade** e revalida tudo.
+4. **Escopo de execução:** só as validações compartilhadas foram extraídas; parâmetros de contexto interno (`burnout_risk`, `effect`, `activity`) **não** entram pelo registro (`INVALID_PARAMS`, nunca ignorados em silêncio); nenhum custo foi inventado.
+
+### Contrato do registro
+- **Descritor:** `id`, `name`, `category`, `requirements`, `cost`, `cooldown`, `target` (`TargetSpec(kind, required)`), `effects`, `visibility`. `requirements` lista os códigos de recusa que as regras do dono podem produzir (um teste confere que nenhum código real escapa); os motivos concretos de um jogador vêm em `blocked_by`, inclusive os de provedores de outros sistemas (ex.: `TRAVELING`).
+- **API:** `check_action(player_id, action_id, target=None)`, `available_actions(player_id)` (uma sessão sincronizada, custo constante), `execute_action(player_id, action_id, target=None, **params)`, `register_action`, `list_descriptors`, `get_descriptor`.
+- **Códigos do registro:** `UNKNOWN_ACTION`, `INVALID_PARAMS`, `TARGET_REQUIRED`, `TARGET_NOT_ALLOWED`; os demais são os dos serviços. Alvo malformado (não inteiro, booleano, fora de int64) é `INVALID_PARAMS`; lote inexistente continua `INVALID_DESTINATION`.
+- **Custo/preview (doc 20):** Energia vem de `Balance` (20/10/10 por padrão, segue overrides) e `burnout_change` é o `Explained` da regra (risco 1, o mesmo da execução); Viajar devolve o `quote_travel` com `Explained` de tempo e custo. O custo monetário é **calculado, não cobrado**: `payment` = `NO_PAYMENT_SYSTEM` (sem sistema de dinheiro), `NOT_REQUIRED` (custo 0) ou `WOULD_CHARGE` (há handler). `INSUFFICIENT_FUNDS` só existe na execução: o handler debita, então não dá para prever sem cobrar.
+
+### Interpretações técnicas (reversíveis; não são regra de gameplay)
+5. Ordem de `available_actions`: por `id` (determinística). `travel_refusal` preserva a ordem anterior (`INVALID_DESTINATION`, `ALREADY_TRAVELING`, `SAME_LOCATION`); `start_travel(None)` continua `INVALID_DESTINATION`.
+6. A consulta sincroniza o jogador (trava + catch-up lazy, como `get_snapshot`) e é idempotente; o custo acima do catch-up é fixo, independente do tempo decorrido (o catch-up em si já era lazy).
+7. Pelo registro, Trabalho/Lazer rodam sem `ActivityContext`/efeito (padrões do P0.04). Quando Empresas/Escolas/Atividades existirem, o contexto virá do sistema que o conhece, **não** do cliente; o ponto de extensão será desenhado nesse bloco (não foi criada abstração sem necessidade concreta).
+
+### Verificação
+- **642 testes** (582 anteriores, sem edição, + 60 novos); `check` e `makemigrations --check` limpos.
+- Testes novos: contrato do descritor, requisitos declarados, proteção de parâmetros, alvo, disponibilidade geral x alvo, equivalência de recusas e de execução com os serviços diretos, preview/custo, hooks/provedores, atomicidade, custo de queries, e propriedades com sementes fixas (equivalência registro x serviço, previsão x execução, consultas extras sem efeito, determinismo, guarda de cobertura).
+- **Mutação:** 34 mutantes nas regras novas e nas validações extraídas; 3 sobreviveram na primeira rodada (ordem de `available_actions`, fronteira `Energia == custo`, `start_travel(None)`) e ganharam testes; os 34 são detectados.
+
+### Pendências registradas
+- Máscara de ações para bots (`21 §21`) apoia-se em `available_actions`: **P1.19**.
+- Empresas, Escolas e atividades de Lazer entram pelos mecanismos existentes (decisão 1); o contexto da atividade pelo registro será desenhado com esses sistemas.
+- Categoria e visibilidade de ações, e qualquer cooldown geral, dependem de decisão de design (hoje `UNSPECIFIED`/`NONE`).
+- Cobrança real da viagem depende do futuro sistema financeiro (inalterado desde o P0.06.1).
+
+---
+
 ## 2026-10-11 — Produtos, Receitas e usos (P1.01)
 
 ### Escopo

@@ -41,7 +41,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Apps do jogo
     "accounts",
-    "core",  # motor do jogo: tempo, ticks, (futuro) Action Registry e auditoria
+    "core",  # motor do jogo: tempo, ticks e (futuro) auditoria; o Action Registry vive em players.registry
     "players",  # estado do jogador: energia, QoL, saúde, nutrição, burnout
     "skills",  # Inteligência, Físico e Carisma (design/01) e Especialização (02 §13)
     "geography",  # Estado → Cidade → Bairro → Lote, zoneamento e recursos (design/08)
