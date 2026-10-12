@@ -178,7 +178,8 @@ Não implementar ainda os sistemas FUTURO apenas por conveniência.
 | 4. Geografia | **feito** (P0.06), sobre o `08`: Estado→Cidade→Bairro→Lote, zoneamento, recursos, integridade. Composição de lotes (leitura A), distância euclidiana e tempo-base de viagem (15 min/unidade, calibrável) fechados pelo Game Director |
 | 4b. Localização e viagem | **feito** (P0.06.1): lote atual do jogador, localização inicial, viagem entre lotes (tempo `distância × minutos_por_unidade`, 15 inicial; custo monetário `distância × custo_por_unidade`, 10 provisório), início na capital, bloqueio por presença (Trabalho/Estudo sim; Lazer/Tratamento não), chegada pelo sistema de tempo. Decisões do Game Director registradas (2026-10-07); custo ainda não é cobrado: não existe sistema de dinheiro (ponto de integração pronto) |
 | 5a. Catálogo de Produtos e Receitas | **feito** (P1.01), sobre o `22` **atual (incompleto)**: 73 produtos, 41 receitas, ids estáveis, integridade; valores não especificados ≠ 0; lacunas e pendências para P1.02/P1.04 no `CHANGELOG_DEV.md` (2026-10-11) |
-| 5b–9 | não iniciados (inventário/estoque, Action Registry, auditoria etc.) |
+| 6. Action Registry | **feito** (P1.03): ações `work`, `study`, `leisure`, `travel` com descritor do `21 §20`, consulta (`check_action`, `available_actions`) e execução (`execute_action`) sobre as mesmas validações dos serviços; sem Masking (P1.19). Decisões e pendências em `CHANGELOG_DEV.md` (2026-10-12) |
+| 5b, 7–9 | não iniciados (inventário/estoque, auditoria etc.) |
 
 O código anterior ao design atual foi removido por decisão do Game Director (2026-09-30); `design/` é a única base.
 
