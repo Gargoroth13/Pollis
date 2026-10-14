@@ -2,7 +2,7 @@
 
 **Status: REVIEW**
 
-> **Consolidação P0.01 (2026-10-13).** Este documento recebeu as decisões do Game Director registradas em `CHANGELOG_DEV.md` (seção "P0.01 — consolidação documental"). Permanece em **REVIEW** porque ainda possui decisões estruturais abertas, listadas em **06.36**. Trechos marcados `[ABERTO]` não devem ser implementados.
+> **Consolidação P0.01 (2026-10-14).** Este documento recebeu as decisões aprovadas do Game Director registradas em `CHANGELOG_DEV.md` (seção "P0.01 — consolidação documental"). Permanece em **REVIEW** apenas por dependências de execução listadas em **06.36** (registro monetário P0.07a, implementação de Empresas P1.04 e cenário R-BT-01); não há decisão de design de política em aberto neste documento.
 
 ## 06.0. Objetivo do sistema
 
@@ -151,7 +151,7 @@ Caso exista apenas um candidato ao final do período de candidatura, ele é elei
 
 ### Ausência de candidatos e sem titular
 
-- Se não houver nenhum candidato, o **titular atual permanece no cargo** e uma **nova janela eleitoral de 7 dias** é aberta. O intervalo entre a janela encerrada sem candidatos e a nova janela é `[ABERTO — 06.36]`.
+- Se não houver nenhum candidato, o **titular atual permanece no cargo** e uma **nova janela eleitoral de 7 dias** começa **imediatamente**, sem intervalo adicional.
 - Se o cargo **nunca teve titular** (ou está vago sem substituto), ele permanece **vago**; não existe ocupante automático nem NPC.
 - Transferências orçamentárias que não puderem ser distribuídas por falta de ocupante permanecem **no nível superior** de governo.
 - O quórum legislativo é calculado sobre as **cadeiras efetivamente ocupadas** (ver `07 — Leis`).
@@ -214,7 +214,7 @@ O segundo turno possui a mesma estrutura básica de votação, utilizando os mes
 
 Caso ocorra novo empate, a votação entre os candidatos empatados é repetida até que exista um vencedor.
 
-> `[A CONFIRMAR PELO GAME DIRECTOR]` Ao registrar o sorteio como regra de empate dos demais cargos, este documento **mantém** o segundo turno para o empate presidencial, conforme texto anterior. Se o Game Director desejar sorteio também para Presidente, esta seção deve ser alterada.
+O sorteio com semente registrada **não** se aplica à eleição presidencial: ela mantém o segundo turno entre os empatados, descrito acima. O sorteio vale para Prefeito, Governador e para o empate que afete a última cadeira da Câmara.
 
 ---
 
@@ -229,7 +229,7 @@ O parâmetro é o **limite de mandatos consecutivos** no mesmo cargo.
 
 O contador de mandatos consecutivos conta todo mandato iniciado com posse, inclusive o mandato obtido por deposição por milícia (06.25). Não confundir com o contador de **mandatos concluídos**, usado para experiência (06.3).
 
-O efeito de uma alteração do parâmetro sobre mandatos em curso é `[ABERTO — D15, 06.36]`.
+**Mudanças de lei e mandatos em curso.** Alterações de duração de mandato, requisitos de elegibilidade e limite de mandatos consecutivos afetam **somente eleições cuja janela de inscrição se abre após a vigência da mudança**. Não há retroatividade. Salários e parâmetros fiscais passam a valer no tick efetivo previsto pelo processo legislativo (`07 — Leis`).
 
 A eleição para outro cargo não constitui reeleição. Por exemplo, um Prefeito que posteriormente concorre a Governador está iniciando outro cargo, desde que cumpra os requisitos exigidos.
 
@@ -603,8 +603,8 @@ Regras:
 
 - Assumir cargo político **encerra o contrato de emprego** do jogador (o político não pode ser funcionário de outra empresa).
 - **Propriedade** da empresa é preservada, com restrição a contratos públicos. Propriedade não se confunde com o salário de "Dono" nem com lucros; **não existe sistema de dividendos** inventado por este documento.
-- Como o "Dono" recebe (salário, participação, lucros) é matéria de `02 — Empresas` e da tarefa P1.04: `[PENDENTE 02/P1.04]`.
-- A restrição de **contrato público** aplica-se conforme o conceito de contrato público de `18 — Contratos`; o escopo (por exemplo, leilão de lote) é `[ABERTO — 06.36]`.
+- O **Dono** pode receber o salário associado ao cargo Dono, pago pela conta da empresa e sujeito aos limites salariais `S` e `T` (`11 — Leis Paramétricas`, 11.1.0). **Não há retirada de lucro, dividendos ou distribuição passiva de resultados** no primeiro Bot Test. Propriedade não equivale a receber dinheiro, e o salário do Dono não é um mecanismo de saque arbitrário. Preservar a propriedade não cria exceção às regras de emprego, conflito de interesses ou contratos públicos. A implementação pertence a `02 — Empresas` (P1.04).
+- A restrição de **contrato público** aplica-se a contratos de fornecimento de bens, serviços ou obras ao governo (`18 — Contratos`). Um **leilão de lote público não é** contrato de fornecimento para este fim: uma empresa de político pode participar do leilão de lote, seguindo as mesmas regras públicas de participação e sem tratamento preferencial.
 - A regra de preservação da propriedade **não** é estendida a militares (`19 — Militar` mantém suas restrições próprias).
 
 A fiscalização dessa regra depende de transparência e registros públicos de contratos.
@@ -662,7 +662,12 @@ Consequências para o líder que assume:
 - o **cargo político anterior, se houver, é vago** (06.24);
 - a **liderança da milícia é transferida** conforme `19 — Militar`.
 
-`[ABERTO — D17, 06.36]` Tratamento do **interregno**: propostas aguardando sanção/veto/derrubada de veto voltam à nova Câmara; votações em andamento são suspensas e reiniciadas com os 3 dias completos; leis sancionadas aguardando vigência prosseguem; prazos legislativos ficam pausados.
+**Interregno após a deposição:**
+
+- propostas aguardando sanção, veto ou derrubada de veto retornam a uma votação completa da nova Câmara;
+- votações em andamento são suspensas enquanto não houver Câmara e reiniciadas com três dias completos quando a nova Câmara estiver constituída;
+- leis já sancionadas que aguardam apenas a data de vigência seguem o calendário normal;
+- prazos legislativos ficam suspensos enquanto não houver Câmara.
 
 A deposição presidencial não remove automaticamente Governadores ou Prefeitos.
 
@@ -977,16 +982,14 @@ Esses parâmetros não devem exigir alteração estrutural do sistema quando for
 
 ---
 
-# 06.36. Pendências estruturais abertas (motivo do status REVIEW)
+# 06.36. Dependências de execução (motivo do status REVIEW)
 
-| Item | Pendência | Observação |
+As decisões de política deste documento foram aprovadas pelo Game Director. Ficam registradas apenas dependências de execução:
+
+| Item | Dependência | Onde |
 |---|---|---|
-| D3 | intervalo entre a janela eleitoral sem candidatos e a nova janela de 7 dias | não decidido |
-| D2 | confirmar se o empate presidencial mantém segundo turno (texto atual) ou passa ao sorteio | a confirmar pelo Game Director |
-| D15 | efeito de mudanças de lei sobre mandatos em curso | recomendação: duração, requisitos e limite de mandatos aplicam-se somente a janelas/mandatos abertos após a vigência; salários e parâmetros fiscais valem imediatamente |
-| D16 | destino do dinheiro de campanhas; unidade de Deputado nas campanhas; conflito de campanha | depende de P0.07a e P0.02 |
-| D17 | interregno após deposição (texto de 06.25) | a confirmar |
-| escopo | "contrato público" para 06.23 (inclui leilão de lote?) | depende de `18`/P1.07 |
-| Dono | pagamento/propriedade/lucros do Dono | `02`/P1.04 |
-| R-BT-01 | cenário inicial não pode deixar territórios inoperantes | resolvido por contas reais de bots; sem NPC |
-
+| Salários políticos | pagamento, acúmulo diário e obrigação pendente dependem do registro monetário | P0.07a/P0.07b |
+| Campanhas | reserva financeira e destino ao sumidouro dependem do registro monetário; categorias de subsídio dependem do catálogo | P0.07, P0.02 |
+| Dono | implementação do salário do cargo Dono | P1.04 |
+| R-BT-01 | o cenário inicial não pode deixar territórios inoperantes: contas reais de bots com residências, sem NPC e sem exceção de elegibilidade | P1.18 (cenário) |
+| Teto de déficit | parâmetro de `11` ainda sem proposta | após P0.07a |

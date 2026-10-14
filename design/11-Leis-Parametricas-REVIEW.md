@@ -1,6 +1,6 @@
 # 11 — Leis Paramétricas
 
-> **Consolidação P0.01 (2026-10-13).** Decisões do Game Director registradas em `CHANGELOG_DEV.md` ("P0.01 — consolidação documental"). Este documento permanece em **REVIEW**. Itens `[ABERTO]` não devem ser implementados.
+> **Consolidação P0.01 (2026-10-14).** Decisões aprovadas do Game Director registradas em `CHANGELOG_DEV.md` ("P0.01 — consolidação documental"). Este documento permanece em **REVIEW** por dependências posteriores: o teto de déficit público ainda não tem proposta (após P0.07a) e a mecânica de zoneamento por lei depende da P1.07. Itens `[ABERTO]` não devem ser implementados.
 
 **Status: REVIEW**
 
@@ -39,32 +39,47 @@ As leis deste catálogo são submetidas ao processo legislativo completo definid
 
 ### 11.1.0. Teto salarial e limite diário de recebimento
 
-Definições (ver `01 — Skills` §1.7):
+Esta é a **definição única** do limite diário de remuneração. Nenhum sistema pode implementar interpretação própria (`01 — Skills` §1.7 remete a esta seção).
+
+Definições:
 
 - `W` = salário mínimo vigente;
-- `S` = limite pessoal de recebimento diário = 1.5 × skill relevante do jogador (parâmetro `[PROV]` em `skills/balance.py`);
+- `S` = limite pessoal por habilidade = `1.5 × skill relevante` (parâmetro `[PROV]` em `skills/balance.py`; Inteligência/Físico/Carisma conforme o trabalho, **Físico** para militares);
 - `T` = teto salarial legal (`T = ∞` quando não há teto legal).
 
+Validações de proposta de `T`:
+
+- `T < W` é **inválido**;
+- `T` menor que o **maior salário político vigente** é **inválido** (coerência, não limite adicional).
+
+**Dois contadores diários separados**, por jogador:
+
+| Contador | Conta | Limite |
+|---|---|---|
+| `C_S` | remunerações de trabalho, soldo e salário do cargo Dono, sujeitos ao limite por habilidade | `max(W, S)` |
+| `C_T` | **toda** remuneração salarial sujeita ao teto legal: a de `C_S` **mais** os salários políticos | `T` |
+
+- Salário político **não consome `S`**, mas **consome `T`**.
+- **Não consomem nenhum dos dois:** doações, vendas, reembolsos, transferências, dotações, indenizações e recebimento de dívidas. (Lucros e distribuições também não consomem, mas não existem no primeiro Bot Test.) O registro monetário (P0.07) precisa de uma **natureza** em cada lançamento para distinguir.
+- O teto `T` vale para o **total diário** do jogador, não isoladamente por empregador ou sistema de pagamento.
+
+**Cálculo determinístico e independente da ordem dos serviços.** A remuneração política prevista em lei é **preservada até o limite legal** e a não política se ajusta ao que sobra:
+
 ```text
-recebível/dia = max(W, min(S, T))
+P_dia      = remuneração política devida no dia (0 se não ocupa cargo)
+cap_S      = max(W, S)
+sobra_S    = cap_S − C_S
+sobra_T    = T − C_T − (P_dia ainda não lançada em C_T)      # T = ∞ → sem limite
+pago_não_político = max(0, min(devido, sobra_S, sobra_T))
 ```
 
-Regras:
-
-- uma proposta com `T < W` é **inválida** (o teto não pode ficar abaixo do salário mínimo);
-- o **salário político** **não** entra em `S`, mas **está sujeito a `T`**;
-- **validação de coerência:** uma proposta de `T` é inválida se `T` for menor que o **maior salário político vigente** (regra de coerência, não limite automático adicional);
-- **militares:** a skill relevante é **Físico**; o soldo é `W × m_patente`, limitado por `S`, `T` e `W`:
-
-```text
-R = max(W, min(1.5 × Físico, T))
-devido_dia = max(0, min(W × m_patente, R − recebido_hoje))
-```
-
-  Os multiplicadores `m_patente` **não estão especificados** `[ABERTO — 19]`; nenhum valor arbitrário pode ser adotado. O excedente acima de `R` não é pago nem vira obrigação;
-- `recebido_hoje` conta **somente remuneração sujeita ao limite** (salários e soldo pagos por empregadores). **Não contam:** doações, reembolsos, recebimentos de vendas, transferências, lucros/distribuições, dotações, indenizações, recebimento de dívidas. Isso exige, no registro monetário (P0.07), uma **natureza** em cada lançamento.
-
-> **Divergência registrada para revisão documental.** `01 — Skills` §1.7 fala em "total recebido pelo jogador no dia". A definição acima é mais restrita e precisa ser confirmada na revisão do `01`.
+- A parcela política do dia é **reservada** em `sobra_T` desde o início do dia, de modo que o resultado para a remuneração não política **não depende da ordem** em que os serviços executam os pagamentos.
+- Entre remunerações não políticas do mesmo jogador, vale a ordem do registro monetário (sequência do lançamento; desempate por identificador da obrigação).
+- Sem remuneração política, a fórmula equivale a `recebível/dia = max(W, min(S, T))`, pois `T ≥ W`.
+- O piso `W` prevalece sobre um limite por habilidade inferior (`cap_S = max(W, S)`), mas **não cria dinheiro** e **não permite ultrapassar `T`**.
+- **Soldo militar:** `devido = W × m_patente`, aplicando o limite por Físico (`S`) e a capacidade restante de `T` pela mesma fórmula. O excedente acima do recebível **não é pago e não vira obrigação pendente**.
+- **Multiplicadores de patente** (parâmetros fixos do sistema, **não leis**, `[PROV]` e calibráveis): Militar 1×, Capitão 2×, General 4×, Marechal 6×. Não há validação automática de que uma patente fique abaixo de um cargo político, pois a correspondência entre patentes e cargos não está definida e os multiplicadores políticos mudam por lei.
+- **Dia de competência** `[interpretação técnica, a detalhar no P0.07a]`: cada remuneração conta no contador do dia em que foi devida (competência), e não do dia em que uma obrigação pendente venha a ser paga.
 
 ### 11.1.0.1. Travamento de acoplamento
 
@@ -72,7 +87,7 @@ Estendendo a regra de `07 — Leis` (07.17), o grupo de parâmetros
 
 > `{W, T, multiplicador Presidente, multiplicador Governador, multiplicador Prefeito, multiplicador Deputado}`
 
-(e os multiplicadores militares, se passarem a ser lei) tem **travamento de acoplamento explícito e determinístico**: não pode haver duas propostas ativas/em trânsito sobre parâmetros do grupo ao mesmo tempo, porque a validade de uma depende do valor das outras.
+tem **travamento de acoplamento explícito e determinístico**: não pode haver duas propostas ativas/em trânsito sobre parâmetros do grupo ao mesmo tempo, porque a validade de uma depende do valor das outras.
 
 ### 11.1.1. Teto de preço
 
@@ -103,11 +118,11 @@ Os pisos de Educação, Saúde e Infraestrutura são mínimos legais. O Executiv
 
 A soma dos pisos legais não pode ultrapassar 100% do orçamento.
 
-**Base de cálculo (decisão provisória do Game Director, opção A).** O piso incide sobre as **receitas recebidas pelo Município no período de 30 dias** (arrecadação própria + transferências efetivamente recebidas). A verificação ocorre na **confirmação da distribuição do orçamento**, e o resultado é explicado por `Explained` (`20`).
+**Base de cálculo (decisão do Game Director).** O piso incide sobre as **receitas recebidas pelo Município no período de 30 dias** (arrecadação própria + transferências efetivamente recebidas). A verificação ocorre na **confirmação da distribuição do orçamento**, e o resultado é explicado por `Explained` (`20`).
 
 - Nesta fase os pisos se aplicam **apenas ao orçamento municipal**.
 - União e Estados **não possuem pisos setoriais** até a arquitetura definir a distribuição por categoria.
-- `[A CONFIRMAR]` A mesma base é usada para os três pisos (Educação, Saúde, Infraestrutura).
+- A mesma base de 30 dias vale para os **três** pisos (Educação, Saúde e Infraestrutura). O piso constitucional de Educação é 5%; Saúde e Infraestrutura mantêm os mínimos legais deste catálogo.
 
 **Teto de déficit público: `[ABERTO]`.** Depende de registro monetário, obrigações e dívida (P0.07a). Uma proposta de teto de déficit será apresentada depois da arquitetura monetária. O parâmetro permanece no catálogo, mas **não deve ser implementado** antes disso.
 
@@ -182,7 +197,7 @@ São dois contadores distintos:
 - **mandatos consecutivos** (limite acima): conta todo mandato com posse, inclusive o mandato obtido por deposição;
 - **mandatos concluídos** (experiência): conta somente mandatos estatutários completos; mandato por deposição não gera experiência.
 
-`[ABERTO — D15]` Efeito de alterações dessas leis sobre mandatos em curso (recomendação: valem apenas para janelas/mandatos abertos após a vigência).
+**Mudanças de lei:** alterações de duração de mandato, requisitos de elegibilidade e limite de mandatos consecutivos afetam apenas eleições cuja janela de inscrição se abre **após a vigência** da mudança, sem retroatividade. Salários e parâmetros fiscais valem no tick efetivo previsto pelo processo legislativo.
 
 ---
 
@@ -271,7 +286,13 @@ O custo-base inicial é de **R$ 10.000 por unidade territorial a cada 30 dias**.
 
 O alcance depende da jurisdição do proponente.
 
-`[ABERTO — D16, P0.07a]` Destino do dinheiro gasto em campanhas (a quem é pago ou se é sumidouro explícito e auditável): será definido junto do registro monetário. Outros pontos de D16 em aberto: unidade territorial do Deputado (recomendação: Estados), definição de conflito entre campanhas (recomendação: mesmo tipo + mesmo território + períodos sobrepostos), reserva de recursos na entrada em vigor (recomendação: sem reserva suficiente, a campanha não é aplicada) e as "categorias" do subsídio setorial (dependem de P0.02).
+**Campanhas (aprovado):**
+
+- unidade territorial de campanha de Deputado: **Estado**;
+- conflito entre campanhas: **mesmo tipo, mesmo território e períodos sobrepostos**;
+- a **reserva financeira** ocorre quando a campanha **entra em vigor**; sem saldo disponível para a reserva integral, a campanha **não entra em operação**;
+- o custo sai do **caixa federal** e tem destino final no **sumidouro explícito** do registro monetário (conta contábil identificada, indisponível para gastos normais, excluída do dinheiro em circulação);
+- as "categorias" do subsídio setorial derivam do catálogo e de suas permissões (integração na P0.02).
 
 ### 11.6.5. Custo da intensidade
 

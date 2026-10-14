@@ -304,7 +304,12 @@ O novo Presidente recebe a proposta novamente caso a Câmara a aprove.
 
 A deposição também não revoga automaticamente leis que já estejam em vigor.
 
-O tratamento detalhado do interregno (votações em andamento, prazos pausados) está registrado como pendência em `06 — Política` 06.36 e não faz parte do texto FINAL desta seção.
+Interregno (aprovado pelo Game Director):
+
+- propostas aguardando sanção, veto ou derrubada de veto retornam a uma votação completa da nova Câmara;
+- votações em andamento são suspensas enquanto não houver Câmara e reiniciadas com três dias completos quando a nova Câmara estiver constituída;
+- leis já sancionadas que aguardam apenas a data de vigência seguem o calendário normal;
+- prazos legislativos ficam suspensos enquanto não houver Câmara.
 
 ---
 

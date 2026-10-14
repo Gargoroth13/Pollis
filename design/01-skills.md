@@ -160,38 +160,34 @@ para permitir balanceamento posterior.
 
 1.7 Skills e salário
 
-A skill relevante também pode determinar um limite de salário para impedir
+A skill relevante também determina um limite de salário para impedir
 que jogadores veteranos utilizem salários artificialmente altos para transferir
 grandes quantidades de dinheiro para personagens novos.
 
-A regra atualmente definida é:
+Limite por habilidade:
 
-salário máximo = nível da skill relevante × multiplicador salarial
+S = nível da skill relevante × 1.5
 
-O multiplicador atual considerado é:
-
-1.5
+O multiplicador atual considerado é 1.5 [PROV].
 
 Exemplo:
 
 Físico 100
 × 1.5
-= salário máximo de R$150
+= S de R$150
+
 Período do limite
 
 O limite salarial é diário, e não por clique de trabalho.
 
-A implementação deve manter um contador simples do total recebido pelo jogador
-naquele dia.
+A definição completa é única e está em 11 — Leis Paramétricas, 11.1.0. Resumo:
 
-[Nota P0.01 — divergência registrada para revisão documental] A decisão do Game Director (2026-10-13) restringe o contador à remuneração sujeita ao limite (salários e soldo pagos por empregadores). Não contam: doações, reembolsos, recebimentos de vendas, transferências, lucros/distribuições, dotações, indenizações e recebimento de dívidas. Salário político não entra no limite S, mas está sujeito ao teto legal T. Fórmula completa em 11 — Leis Paramétricas, 11.1.0. Isso exige uma natureza em cada lançamento do registro monetário (P0.07). O texto acima ("total recebido") deve ser revisado para refletir essa definição.
-
-Exemplo conceitual:
-
-ganho_hoje
-data_referência
-
-Quando o dia mudar, ganho_hoje é reiniciado.
+- existem dois contadores diários separados por jogador: C_S (remunerações de trabalho, soldo e salário do cargo Dono, sujeitas a S) e C_T (toda remuneração salarial sujeita ao teto legal T, incluindo salários políticos);
+- salário político não consome S, mas consome T;
+- doações, vendas, reembolsos, transferências, dotações, indenizações e recebimento de dívidas não consomem nenhum dos contadores;
+- o teto T vale para o total diário, não por empregador;
+- o piso W (salário mínimo) prevalece sobre um S inferior, mas não cria dinheiro e não permite ultrapassar T;
+- o cálculo é determinístico e independente da ordem em que os serviços executam os pagamentos.
 
 Se um pagamento fizer o jogador ultrapassar o limite diário:
 

@@ -35,9 +35,9 @@ O projeto já possui o núcleo de design amplamente consolidado. A prioridade ag
 
 ## REVIEW / consolidação necessária
 
-- `06 — Política` *(decisões D1–D25 consolidadas em 2026-10-14; pendências em 06.36)*
-- `11 — Leis Paramétricas` *(idem; teto de déficit aberto)*
-- `19 — Militar` *(volta a REVIEW por decisão do Game Director; pendências em 19.48)*
+- `06 — Política` *(decisões aprovadas consolidadas em 2026-10-14; dependências de execução em 06.36)*
+- `11 — Leis Paramétricas` *(idem; teto de déficit sem proposta; zoneamento por lei na P1.07)*
+- `19 — Militar` *(volta a REVIEW por decisão do Game Director; dependências de execução em 19.48)*
 - `SITEMAP-REVIEW.md`
 
 ## FUTURO / não bloquear o núcleo
@@ -66,7 +66,7 @@ O catálogo de `22` deve ser tratado como fonte central de Produtos e Receitas e
 - Governador exige experiência anterior como Prefeito;
 - Presidente exige experiência anterior como Governador e diploma de Engenharia, Direito ou Medicina;
 - um jogador vota uma vez por eleição aplicável e pode votar em si mesmo;
-- empate presidencial gera segundo turno entre empatados; empates dos demais cargos e da última vaga da Câmara usam sorteio auditável com semente registrada (a confirmar pelo Game Director);
+- empate presidencial gera segundo turno entre empatados; empates dos demais cargos e da última vaga da Câmara usam sorteio auditável com semente registrada;
 - leis nacionais no primeiro Bot Test;
 - Governadores e Prefeitos podem encaminhar sugestões ao Presidente;
 - político pode possuir empresa privada, mas empresa de político não pode receber contrato público;
@@ -179,7 +179,7 @@ Não implementar ainda os sistemas FUTURO apenas por conveniência.
 | 4b. Localização e viagem | **feito** (P0.06.1): lote atual do jogador, localização inicial, viagem entre lotes (tempo `distância × minutos_por_unidade`, 15 inicial; custo monetário `distância × custo_por_unidade`, 10 provisório), início na capital, bloqueio por presença (Trabalho/Estudo sim; Lazer/Tratamento não), chegada pelo sistema de tempo. Decisões do Game Director registradas (2026-10-07); custo ainda não é cobrado: não existe sistema de dinheiro (ponto de integração pronto) |
 | 5a. Catálogo de Produtos e Receitas | **feito** (P1.01), sobre o `22` **atual (incompleto)**: 73 produtos, 41 receitas, ids estáveis, integridade; valores não especificados ≠ 0; lacunas e pendências para P1.02/P1.04 no `CHANGELOG_DEV.md` (2026-10-11) |
 | 6. Action Registry | **feito** (P1.03): ações `work`, `study`, `leisure`, `travel` com descritor do `21 §20`, consulta (`check_action`, `available_actions`) e execução (`execute_action`) sobre as mesmas validações dos serviços; sem Masking (P1.19). Decisões e pendências em `CHANGELOG_DEV.md` (2026-10-12) |
-| 0. P0.01 consolidação documental | **PR documental aberto** (2026-10-14): decisões D1–D25 aplicadas; `06`/`11`/`19` seguem em REVIEW; P0.07 (registro monetário) criado na fila |
+| 0. P0.01 consolidação documental | **concluída no PR #8** (2026-10-14, aguarda auditoria e merge): decisões aprovadas documentadas; `06`/`11`/`19` seguem em REVIEW só por dependências de execução; P0.07 (registro monetário) criado na fila; próximos: P0.02, P0.07a, P0.07b |
 | 5b, 7–9 | não iniciados (inventário/estoque, auditoria etc.) |
 
 O código anterior ao design atual foi removido por decisão do Game Director (2026-09-30); `design/` é a única base.

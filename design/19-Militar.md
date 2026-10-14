@@ -2,7 +2,7 @@
 
 Status: REVIEW
 
-Consolidação P0.01 (2026-10-13): este documento recebeu as decisões do Game Director D18–D25, D4c, D19 e D20 (registradas em CHANGELOG_DEV.md, seção "P0.01 — consolidação documental"). Por determinação do Game Director, permanece em REVIEW até que as pendências estruturais listadas em 19.48 sejam resolvidas. Trechos marcados [ABERTO] não devem ser implementados.
+Consolidação P0.01 (2026-10-14): este documento recebeu as decisões aprovadas do Game Director (D18–D25, D4c, D19, D20 e Q1–Q12; registradas em CHANGELOG_DEV.md, seção "P0.01 — consolidação documental"). Permanece em REVIEW por dependências de execução listadas em 19.48 (registro monetário P0.07, catálogo P0.02 e cenário). Trechos marcados [ABERTO] não devem ser implementados.
 
 19.0. Objetivo do sistema
 
@@ -20,7 +20,7 @@ O Exército é uma instituição pública formada por jogadores contratados pelo
 
 O cargo militar é incompatível com qualquer outro emprego e com a propriedade de empresas. O jogador escolhe, portanto, entre seguir sua carreira econômica normal ou seguir uma carreira estatal militar.
 
-O militar recebe soldo público e está sujeito ao limite de recebimento diário das regras gerais de remuneração, inclusive ao teto salarial definido pelo sistema de leis. A skill relevante para esse limite é Físico, e o soldo é W × m_patente, com W = salário mínimo vigente e m_patente o multiplicador da patente. A fórmula completa está em 11 — Leis Paramétricas, 11.1.0. Os multiplicadores de patente [ABERTO — 19.48] ainda não foram especificados; nenhum valor arbitrário pode ser adotado, e contratação e pagamento que dependam de multiplicador não definido não podem ser implementados.
+O militar recebe soldo público e está sujeito ao limite de recebimento diário das regras gerais de remuneração, inclusive ao teto salarial definido pelo sistema de leis. A skill relevante para esse limite é Físico, e o soldo é W × m_patente, com W = salário mínimo vigente e m_patente o multiplicador da patente. A fórmula completa está em 11 — Leis Paramétricas, 11.1.0. Os multiplicadores de patente são parâmetros fixos do sistema (não são leis paramétricas), provisórios [PROV] e calibráveis: Militar 1×, Capitão 2×, General 4×, Marechal 6×. Não há validação automática que obrigue uma patente a ficar abaixo do salário de um cargo político. O soldo é sujeito a S (Físico), a T e aos contadores diários de 11.1.0; o excedente não é pago nem vira obrigação pendente.
 
 O militar não pode ocupar cargo político. Ele deixa o Exército na posse de um cargo político (não na candidatura). As restrições de 19.1 (incompatibilidade com outro emprego e com a propriedade de empresas) permanecem; a preservação da propriedade de empresas prevista para políticos em 06 — Política não se estende a militares.
 
@@ -204,15 +204,22 @@ O governo fornece ao Exército os recursos necessários para suas operações.
 
 Entre os recursos militares estão:
 
-Armas militares;
+Armas Militares;
 
-Armaduras militares;
+Armaduras Militares;
 
-Kits de primeiros socorros.
+Kits de Primeiros Socorros do Exército.
 
 Bombas e outros explosivos não fazem parte da primeira versão do sistema militar.
 
-Os equipamentos são comprados pelo governo por meio do orçamento e armazenados no estoque militar institucional. Armas, armaduras e kits do Exército não podem surgir do nada: devem ter origem em produção ou compra reais. As receitas desses produtos militares do Exército (insumos, setor produtor, estrela mínima, origem/processo, compatibilidade com catálogo e mercado) permanecem em aberto para a P0.02 [ABERTO — D24] e são distintas das receitas improvisadas das milícias (19.10). O cenário pode iniciar com uma dotação explícita e auditável de itens no estoque (19.46).
+Os equipamentos são comprados pelo governo por meio do orçamento e armazenados no estoque militar institucional. Armas, armaduras e kits do Exército não podem surgir do nada: o abastecimento recorrente vem de produção ou de fornecimento efetivo (Fluxo B, 19.11), e o cenário pode iniciar com uma dotação explícita e auditável de itens (19.46).
+
+Produtos militares do Exército, com identidades estáveis distintas dos produtos improvisados da milícia (receitas provisórias [PROV], produzidas por empresas Industriais com estrela mínima 2★; detalhamento no catálogo 22, P0.02):
+- Armas Militares: Aço + Madeira + Plástico;
+- Armaduras Militares: Aço + Plástico;
+- Kits de Primeiros Socorros do Exército: Lã + Materiais hospitalares.
+
+O estoque institucional do Exército não possui limite de capacidade nesta versão. O Exército só recebe de um contrato o que esteja efetivamente disponível em estoque do fornecedor ou em dotação de cenário; a reserva de estoque impede que o mesmo item seja prometido a mais de um contrato. Produção sob encomenda não é implementada enquanto essa capacidade não existir.
 
 Os militares mobilizados transportam consigo uma quantidade limitada de equipamentos. A quantidade que pode acompanhar uma mobilização depende da capacidade de carga definida para o sistema.
 
@@ -352,15 +359,15 @@ Produto
 
 Insumos
 
-Armas improvisadas
+Armas Improvisadas
 
 Aço + Madeira + Plástico
 
-Armaduras improvisadas
+Armaduras Improvisadas
 
 Aço + Plástico
 
-Kits de primeiros socorros
+Kit Médico Improvisado
 
 Lã + Materiais hospitalares
 
@@ -769,7 +776,7 @@ Kits não utilizados permanecem sujeitos à regra geral dos recursos mobilizados
 
 A eficiência exata dos kits será definida e balanceada posteriormente.
 
-Nota de terminologia: os kits improvisados da milícia (19.10) e os kits de primeiros socorros do Exército (19.6) são conceitualmente distintos; a nomenclatura e as receitas finais dependem da P0.02 [ABERTO — D24]. Em 22 — Receitas-Produção o produto se chama Kit Médico.
+Nota de terminologia (aprovada): os kits da milícia chamam-se Kit Médico Improvisado (19.10) e os do Exército, Kits de Primeiros Socorros do Exército (19.6). São produtos distintos com identidades estáveis próprias no catálogo 22; a renomeação dos produtos no 22 é executada na P0.02.
 
 19.27. Controle e Pontuação
 
@@ -867,7 +874,7 @@ Isso cria uma perda real de participação sem eliminar permanentemente o person
 
 O tempo de hospitalização pode ser reduzido pelos sistemas de saúde já definidos no jogo.
 
-O combate pode impor o estado compartilhado Hospitalizado (04 — Dia a Dia), com duração conforme a severidade. Isso não reduz a Saúde até que uma fórmula de dano seja aprovada [ABERTO]. O estado bloqueia as atividades definidas no 04 e as ações militares incompatíveis. O limite mínimo de Saúde para mobilização é uma regra separada (19.14). O 04 é ajustado para reconhecer hospitalização originada em outros sistemas.
+O combate pode impor o estado compartilhado Hospitalizado (04 — Dia a Dia), com duração conforme a severidade [PROV]. No primeiro Bot Test o combate não reduz a Saúde: a ausência de fórmula de dano é uma limitação aprovada, não uma pendência. O estado bloqueia as atividades definidas no 04 e as ações militares incompatíveis. O limite mínimo de Saúde para mobilização é uma regra separada (19.14). O 04 reconhece hospitalização originada em outros sistemas.
 
 19.33. Ações e Comprometimento do Jogador
 
@@ -1067,7 +1074,7 @@ Para este sistema, a QoL nacional é a média da QoL Base efetiva dos jogadores 
 
 A referência 1 da fórmula não é uma nova lei paramétrica. Com QoL nacional 0.5, o multiplicador inicial é 1.5, sem ajuste oculto.
 
-[A CONFIRMAR] Comportamento quando não há jogadores ativos: proposta de usar o último snapshot válido; se não houver nenhum, multiplicador 1 sinalizado como "QoL nacional indisponível". Alternativa: exigir configuração de cenário válida.
+Sem jogadores ativos, usa-se o último snapshot válido de QoL nacional. Se nenhum snapshot válido existir, o multiplicador é 1 e o detalhamento exibe "QoL nacional indisponível". Não há mínimo de jogadores ativos nem ajuste oculto à fórmula (aprovado).
 
 O modificador conceitual permanece:
 
@@ -1249,14 +1256,12 @@ Parametrização: números de balanceamento devem poder ser ajustados sem altera
 
 Integração: militar, política, orçamento, economia, saúde, QoL e geografia devem funcionar como partes do mesmo simulador.
 
-19.48. Pendências estruturais abertas (motivo do status REVIEW)
+19.48. Dependências de execução (motivo do status REVIEW)
 
-- Multiplicadores de patente (m_patente) não especificados.
-- D24: receitas dos produtos militares do Exército (P0.02).
-- Fórmula de dano e efeito sobre Saúde em combate (D20).
-- Fallback da QoL nacional sem jogadores ativos (19.42), a confirmar.
-- Destino monetário de custos de fundação e upgrades de milícia (P0.07a).
-- Capacidade de estoque institucional e reserva de produção do Exército (02/22/18).
-- Parâmetros de balanceamento já listados como [PROV] (janela de 30 dias, durações, pontuações).
-- Detalhes de dependência do registro monetário (P0.07): conta de retenção e contratos A e B.
+As decisões de design deste documento foram aprovadas pelo Game Director. Permanecem dependências de execução:
 
+- P0.02: receitas, nomes e permissões dos produtos militares no catálogo 22 (receitas provisórias em 19.6).
+- P0.07a/P0.07b: registro monetário, conta de retenção (19.16), sumidouro explícito para fundação e melhorias de milícia, contratos A e B (19.11) e dotações de cenário.
+- Cenário (P1.18): quartéis, Exército e milícias iniciais, saldos e estoques iniciais.
+- Parâmetros de balanceamento provisórios [PROV]: janela de 30 dias, durações, pontuações, hospitalização por severidade, custos e melhorias de milícia, multiplicadores de patente.
+- Limitação aprovada: sem fórmula de dano; combate não reduz Saúde nesta versão.
