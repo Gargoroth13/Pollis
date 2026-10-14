@@ -13,7 +13,9 @@ Prioridade:
 
 # P0 — Antes / junto do início da implementação
 
-## [ ] P0.01 — Auditoria final de documentos em REVIEW
+## [x] P0.01 — Auditoria final de documentos em REVIEW  *(consolidação documental concluída em 2026-10-14, PR #8; aguarda auditoria e merge)*
+
+> **Estado (2026-10-14):** as decisões aprovadas do Game Director (D1–D25, Q1–Q12 e confirmações) foram documentadas em PR único (branch `dev/p0.01-consolidacao-documental`). `06`, `11` e `19` seguem em **REVIEW** apenas por dependências de execução registradas em `06` 06.36, `11` (teto de déficit sem proposta; zoneamento por lei, P1.07) e `19` 19.48. Isso não bloqueia a P0.02. Decisões e dependências: `CHANGELOG_DEV.md` ("P0.01 — consolidação documental").
 
 **Sistemas:** `06`, `11`, `19`, Sitemap  
 **Objetivo:** eliminar inconsistências remanescentes antes de depender desses documentos na implementação.
@@ -36,6 +38,42 @@ Critérios:
 - receitas possuem estrela mínima quando aplicável;
 - múltiplos ingredientes são suportados;
 - catálogo é utilizável como fonte única de seed.
+
+**Decisões do Game Director a aplicar (2026-10-14):**
+- Valores numéricos `[PROV]` autorizados (Nutrição/QoL dos alimentos, preço-base e taxa de correio, rendimento, estrelas e rendimentos de Matriz, hospitalização por severidade, custos de milícia, multiplicadores militares) em tabela auditável com fonte de verdade; base de receita: 1 unidade de cada ingrediente produz 1 unidade do produto.
+- Receitas militares do Exército (Industrial, 2★ `[PROV]`): Armas Militares = Aço + Madeira + Plástico; Armaduras Militares = Aço + Plástico; Kits de Primeiros Socorros do Exército = Lã + Materiais hospitalares. Nomes: Armas Improvisadas, Armaduras Improvisadas e Kit Médico Improvisado (milícia), distintos dos produtos do Exército, com identidades estáveis próprias.
+- Pão é alimento consumível, com perfil `[PROV]`.
+- Cinco categorias principais únicas (Alimento, Material, Equipamento, Durável, Militar); consumível, permanente, militar e uso em receita ficam em campos/tags separados.
+- Sem produto Acabamentos: a Construtora usa Tábuas e Vidro diretamente.
+- Usos comerciais declarados no catálogo, nunca inferidos: Varejo vende bens finais; matérias-primas e intermediários circulam entre empresas; Exército por contrato federal; Requisições Especiais da milícia (`19`); produtos exclusivos do Exército não vão ao Varejo; sem canal de venda direta entre inventários pessoais.
+- Integrar as categorias do subsídio setorial (D16) ao catálogo e suas permissões.
+- Materiais operacionais (`02` §10/§20) ficam fora da primeira implementação de Empresas.
+
+---
+
+## [ ] P0.07 — Registro monetário (ledger)
+
+Pré-requisito transversal: não existe sistema de dinheiro em nenhum documento nem na fila. Posição: depois de P0.01 e P0.02, antes de P1.02. Duas fases:
+
+- **P0.07a — Documento de design** para aprovação do Game Director (sem código);
+- **P0.07b — Implementação**, somente após aprovação do P0.07a.
+
+**Decisões do Game Director já aprovadas (2026-10-14):**
+- **Origem do dinheiro:** dotação inicial explícita e auditável por conta (humana ou Bot) conforme parâmetro do cenário; lançamento de emissão com natureza, origem, destino e referência ao cenário. Como Bots são criados continuamente até a população-alvo, é uma fonte de emissão durante a formação da população, não uma emissão única. Emissão total e contas contempladas aparecem nas métricas financeiras. Zero é válido se escolhido explicitamente; valor ausente faz o cenário recusar a inicialização e registrar a pendência. Sem emissão periódica discricionária pela União; despesas, títulos e transferências não criam dinheiro.
+- **Destino das cobranças:** viagem, taxa de correio e fundação de empresa → caixa federal; leilão de lote público → caixa do Município do lote; fundação e melhorias de milícia → sumidouro explícito; custos de campanhas → caixa federal como pagador, destino final no sumidouro; tratamento → conta do hospital ou do prestador definido em `04` §13 (já definido; o ledger integra esse pagamento, sem reabrir o destino).
+- **Sumidouro:** conta contábil identificada, indisponível para gastos normais, com saldo na conservação contábil e excluído do dinheiro em circulação; lançamentos nunca são apagados.
+
+**O P0.07a deve incorporar:**
+- sistema de contas para jogadores, empresas, União, Estados, Municípios, milícias, contas de retenção e sumidouro;
+- transferências atômicas e idempotentes; log auditável; conservação monetária com origem e destino explícitos; sem saldo negativo; precisão em centavos; detalhamento `Explained` (`20`);
+- obrigações pendentes separadas do caixa;
+- **dois contadores salariais diários** (`C_S` e `C_T`), natureza do lançamento e dia de competência (`11` 11.1.0), com cálculo determinístico independente da ordem dos serviços;
+- retenções de contrato (Requisição Especial, fornecimento ao Exército) e retenção de arrecadação durante ações de milícia (`09` §45, `19`);
+- dotações de cenário (contas, caixas de governo, estoques iniciais);
+- relação com títulos e dívida pública: P1.09 não cria dinheiro por emissão de dívida e declara a origem dos recursos;
+- teto de déficit público: proposta após esta arquitetura.
+
+**Em aberto:** apenas os valores de dotação inicial por cenário (configuração, não bloqueia o P0.07a/b).
 
 ---
 
@@ -166,6 +204,8 @@ Implementar a estrutura central de `22`.
 
 ## [ ] P1.02 — Inventário
 
+**Depende de P0.07.**
+
 > **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FOOD_VALUES_UNDEFINED` (Nutrição e intensidade de QoL numéricas; ordenação para o auto-consumo), `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED` (taxa de correio). Ver `CHANGELOG_DEV.md` (2026-10-11).
 
 Implementar `05`.
@@ -180,6 +220,8 @@ Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos 
 
 ## [ ] P1.04 — Empresas
 
+**Depende de P0.07.** Decisões aprovadas (2026-10-14): o Dono recebe salário associado ao cargo, pago pela conta da empresa e sujeito a `S` e `T`; sem retirada de lucro, dividendos ou distribuição passiva; propriedade não equivale a receber dinheiro; sem exceção às regras de `06.23`. Materiais operacionais ficam fora desta primeira implementação (limitação conhecida; nenhum insumo oculto é cobrado).
+
 > **Herdado do P1.03:** Trabalho sem emprego continua permitido hoje (P0.04). Empresas deve acrescentar emprego/contexto de atividade via provedor de bloqueio e `ActivityContext`, usando o Action Registry existente (sem caminho paralelo). Decisão do GD (2026-10-12) em `CHANGELOG_DEV.md`.
 
 > **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FINISHINGS_UNDEFINED`, `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. A produção deve consultar `catalog.services.check_production_ready` e **recusar** enquanto houver `UNSPECIFIED_DESIGN_VALUE`. Ver `CHANGELOG_DEV.md` (2026-10-11).
@@ -188,11 +230,15 @@ Implementar `02` utilizando `22` como fonte de produtos/receitas.
 
 ## [ ] P1.05 — Mercado e transparência
 
+**Depende de P0.07.**
+
 > **Pendências herdadas do P1.01:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED` (`CHANGELOG_DEV.md`, 2026-10-11).
 
 Implementar mercado e estatísticas de `17`.
 
 ## [ ] P1.06 — Escolas e universidades
+
+**Depende de P0.07 se houver custos.**
 
 Implementar `03`.
 
@@ -206,6 +252,8 @@ Implementar `10`.
 
 ## [ ] P1.08 — Contratos
 
+**Depende de P0.07.** Adendo de partes militares (milícia anônima; governo federal comprador): `18` 18.14.
+
 Implementar `18`.
 
 ---
@@ -213,6 +261,8 @@ Implementar `18`.
 # P1 — Governo e política
 
 ## [ ] P1.09 — Orçamento público
+
+**Depende de P0.07.** Não pode criar dinheiro por emissão de dívida; deve declarar a origem dos recursos. Pisos setoriais só no orçamento municipal, base de 30 dias para os três pisos (`11` 11.2.1); teto de déficit sem proposta até o P0.07a. Atribuição territorial da arrecadação e retenção: `09` §45.
 
 Implementar `09`.
 
@@ -222,7 +272,9 @@ Implementar `07`.
 
 ## [ ] P1.11 — Política
 
-Depois da consolidação de `06` e `11`, implementar cargos, eleições, Câmara, administração e sucessão.
+**Depende de P0.07** (salários). Depois da consolidação de `06` e `11`, implementar cargos, eleições, Câmara, administração e sucessão.
+
+Ações, validações e telas pendentes registradas pela consolidação P0.01 (sem implementação ainda): indicar/alterar substituto com histórico; eleição extraordinária por substituto inelegível/indisponível; vacância até a posse com prazos suspensos; sorteio auditável por semente; dois contadores (mandatos consecutivos x concluídos); crédito de serviço anterior por cenário; exceção de posse por deposição. Risco R-BT-01: o cenário inicial não pode deixar territórios inoperantes (contas reais de bots com residências; sem NPC e sem exceção de elegibilidade).
 
 ## [ ] P1.12 — Leis paramétricas
 
@@ -254,7 +306,7 @@ Usar `SITEMAP-REVIEW.md` para construir a navegação principal sem bloquear aju
 
 ## [ ] P1.17 — Militar
 
-Depois da limpeza final de `19`, implementar Milícia, Exército, mobilização, prontidão, treinamento, conflito e integração econômica.
+**Depende de P0.07 e da P0.02** (produtos militares). Decisões aprovadas: multiplicadores de patente fixos `[PROV]` (Militar 1×, Capitão 2×, General 4×, Marechal 6×; não são leis); combate não reduz Saúde nesta versão; fallback da QoL nacional (último snapshot válido; sem snapshot, multiplicador 1). Dependências de execução em `19` 19.48. Implementar Milícia, Exército, mobilização, prontidão, treinamento, conflito e integração econômica.
 
 ---
 

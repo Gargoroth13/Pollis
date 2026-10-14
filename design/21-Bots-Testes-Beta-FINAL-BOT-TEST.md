@@ -1944,3 +1944,22 @@ Esses comportamentos são dados de teste.
 A função do sistema é trazer esses comportamentos para o Dashboard, preservar os dados necessários e permitir que o Game Director investigue a causa.
 
 O Bot deve ser tratado como um instrumento de exploração do próprio design do Polis.
+
+---
+
+# 21.60. Cenário inicial e governos de partida (consolidação P0.01, 2026-10-13)
+
+O cenário inicial do Bot Test é **configurável** e seus ocupantes são **contas reais** de jogadores ou Bots, nunca NPCs.
+
+O cenário define, conforme necessário:
+
+- ocupantes iniciais de cargos políticos, com residências, por contas reais;
+- eventual **crédito explícito de serviço anterior** a contas designadas (excepcional, registrado e auditável; não é regra geral);
+- Exército e milícias iniciais: contas reais, quartéis, dotações monetárias **com origem documentada**, estoque inicial de equipamentos como **dotação explícita e auditável de itens** e dotações para bancos de milícia;
+- dotação inicial por conta (humana ou Bot) e saldos iniciais de caixas de governo: configurados por cenário, sem valor inventado. A dotação é um lançamento explícito de emissão monetária; como Bots são criados continuamente, ela é uma fonte de emissão durante a formação da população (não uma emissão única). Zero é válido se escolhido; se o valor estiver ausente, o cenário que dele depende recusa a inicialização e registra a pendência. Emissão total e número de contas contempladas aparecem nas métricas financeiras do Bot Test;
+
+**Risco R-BT-01.** O cenário inicial não pode deixar territórios politicamente inoperantes. A solução é prover contas reais de Bots com residências, sem NPCs e sem exceções de elegibilidade.
+
+Nada disso cria transações fictícias: toda dotação tem origem e destino no registro monetário (P0.07).
+
+**QoL nacional sem jogadores ativos** (19 — Militar, 19.42): usa o último snapshot válido; sem snapshot, multiplicador 1 com detalhamento "QoL nacional indisponível".

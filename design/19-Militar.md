@@ -1,6 +1,8 @@
 19. Militares e Milícias
 
-Status: FINAL — BOT TEST
+Status: REVIEW
+
+Consolidação P0.01 (2026-10-14): este documento recebeu as decisões aprovadas do Game Director (D18–D25, D4c, D19, D20 e Q1–Q12; registradas em CHANGELOG_DEV.md, seção "P0.01 — consolidação documental"). Permanece em REVIEW por dependências de execução listadas em 19.48 (registro monetário P0.07, catálogo P0.02 e cenário). Trechos marcados [ABERTO] não devem ser implementados.
 
 19.0. Objetivo do sistema
 
@@ -18,13 +20,17 @@ O Exército é uma instituição pública formada por jogadores contratados pelo
 
 O cargo militar é incompatível com qualquer outro emprego e com a propriedade de empresas. O jogador escolhe, portanto, entre seguir sua carreira econômica normal ou seguir uma carreira estatal militar.
 
-O militar recebe salário público normalmente e está sujeito às regras gerais de remuneração aplicáveis aos empregos, inclusive ao limite salarial definido pelo sistema de leis.
+O militar recebe soldo público e está sujeito ao limite de recebimento diário das regras gerais de remuneração, inclusive ao teto salarial definido pelo sistema de leis. A skill relevante para esse limite é Físico, e o soldo é W × m_patente, com W = salário mínimo vigente e m_patente o multiplicador da patente. A fórmula completa está em 11 — Leis Paramétricas, 11.1.0. Os multiplicadores de patente são parâmetros fixos do sistema (não são leis paramétricas), provisórios [PROV] e calibráveis: Militar 1×, Capitão 2×, General 4×, Marechal 6×. Não há validação automática que obrigue uma patente a ficar abaixo do salário de um cargo político. O soldo é sujeito a S (Físico), a T e aos contadores diários de 11.1.0; o excedente não é pago nem vira obrigação pendente.
+
+O militar não pode ocupar cargo político. Ele deixa o Exército na posse de um cargo político (não na candidatura). As restrições de 19.1 (incompatibilidade com outro emprego e com a propriedade de empresas) permanecem; a preservação da propriedade de empresas prevista para políticos em 06 — Política não se estende a militares.
 
 19.1.1. Entrada
 
 O governo pode contratar jogadores para vagas militares disponíveis.
 
 O número máximo de militares que o governo consegue manter é limitado pela capacidade orçamentária destinada ao Exército. O governo não pode simplesmente contratar um número ilimitado de militares sem possuir recursos para mantê-los.
+
+O Exército é federal. O orçamento é controlado pelo Presidente; o Governador pode sugerir, mas não existe orçamento militar estadual independente. A cadeia de comando e as contratações respeitam as competências de Marechal, General e Capitão (19.2).
 
 Cada militar fica associado a um quartel, que é uma propriedade institucional localizada geograficamente.
 
@@ -61,7 +67,7 @@ Militar
 
 Existe apenas um Marechal do Exército.
 
-O Presidente nomeia o Marechal.
+O Presidente nomeia o Marechal entre militares existentes que sejam elegíveis. O Presidente não pode nomear alguém que não seja militar.
 
 O Marechal é a autoridade militar superior e coordena o Exército em escala nacional.
 
@@ -129,6 +135,17 @@ O governo precisa distribuir suas forças geograficamente. Concentrar militares 
 
 Um militar não é considerado elegível para determinada mobilização quando a distância entre seu quartel e o local da ação excede o limite definido pelas regras militares.
 
+Quartéis são Infraestrutura institucional. A construção física de quartéis é classificada como Infraestrutura (projetos e obras públicas, 09 — Orçamento Público); salários, operação e manutenção recorrente pertencem ao orçamento Militar, sem contagem dupla. O cenário pode fornecer quartéis iniciais explícitos, sem exigir um sistema completo de construção de quartéis. Quartéis não são alvos independentes de ações (19.3.1).
+
+19.3.1. Locais institucionais
+
+O escopo mínimo de locais institucionais é vinculado a lotes existentes (08 — Geografia):
+- uma Sede do Governo na capital;
+- uma Prefeitura por cidade;
+- quartéis definidos pelo cenário.
+
+Alvos válidos de ações: cidades, para ações militares e políticas; e a Sede do Governo da capital, como alvo especial de deposição. Quartéis não são alvos independentes. A inscrição de candidatura (06.5) exige presença física no local institucional; ações administrativas não exigem presença. A existência desses locais não implica que jogadores possam comprá-los, vendê-los ou construí-los.
+
 A distância também pode influenciar o tempo necessário para o militar chegar ao local quando ele está dentro do limite de elegibilidade.
 
 19.4. Prontidão
@@ -179,21 +196,30 @@ Determina a capacidade do governo de manter equipamentos e sustentar operações
 
 O investimento não é aplicado como um multiplicador direto de força durante o cálculo do combate. O dinheiro cria e mantém capacidade institucional.
 
+O orçamento do Exército é federal (19.1.1). O uso de estoque, a encomenda de produção e a reserva de equipamentos obedecem às capacidades efetivamente definidas em 02, 22 e 18, sem presumi-las.
+
 19.6. Equipamentos do Exército
 
 O governo fornece ao Exército os recursos necessários para suas operações.
 
 Entre os recursos militares estão:
 
-Armas militares;
+Armas Militares;
 
-Armaduras militares;
+Armaduras Militares;
 
-Kits de primeiros socorros.
+Kits de Primeiros Socorros do Exército.
 
 Bombas e outros explosivos não fazem parte da primeira versão do sistema militar.
 
-Os equipamentos são comprados pelo governo por meio do orçamento e armazenados no estoque militar.
+Os equipamentos são comprados pelo governo por meio do orçamento e armazenados no estoque militar institucional. Armas, armaduras e kits do Exército não podem surgir do nada: o abastecimento recorrente vem de produção ou de fornecimento efetivo (Fluxo B, 19.11), e o cenário pode iniciar com uma dotação explícita e auditável de itens (19.46).
+
+Produtos militares do Exército, com identidades estáveis distintas dos produtos improvisados da milícia (receitas provisórias [PROV], produzidas por empresas Industriais com estrela mínima 2★; detalhamento no catálogo 22, P0.02):
+- Armas Militares: Aço + Madeira + Plástico;
+- Armaduras Militares: Aço + Plástico;
+- Kits de Primeiros Socorros do Exército: Lã + Materiais hospitalares.
+
+O estoque institucional do Exército não possui limite de capacidade nesta versão. O Exército só recebe de um contrato o que esteja efetivamente disponível em estoque do fornecedor ou em dotação de cenário; a reserva de estoque impede que o mesmo item seja prometido a mais de um contrato. Produção sob encomenda não é implementada enquanto essa capacidade não existir.
 
 Os militares mobilizados transportam consigo uma quantidade limitada de equipamentos. A quantidade que pode acompanhar uma mobilização depende da capacidade de carga definida para o sistema.
 
@@ -213,7 +239,7 @@ A fundação possui um custo monetário.
 
 O fundador inicialmente ocupa a posição de líder, mas pode transferir a liderança posteriormente.
 
-A milícia não é automaticamente dissolvida quando fica com zero membros.
+A milícia não é automaticamente dissolvida quando fica com zero membros: ela fica dormente.
 
 19.7.2. Liderança e cargos
 
@@ -235,6 +261,8 @@ criar requisições especiais.
 
 Não existe, no primeiro sistema, uma mecânica de eleição interna obrigatória. A liderança é definida pela estrutura de cargos da própria milícia.
 
+Sucessor designado: o líder pode designar um sucessor explícito, alterável, com histórico auditável. Esse sucessor é usado quando a liderança precisa ser transferida automaticamente (19.37).
+
 19.7.3. Membros
 
 Um jogador pode ser membro de uma milícia sem estar mobilizado para uma ação.
@@ -250,6 +278,10 @@ A milícia pode escolher ocultar publicamente sua lista de membros.
 Quando a milícia é anônima, sua página pública não exibe sua composição de membros.
 
 O servidor continua sabendo quais jogadores pertencem à organização para fins de cálculo, auditoria e funcionamento das regras.
+
+O anonimato oculta a composição, não o número de membros (14.3.9).
+
+Um político pode ser membro de milícia, e um militar também (19.33).
 
 19.8. Upgrades da Milícia
 
@@ -327,15 +359,15 @@ Produto
 
 Insumos
 
-Armas improvisadas
+Armas Improvisadas
 
 Aço + Madeira + Plástico
 
-Armaduras improvisadas
+Armaduras Improvisadas
 
 Aço + Plástico
 
-Kits de primeiros socorros
+Kit Médico Improvisado
 
 Lã + Materiais hospitalares
 
@@ -343,7 +375,11 @@ Bombas improvisadas e demais explosivos foram removidos da primeira versão do s
 
 A qualidade dos armamentos não é utilizada. Os produtos possuem apenas quantidade.
 
-19.11. Requisições Especiais
+19.11. Requisições Especiais e fornecimento ao Exército
+
+A infraestrutura de contratos (18 — Contratos) é reutilizada, sem duplicar sua lógica, em dois fluxos distintos. Ambos mantêm as proteções contra pagamento duplo e entrega duplicada. O 18 recebe adendo prevendo as partes: milícia (anônima) e governo federal como comprador.
+
+Fluxo A — Requisição Especial (comprador: milícia):
 
 Milícias não compram diretamente matérias-primas de Matrizes.
 
@@ -374,6 +410,24 @@ Isso significa que preço, quantidade e obrigação de fornecimento ficam defini
 Entretanto, os produtos não entram imediatamente no inventário da milícia. Existe um tempo de entrega, após o qual os itens chegam ao inventário da milícia.
 
 A requisição fechada não pode ser utilizada para movimentar novamente o mesmo pagamento ou a mesma quantidade de produto.
+
+Regras financeiras do Fluxo A:
+- o banco da milícia financia a compra;
+- o pagamento entra em conta de retenção no fechamento e é liberado conforme as condições de entrega;
+- o produto entra no inventário da milícia;
+- o anonimato público é preservado e as identidades reais ficam disponíveis para auditoria;
+- o imposto sobre vendas se aplica;
+- não há taxa de correio;
+- o acordo não pode ser fechado sem fundos suficientes ou garantia de fornecimento válida;
+- o valor retido nunca está disponível ao mesmo tempo para comprador e vendedor (registro monetário, P0.07).
+
+Fluxo B — Fornecimento ao Exército (comprador: governo federal):
+
+- o governo federal é o comprador e paga com o caixa federal, conforme o orçamento militar e os compromissos;
+- a entrega vai ao estoque militar institucional;
+- usa o mesmo motor de contratos e as mesmas proteções contra pagamento e entrega duplos;
+- uso do estoque, encomenda de produção e reserva obedecem às capacidades realmente definidas em 02, 22 e 18, sem presumi-las;
+- os impostos seguem as regras gerais, sem contagem dupla.
 
 19.12. Mobilização de uma Milícia
 
@@ -469,6 +523,8 @@ Quanto maior a arrecadação relevante do local, maior tende a ser a pontuação
 
 Os números exatos dessas relações são parâmetros de balanceamento.
 
+A janela de referência é de 30 dias [PROV], congelada no início da ação, tanto para a pontuação alvo quanto para a duração.
+
 19.16. Arrecadação e Objetivos
 
 A arrecadação tributária é coletada diariamente e posteriormente repassada ao nível superior de governo conforme o ciclo definido pelo sistema orçamentário.
@@ -483,13 +539,23 @@ a duração máxima.
 
 A ação passa a operar com esses valores definidos no início. O valor do objetivo não deve aumentar ou diminuir arbitrariamente no meio da mesma ação.
 
+Atribuição territorial da arrecadação (09 — Orçamento Público, 45.5):
+- imposto sobre vendas: cidade do estabelecimento vendedor;
+- imposto sobre salários: cidade da empresa pagadora;
+- IPTU: cidade do imóvel;
+- outros impostos: somente quando a atribuição estiver definida.
+
+A coleta continua centralizada; a localização é um atributo de rastreio, não um caixa local.
+
+Retenção durante a ação (pacífica ou violenta): o imposto efetivamente arrecadado e vinculado à região durante a ação fica em conta de retenção do registro monetário (P0.07), e não no caixa federal disponível. Vitória da milícia: o valor retido vai ao banco da milícia. Repressão, derrota ou falha: o valor retido é liberado ao caixa federal. A mesma receita nunca está nos dois lugares. Os 30 dias anteriores à ação não são retirados retroativamente. Nenhum beneficiário é inventado.
+
 19.17. Ações Pacíficas
 
 Uma ação pacífica é uma tentativa de obter pressão ou controle político sem iniciar automaticamente um confronto violento.
 
 Ao declarar uma ação pacífica:
 
-a arrecadação do local fica congelada durante a ação;
+a arrecadação do local fica retida durante a ação (19.16);
 
 os membros da milícia que participam da ação ficam impedidos de trabalhar e estudar durante sua participação;
 
@@ -505,7 +571,7 @@ Encerramento por supressão
 
 Se a Supressão alcançar o valor necessário antes de a milícia concluir seu objetivo, a ação termina como uma ação pacífica reprimida.
 
-A arrecadação congelada volta ao fluxo normal do governo.
+A arrecadação retida é liberada ao caixa federal (19.16).
 
 A milícia sofre as consequências da ação e entra no estado de recuperação/cooldown definido para ações pacíficas reprimidas.
 
@@ -622,6 +688,8 @@ No Exército, a prontidão institucional e a estrutura de comando podem atuar ne
 
 Na milícia, somente modificadores concretos e previamente definidos devem ser aplicados. Nenhuma variável abstrata deve ser criada apenas para aumentar a complexidade da fórmula.
 
+O multiplicador de QoL nacional (19.42) é um modificador concreto definido e é aplicado exclusivamente a esta camada de Poder Operacional da milícia.
+
 19.23. Confronto Diário
 
 A resolução de uma ação violenta ocorre ao final de cada dia da ação.
@@ -708,6 +776,8 @@ Kits não utilizados permanecem sujeitos à regra geral dos recursos mobilizados
 
 A eficiência exata dos kits será definida e balanceada posteriormente.
 
+Nota de terminologia (aprovada): os kits da milícia chamam-se Kit Médico Improvisado (19.10) e os do Exército, Kits de Primeiros Socorros do Exército (19.6). São produtos distintos com identidades estáveis próprias no catálogo 22; a renomeação dos produtos no 22 é executada na P0.02.
+
 19.27. Controle e Pontuação
 
 O objetivo da ação violenta é conquistar Pontos de Controle.
@@ -770,7 +840,7 @@ os militares envolvidos sofrem as consequências definidas pelo resultado;
 
 participantes derrotados podem ser enviados ao hospital;
 
-a arrecadação vinculada à região conquistada durante a operação é transferida para o banco da milícia conforme as regras da ação.
+a arrecadação retida e vinculada à região conquistada durante a operação é transferida da conta de retenção para o banco da milícia (19.16).
 
 A milícia pode então utilizar seu dinheiro para reorganizar sua estrutura, comprar recursos, produzir novos itens e realizar novas ações.
 
@@ -784,7 +854,7 @@ os recursos mobilizados dos dois lados são perdidos;
 
 os milicianos envolvidos são encaminhados ao hospital conforme a severidade definida para o resultado;
 
-a arrecadação da região volta ao fluxo normal do governo.
+a arrecadação retida da região é liberada ao caixa federal (19.16).
 
 A vitória do Exército não dissolve automaticamente a milícia.
 
@@ -804,6 +874,8 @@ Isso cria uma perda real de participação sem eliminar permanentemente o person
 
 O tempo de hospitalização pode ser reduzido pelos sistemas de saúde já definidos no jogo.
 
+O combate pode impor o estado compartilhado Hospitalizado (04 — Dia a Dia), com duração conforme a severidade [PROV]. No primeiro Bot Test o combate não reduz a Saúde: a ausência de fórmula de dano é uma limitação aprovada, não uma pendência. O estado bloqueia as atividades definidas no 04 e as ações militares incompatíveis. O limite mínimo de Saúde para mobilização é uma regra separada (19.14). O 04 reconhece hospitalização originada em outros sistemas.
+
 19.33. Ações e Comprometimento do Jogador
 
 Um jogador que participa de uma ação deixa de poder trabalhar ou estudar enquanto estiver participando dela.
@@ -817,6 +889,8 @@ Não existe cooldown geral obrigatório entre Exército e Milícia.
 Um jogador pode entrar em uma milícia mesmo tendo sido militar anteriormente.
 
 Um militar pode se tornar membro de uma milícia.
+
+Um político também pode ser membro de milícia (19.7.4).
 
 O sistema não tenta impedir essa troca como mecanismo de segurança ou espionagem. Informações e estratégias internas são problemas que as próprias organizações devem administrar.
 
@@ -872,7 +946,11 @@ a estrutura política regular continua existindo;
 
 a nova Presidência pode exercer as competências normais do cargo;
 
-o novo Presidente pode nomear novos membros do STF conforme as regras políticas aplicáveis.
+o novo Presidente poderá nomear membros de tribunal superior quando esse mecanismo existir (este documento não pressupõe sua existência no primeiro Bot Test);
+
+o emprego contratado do novo Presidente é encerrado, a propriedade de empresas é preservada com restrição a contratos públicos (06.23), mandato conta para o limite de mandatos consecutivos (06.9) e o cargo político anterior fica vago (06.24);
+
+a liderança da milícia é transferida: primeiro o sucessor explicitamente designado (19.7.2); se não houver, o membro associado mais antigo ainda vinculado (determinístico, com resolução de empate auditável); se não houver membros, a milícia fica dormente (não é dissolvida).
 
 A nova Presidência não recebe liberdade para ignorar as travas constitucionais existentes.
 
@@ -930,7 +1008,9 @@ A parametrização dessa escala será definida durante o Bot Test.
 
 19.40. Integração com o Orçamento Público
 
-O Exército é financiado pelo orçamento do governo.
+O Exército é financiado pelo orçamento do governo federal, controlado pelo Presidente (19.1.1). Não há orçamento militar estadual independente.
+
+Classificação: construção física de quartéis é Infraestrutura; salários, operação e manutenção recorrente são Militar (09 — Orçamento Público, 45).
 
 O orçamento militar precisa comportar:
 
@@ -970,9 +1050,9 @@ consumir recursos em ações.
 
 O Exército pode:
 
-comprar equipamentos por meio do orçamento público;
+comprar equipamentos por meio do orçamento público (Fluxo B, 19.11);
 
-adquirir produtos de empresas elegíveis;
+adquirir produtos de empresas elegíveis (Fluxo B, 19.11);
 
 consumir equipamentos em operações.
 
@@ -984,13 +1064,17 @@ Participar de conflitos pode gerar hospitalização e afastamento temporário da
 
 A eficiência do sistema de saúde influencia o tempo necessário para o retorno dos jogadores ao jogo normal.
 
-A QoL nacional média também influencia a capacidade de mobilização das milícias.
+A QoL nacional média também influencia o Poder Operacional das milícias (19.22).
 
 Quanto menor a QoL nacional, maior a capacidade relativa de mobilização das milícias.
 
 A lógica é intencional: um governo que mantém uma QoL nacional baixa cria condições para que a oposição organizada consiga mobilizar mais jogadores.
 
-Para este sistema, a QoL nacional é calculada como uma média simples da QoL dos jogadores do país. O jogo não possui NPCs.
+Para este sistema, a QoL nacional é a média da QoL Base efetiva dos jogadores ativos do país, usando o critério de atividade de 72h de 14.3.11, em um snapshot calculado no tick diário. O jogo não possui NPCs.
+
+A referência 1 da fórmula não é uma nova lei paramétrica. Com QoL nacional 0.5, o multiplicador inicial é 1.5, sem ajuste oculto.
+
+Sem jogadores ativos, usa-se o último snapshot válido de QoL nacional. Se nenhum snapshot válido existir, o multiplicador é 1 e o detalhamento exibe "QoL nacional indisponível". Não há mínimo de jogadores ativos nem ajuste oculto à fórmula (aprovado).
 
 O modificador conceitual permanece:
 
@@ -1000,7 +1084,7 @@ Se QoL >= 1:
 Se QoL < 1:
     multiplicador = 1 + (1 - QoL)
 
-Esse multiplicador influencia a capacidade de mobilização das milícias, e não o número permanente de membros que elas possuem.
+Esse multiplicador é aplicado exclusivamente à camada de Poder Operacional da milícia (19.22), e não altera o número permanente de membros que ela possui.
 
 19.43. Força da Milícia e QoL
 
@@ -1022,7 +1106,7 @@ organização suficiente para realizar a ação.
 
 QoL baixa não cria combatentes automaticamente.
 
-Ela torna mais eficiente a capacidade de mobilização dos membros existentes.
+Ela torna mais eficiente o Poder Operacional dos membros existentes (19.22 e 19.42).
 
 19.44. Auditoria
 
@@ -1140,6 +1224,8 @@ Tentativa de deposição
 
 Deve ser uma ocorrência rara, mas possível, especialmente quando o governo negligencia gravemente as condições que alimentam a mobilização popular.
 
+Cenário inicial (D4c e R-BT-01): o cenário é configurável e os ocupantes são contas reais de jogadores ou bots. Ele define Exército e milícias iniciais (contas reais, quartéis, dotações monetárias com origem documentada, estoque inicial de equipamentos como dotação explícita e auditável de itens, dotações para bancos de milícia). Não há NPCs nem transações fictícias. O cenário não pode deixar territórios politicamente inoperantes e não concede exceção de elegibilidade.
+
 Os números de dano, pontuação, consumo, duração, hospitalização, custos e eficiência devem permanecer parametrizados até o resultado dos testes com Bots.
 
 19.47. Princípios de Balanceamento
@@ -1169,3 +1255,13 @@ Legibilidade: toda variável utilizada em uma fórmula deve possuir uma consequ�
 Parametrização: números de balanceamento devem poder ser ajustados sem alterar a estrutura do sistema.
 
 Integração: militar, política, orçamento, economia, saúde, QoL e geografia devem funcionar como partes do mesmo simulador.
+
+19.48. Dependências de execução (motivo do status REVIEW)
+
+As decisões de design deste documento foram aprovadas pelo Game Director. Permanecem dependências de execução:
+
+- P0.02: receitas, nomes e permissões dos produtos militares no catálogo 22 (receitas provisórias em 19.6).
+- P0.07a/P0.07b: registro monetário, conta de retenção (19.16), sumidouro explícito para fundação e melhorias de milícia, contratos A e B (19.11) e dotações de cenário.
+- Cenário (P1.18): quartéis, Exército e milícias iniciais, saldos e estoques iniciais.
+- Parâmetros de balanceamento provisórios [PROV]: janela de 30 dias, durações, pontuações, hospitalização por severidade, custos e melhorias de milícia, multiplicadores de patente.
+- Limitação aprovada: sem fórmula de dano; combate não reduz Saúde nesta versão.

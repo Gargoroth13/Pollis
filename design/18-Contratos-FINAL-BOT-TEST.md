@@ -19,7 +19,8 @@ Cada contrato possui duas partes identificadas pelo sistema e pode envolver, por
 - jogador ↔ jogador;
 - jogador ↔ empresa;
 - empresa ↔ empresa;
-- empresa ↔ governo, quando aplicável ao tipo de contrato governamental.
+- empresa ↔ governo, quando aplicável ao tipo de contrato governamental;
+- milícia ↔ empresa (Requisição Especial, comprador anônimo publicamente) e governo federal ↔ empresa (fornecimento ao Exército), conforme o adendo abaixo.
 
 O sistema registra a identidade real das partes para execução, auditoria e aplicação de penalidades.
 
@@ -203,3 +204,14 @@ O Bot Test deve verificar, no mínimo:
 10. encerramento normal;
 11. quebra antecipada;
 12. preservação do histórico após encerramento.
+
+---
+
+## 18.14. Adendo — partes militares (consolidação P0.01, 2026-10-13)
+
+O motor de contratos é reutilizado por 19 — Militar em dois fluxos distintos, sem duplicar a lógica do motor:
+
+- **Fluxo A — Requisição Especial:** comprador é a milícia (anônima publicamente; identidade real registrada para auditoria); fornecedor é empresa elegível; o banco da milícia financia; o pagamento fica em conta de retenção no fechamento e é liberado conforme as condições de entrega; o produto vai ao inventário da milícia; o imposto sobre vendas se aplica; não há taxa de correio; não fecha sem fundos suficientes ou garantia de fornecimento válida.
+- **Fluxo B — Fornecimento ao Exército:** comprador é o governo federal, pago com o caixa federal conforme o orçamento militar e os compromissos; entrega ao estoque militar institucional.
+
+As proteções contra pagamento duplo e entrega duplicada valem nos dois fluxos. O registro monetário (P0.07) deve garantir que o valor retido nunca esteja disponível ao mesmo tempo para comprador e vendedor.
