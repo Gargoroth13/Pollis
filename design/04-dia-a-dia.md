@@ -385,6 +385,8 @@ Enquanto hospitalizado, o jogador não pode realizar as ações de **Trabalhar, 
 
 A recuperação durante hospitalização utiliza as regras normais de Saúde e assistência médica.
 
+A hospitalização é um estado compartilhado e também pode ser imposta por outros sistemas, como o combate militar (19 — Militar), com duração conforme a severidade. Quando originada fora da Saúde = 0, ela não reduz a Saúde até que uma fórmula de dano seja aprovada, e bloqueia as mesmas atividades (Trabalhar, Estudar e Lazer) e as ações militares incompatíveis. O limite mínimo de Saúde para mobilização é uma regra separada, em 19.
+
 A duração exata da hospitalização e quaisquer regras adicionais associadas permanecem parametrizadas para calibração.
 
 ---

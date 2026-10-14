@@ -15,6 +15,8 @@ Prioridade:
 
 ## [ ] P0.01 — Auditoria final de documentos em REVIEW
 
+> **Estado (2026-10-14):** a consolidação documental das decisões aprovadas do Game Director (D1–D25) foi executada em PR único (branch `dev/p0.01-consolidacao-documental`). A tarefa **permanece não concluída** porque `06`, `11` e `19` seguem em **REVIEW** com pendências estruturais explícitas (`06` 06.36, `11`, `19` 19.48). Decisões e pendências: `CHANGELOG_DEV.md` ("P0.01 — consolidação documental").
+
 **Sistemas:** `06`, `11`, `19`, Sitemap  
 **Objetivo:** eliminar inconsistências remanescentes antes de depender desses documentos na implementação.
 
@@ -36,6 +38,27 @@ Critérios:
 - receitas possuem estrela mínima quando aplicável;
 - múltiplos ingredientes são suportados;
 - catálogo é utilizável como fonte única de seed.
+
+---
+
+## [ ] P0.07 — Registro monetário (ledger)
+
+Pré-requisito transversal: não existe sistema de dinheiro em nenhum documento nem na fila. Posição: depois de P0.01 e P0.02, antes de P1.02. Duas fases:
+
+- **P0.07a — Documento de design** para aprovação do Game Director (sem código);
+- **P0.07b — Implementação**, somente após aprovação do P0.07a.
+
+Direções (não substituem a aprovação do P0.07a):
+- contas para jogadores, empresas, União, Estados, Municípios, milícias e contas de retenção;
+- transferências atômicas e idempotentes; log auditável;
+- conservação monetária com origem e destino explícitos; sem saldo negativo;
+- obrigações pendentes separadas do caixa; precisão em centavos; detalhamento `Explained` (`20`);
+- saldos iniciais de jogadores e caixas de governo configurados por cenário, sem valor inventado; o cenário sinaliza a lacuna e não inicia silenciosamente;
+- toda cobrança precisa de destinatário real ou sumidouro explícito e auditável;
+- natureza do lançamento (para `recebido_hoje` do limite salarial, `11` 11.1.0);
+- antes do P0.07b, o P0.07a deve explicar a relação com títulos e dívida pública; P1.09 não pode criar dinheiro por emissão de dívida e deve declarar a origem dos recursos.
+
+**Em aberto até o P0.07a:** destino de viagem, correio, tratamento, fundação de empresa, leilão de lotes, custos de milícia e campanhas; valores iniciais.
 
 ---
 
@@ -166,6 +189,8 @@ Implementar a estrutura central de `22`.
 
 ## [ ] P1.02 — Inventário
 
+**Depende de P0.07.**
+
 > **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FOOD_VALUES_UNDEFINED` (Nutrição e intensidade de QoL numéricas; ordenação para o auto-consumo), `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED` (taxa de correio). Ver `CHANGELOG_DEV.md` (2026-10-11).
 
 Implementar `05`.
@@ -180,6 +205,8 @@ Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos 
 
 ## [ ] P1.04 — Empresas
 
+**Depende de P0.07.** Pendente com `02`: como o Dono recebe (salário, participação, lucros), distinto de propriedade; nenhum sistema de dividendos foi inventado.
+
 > **Herdado do P1.03:** Trabalho sem emprego continua permitido hoje (P0.04). Empresas deve acrescentar emprego/contexto de atividade via provedor de bloqueio e `ActivityContext`, usando o Action Registry existente (sem caminho paralelo). Decisão do GD (2026-10-12) em `CHANGELOG_DEV.md`.
 
 > **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FINISHINGS_UNDEFINED`, `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. A produção deve consultar `catalog.services.check_production_ready` e **recusar** enquanto houver `UNSPECIFIED_DESIGN_VALUE`. Ver `CHANGELOG_DEV.md` (2026-10-11).
@@ -188,11 +215,15 @@ Implementar `02` utilizando `22` como fonte de produtos/receitas.
 
 ## [ ] P1.05 — Mercado e transparência
 
+**Depende de P0.07.**
+
 > **Pendências herdadas do P1.01:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED` (`CHANGELOG_DEV.md`, 2026-10-11).
 
 Implementar mercado e estatísticas de `17`.
 
 ## [ ] P1.06 — Escolas e universidades
+
+**Depende de P0.07 se houver custos.**
 
 Implementar `03`.
 
@@ -206,6 +237,8 @@ Implementar `10`.
 
 ## [ ] P1.08 — Contratos
 
+**Depende de P0.07.** Adendo de partes militares (milícia anônima; governo federal comprador): `18` 18.14.
+
 Implementar `18`.
 
 ---
@@ -213,6 +246,8 @@ Implementar `18`.
 # P1 — Governo e política
 
 ## [ ] P1.09 — Orçamento público
+
+**Depende de P0.07.** Não pode criar dinheiro por emissão de dívida; deve declarar a origem dos recursos. Pisos setoriais só no orçamento municipal (opção A provisória, `11` 11.2.1); teto de déficit aberto até o P0.07a. Atribuição territorial da arrecadação e retenção: `09` §45.
 
 Implementar `09`.
 
@@ -222,7 +257,9 @@ Implementar `07`.
 
 ## [ ] P1.11 — Política
 
-Depois da consolidação de `06` e `11`, implementar cargos, eleições, Câmara, administração e sucessão.
+**Depende de P0.07** (salários). Depois da consolidação de `06` e `11`, implementar cargos, eleições, Câmara, administração e sucessão.
+
+Ações, validações e telas pendentes registradas pela consolidação P0.01 (sem implementação ainda): indicar/alterar substituto com histórico; eleição extraordinária por substituto inelegível/indisponível; vacância até a posse com prazos suspensos; sorteio auditável por semente; dois contadores (mandatos consecutivos x concluídos); crédito de serviço anterior por cenário; exceção de posse por deposição. Risco R-BT-01: o cenário inicial não pode deixar territórios inoperantes (contas reais de bots com residências; sem NPC e sem exceção de elegibilidade).
 
 ## [ ] P1.12 — Leis paramétricas
 
@@ -254,7 +291,7 @@ Usar `SITEMAP-REVIEW.md` para construir a navegação principal sem bloquear aju
 
 ## [ ] P1.17 — Militar
 
-Depois da limpeza final de `19`, implementar Milícia, Exército, mobilização, prontidão, treinamento, conflito e integração econômica.
+**Depende de P0.07** e de `19` fora de REVIEW (pendências em 19.48: multiplicadores de patente, receitas D24, fórmula de dano, fallback da QoL nacional). Implementar Milícia, Exército, mobilização, prontidão, treinamento, conflito e integração econômica.
 
 ---
 

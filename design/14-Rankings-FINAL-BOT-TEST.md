@@ -128,6 +128,8 @@ Representa a maior organização do jogo segundo a quantidade atual de membros.
 
 No Bot Test, a aplicação prática do ranking é principalmente sobre **milícias**, utilizando a quantidade de membros da organização.
 
+O anonimato de uma milícia (19 — Militar, 19.7.4) oculta a composição de membros, não o número de membros; o ranking continua usando a contagem.
+
 ---
 
 ## 14.3.10. Conta mais antiga

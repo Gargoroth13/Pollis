@@ -66,11 +66,13 @@
 | Armaduras Improvisadas | Aço + Plástico | Não existe |
 | Kit Médico | Lã + Materiais Hospitalares | Não existe |
 
-**Produtos militares do Exército — sem receita de produção, comprados pelo governo**
+**Produtos militares do Exército — receitas em aberto (P0.02, D24)**
 
 Armas militares
 Armaduras militares
 Kits médicos
+
+**Nota P0.01 (2026-10-13):** a decisão do Game Director é que armas, armaduras e kits médicos do Exército não podem surgir do nada. Ainda não existe receita aprovada; insumos, setor produtor, estrela mínima, origem/processo e compatibilidade com catálogo e mercado ficam para a P0.02. Esses produtos são distintos das armas, armaduras e kits improvisados das milícias. O cenário pode iniciar com uma dotação explícita de itens no estoque militar. O setor `military_procurement` permanece sem receita até a decisão. O produto aqui chamado de Kit Médico aparece em 19 — Militar como "Kits de primeiros socorros"; a nomenclatura é unificada na P0.02.
 
 ### 2.2 Matriz — definida por terreno, não por skill 🤝
 

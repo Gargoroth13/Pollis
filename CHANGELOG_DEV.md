@@ -4,6 +4,40 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-14 — P0.01 — consolidação documental (D1–D25)
+
+Consolidação, em PR documental único, das decisões aprovadas do Game Director (2026-10-12 a 2026-10-13). **Somente documentos**: nenhum código, teste ou migração foi alterado. `06`, `11` e `19` **permanecem em REVIEW**; `07` e `09` permanecem FINAL (alterações mínimas/aditivas).
+
+### Decisões consolidadas
+- **D1** limite de mandatos consecutivos (padrão 2, mín. 1, máx. 10). **D2** desempate por sorteio com semente registrada, auditável (Prefeito, Governador, última vaga da Câmara). **D3** sem candidatos: titular permanece e abre-se nova janela de 7 dias; sem titular o cargo fica vago; transferências não distribuídas ficam no nível superior; quórum sobre cadeiras ocupadas.
+- **D4a/b/c** cenário configurável com ocupantes reais; "exercer" = posse + mandato estatutário completo; crédito de serviço anterior só por cenário; Exército/milícias iniciais com dotações de origem documentada, sem NPC. Dois contadores: mandatos consecutivos x concluídos.
+- **D5** ciclos eleitorais independentes por cargo, inclusive Câmara. **D6** indicação de substituto por titular (inclusive cada Deputado), alterável com histórico; substituto inelegível/indisponível → eleição extraordinária; vacância até a posse, prazos suspensos; assumir outro cargo vaga o anterior.
+- **D7** posse por deposição é exceção aos requisitos; emprego encerrado; propriedade preservada com restrição a contratos públicos; cargo anterior vago; mandato conta para o limite consecutivo (não para experiência); liderança da milícia transferida. Propriedade ≠ salário de Dono ≠ lucros (pendente `02`/P1.04).
+- **D8** pagadores: União (Presidente, Deputados), Estado (Governador), Município (Prefeito); acumula diariamente; sem caixa → obrigação pendente.
+- **D9** `07` prevalece: só Presidente e Deputados formalizam projetos temporários. **D10** `recebível/dia = max(W, min(S, T))`; salário político fora de S, sujeito a T, com validação T ≥ maior salário político; militar: Físico, `W × m_patente`; grupo acoplado `{W, T, 4 multiplicadores}`; `recebido_hoje` só conta remuneração sujeita ao limite. **D11** Carisma mínimo único. **D12** (provisório, opção A) base dos pisos = receitas do Município em 30 dias; teto de déficit aberto. **D13** piso constitucional de Educação 5%. **D14** imposto sobre lucro e leis municipais fora do primeiro Bot Test.
+- **D18a/b** Exército federal; quartéis = Infraestrutura, salários/operação = Militar; atribuição territorial da arrecadação; retenção em conta do registro monetário durante ação de milícia. **D19** `19` não pressupõe STF. **D20** hospitalização por combate sem reduzir Saúde até haver fórmula de dano. **D21** QoL nacional = média da QoL Base efetiva dos ativos (72h), snapshot diário, multiplicador só no Poder Operacional da milícia. **D22** militar não ocupa cargo político; sucessão da liderança da milícia; propriedade de empresa não se estende a militares. **D23** dois fluxos de contrato (A: Requisição Especial; B: fornecimento ao Exército). **D24** princípio aprovado, receitas abertas para P0.02. **D25** locais institucionais mínimos.
+- **P0.07** registro monetário (7a design, 7b implementação) criado na fila; "Depende de P0.07" em P1.02, P1.04, P1.05, P1.06 (se custos), P1.08, P1.09, P1.11, P1.17.
+
+### Documentos alterados
+`06` (REVIEW; seção 06.36), `07` (07.9, 07.17, 07.19, 07.24), `09` (§45), `10`, `11` (REVIEW), `18` (18.14), `19` (REVIEW; seção 19.48), `01` (nota 1.7), `04` (§14), `14` (14.3.9), `21` (21.60), `22` (nota militar), `SITEMAP-REVIEW`, `TASK_QUEUE`.
+
+### Textos que precisam de confirmação do Game Director
+- **D2:** o texto mantém segundo turno para empate presidencial (06.8); sorteio só para os demais cargos.
+- **D7:** encerramento de emprego aplicado a toda posse política (06.23).
+- **D12:** mesma base de 30 dias aplicada aos três pisos (Educação, Saúde, Infraestrutura).
+- **D17:** interregno após deposição (06.25) registrado como `[ABERTO]`.
+- **D21:** fallback da QoL nacional sem jogadores ativos (19.42).
+- **Divergência** `01` §1.7 x `recebido_hoje` (nota no `01`).
+- **Nomenclatura:** `22` usa "Kit Médico"; `19` usa "Kits de primeiros socorros" (unificar na P0.02).
+
+### Pendências abertas
+D3 (intervalo entre janelas), D15, D16, D17, teto de déficit, receitas militares (D24), multiplicadores de patente, valores iniciais de dinheiro, destinos de cobranças (viagem, correio, tratamento, fundação, leilão, custos de milícia, campanhas), pagamento do Dono, aprovador de mudança de uso (P1.07), escopo de "contrato público" (06.23). Risco **R-BT-01** (cenário inicial não pode deixar territórios inoperantes): contas reais de bots com residências, sem NPC e sem exceção de elegibilidade.
+
+### Verificação de consistência
+Sitemap §27–36 x dashboards do `21` (21.43–21.57): cobertos; lacuna encontrada e corrigida: "Bot ruim vs sistema ruim" (21.51) na tela de Anomalias.
+
+---
+
 ## 2026-10-12 — Action Registry (P1.03)
 
 ### Escopo

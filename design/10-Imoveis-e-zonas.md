@@ -182,7 +182,7 @@ O jogador que aluga o imóvel não se torna proprietário.
 
 O aluguel é uma forma permanente de utilização da propriedade enquanto o contrato estiver válido.
 
-O valor do aluguel é definido pelo proprietário, sujeito às leis municipais aplicáveis.
+O valor do aluguel é definido pelo proprietário, sujeito às leis federais aplicáveis (por exemplo, o controle de aluguel de 11 — Leis Paramétricas). Não existem leis municipais no primeiro Bot Test.
 
 10. Contrato de aluguel
 
@@ -381,7 +381,7 @@ A mudança não é realizada livremente pelo proprietário.
 O pedido deve ser analisado de acordo com:
 
 zoneamento vigente;
-leis municipais;
+leis federais aplicáveis;
 possíveis restrições do lote;
 projetos ou regras especiais.
 
@@ -457,7 +457,7 @@ Não existe um limite universal permanente de propriedades no sistema base.
 
 Um jogador ou empresa pode possuir múltiplos imóveis enquanto as regras vigentes permitirem.
 
-Leis municipais poderão posteriormente estabelecer limites de posse.
+O teto de posse é definido por lei paramétrica federal (11 — Leis Paramétricas); não existem leis municipais no primeiro Bot Test.
 
 28. Relação com a Construtora
 
@@ -578,7 +578,7 @@ Define Construtoras, Varejo, Serviços e demais empresas.
 Define os recursos utilizados pelo governo em contratos e infraestrutura.
 
 11 — Leis Paramétricas
-Define impostos, controle de aluguel, limites de posse e alterações de zoneamento.
+Define impostos, controle de aluguel e limites de posse. Alteração de zoneamento por lei não existe no primeiro Bot Test (11, 11.7); a mecânica de mudança de uso fica para P1.07 [ABERTO: quem aprova a mudança de uso].
 
 04 — Dia a Dia
 Utiliza a residência para efeitos de QoL e deslocamento.
@@ -617,3 +617,7 @@ Governo disponibiliza lote/projeto
 35. Status final
 
 FINAL — BOT TEST
+
+## Locais institucionais (consolidação P0.01, 2026-10-13)
+
+Escopo mínimo: locais institucionais vinculados a lotes existentes: uma Sede do Governo na capital, uma Prefeitura por cidade e quartéis definidos pelo cenário (19 — Militar, 19.3.1). A existência desses locais não implica que jogadores possam comprá-los, vendê-los ou construí-los.

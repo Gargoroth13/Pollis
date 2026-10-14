@@ -458,15 +458,24 @@ Política
 │   ├── Em discussão
 │   ├── Em votação
 │   ├── Aguardando sanção/veto
+│   ├── Campanhas e projetos temporários
+│   ├── Constituição
 │   └── Histórico
+│
+├── Vacâncias e inatividade
+│   ├── Cargos vagos
+│   └── Indicadores de AFK político
 │
 └── Administração do cargo
     ├── Orçamento
     ├── Projetos
     ├── Nomeações
+    ├── Substituto designado (indicar/alterar, com histórico)
     ├── Decisões administrativas
     └── Pendências
 ```
+
+> Consolidação P0.01: as páginas "Substituto designado", "Cargos vagos", "Indicadores de AFK político", "Constituição" e "Campanhas e projetos temporários" são **telas planejadas**; as ações correspondentes estão pendentes em `TASK_QUEUE.md`.
 
 A interface de cada cargo deve mostrar somente as ações que aquele cargo pode realizar.
 
@@ -587,7 +596,8 @@ Militar
 │   ├── Inventário
 │   ├── Produção
 │   ├── Melhorias
-│   └── Ações
+│   ├── Ações
+│   └── Requisições Especiais
 │
 ├── Conflitos
 │   ├── Ativos
@@ -595,8 +605,12 @@ Militar
 │   ├── Histórico
 │   └── Página do conflito
 │
+├── Orçamento do Exército (federal; visão do Presidente e consulta pública)
+├── Fornecimento ao Exército (contratos do governo federal)
 └── Equipamentos
 ```
+
+Locais institucionais (Sede do Governo, Prefeituras e quartéis do cenário) aparecem como páginas de lote em Geografia/Imóveis, sem ações de compra, venda ou construção por jogadores (`19`, 19.3.1).
 
 ## Página do conflito
 
@@ -1033,6 +1047,7 @@ Anomalias
 ├── Mercado
 ├── Progressão
 ├── Performance
+├── Bot ruim vs sistema ruim (classificação de causa, `21`, 21.51)
 └── Histórico
 ```
 

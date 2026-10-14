@@ -184,6 +184,8 @@ O limite salarial é diário, e não por clique de trabalho.
 A implementação deve manter um contador simples do total recebido pelo jogador
 naquele dia.
 
+[Nota P0.01 — divergência registrada para revisão documental] A decisão do Game Director (2026-10-13) restringe o contador à remuneração sujeita ao limite (salários e soldo pagos por empregadores). Não contam: doações, reembolsos, recebimentos de vendas, transferências, lucros/distribuições, dotações, indenizações e recebimento de dívidas. Salário político não entra no limite S, mas está sujeito ao teto legal T. Fórmula completa em 11 — Leis Paramétricas, 11.1.0. Isso exige uma natureza em cada lançamento do registro monetário (P0.07). O texto acima ("total recebido") deve ser revisado para refletir essa definição.
+
 Exemplo conceitual:
 
 ganho_hoje
