@@ -34,6 +34,9 @@ RECIPE_SECTORS = COMPANY_SECTORS | {Sector.MILITIA}
 # Setores em que "estrela mínima" não se aplica (22: "Não existe" para milícia).
 NO_STAR_SECTORS = frozenset({Sector.MILITIA})
 MILITARY_SECTORS = frozenset({Sector.MILITIA, Sector.MILITARY_PROCUREMENT})
+# Produtor dos produtos militares do Exército (GD 2026-10-15): empresas Industriais, sub-tipo Produção. O setor
+# MILITARY_PROCUREMENT descreve o PRODUTO (fornecido ao Exército por contrato federal); quem o PRODUZ é esta empresa.
+ARMY_PRODUCER_SECTOR = Sector.INDUSTRIAL_PRODUCTION
 
 MIN_STARS, MAX_STARS = 1, 5          # 22 usa 1★ a 5★ (02 §14)
 

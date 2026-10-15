@@ -85,7 +85,7 @@ class CommandTests(TestCase):
         out = StringIO()
         call_command("check_catalog", "--pending", stdout=out)
         self.assertIn("integridade: OK", out.getvalue())
-        self.assertIn("PENDÊNCIA GAP_ARMY_PRODUCER_SUBTYPE_UNDEFINED", out.getvalue())
+        self.assertIn("PENDÊNCIA GAP_OPERATIONAL_MATERIALS_UNDEFINED", out.getvalue())
 
     def test_check_fails_on_an_empty_catalog(self):
         with self.assertRaises(CommandError):

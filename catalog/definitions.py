@@ -282,10 +282,6 @@ KNOWN_GAPS: Tuple[Gap, ...] = (
         "catálogo) não estão no 22. Limitação conhecida e aprovada (GD 2026-10-14, Q10): a primeira implementação de "
         "Empresas funciona sem esse custo recorrente e não cobra insumos operacionais ocultos.",
         ("02 §10", "02 §20"), ("P1.04",)),
-    Gap("GAP_ARMY_PRODUCER_SUBTYPE_UNDEFINED",
-        "Os produtos militares do Exército são produzidos por empresas Industriais (GD 2026-10-14, Q4), mas o 02 não diz "
-        "qual dos quatro sub-tipos Industriais (Produção, Alimentícia, Bens de consumo, Tecnológica) os produz.",
-        ("02 §2.2", "22 §2.3"), ("P1.04",)),
     Gap("GAP_VEHICLE_RELATION_UNDEFINED",
         "'Carro' é produto de Bens de consumo (5★), mas veículos foram adiados de propósito (04 §21; 05 §9): não há "
         "relação entre o produto Carro e o veículo ativo/viagem.",
