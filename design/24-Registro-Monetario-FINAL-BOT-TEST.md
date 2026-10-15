@@ -1,6 +1,6 @@
 # 24 — Registro Monetário (Ledger)
 
-**Status: REVIEW — documento de design da P0.07a, aguardando aprovação do Game Director.** Nenhum código foi escrito. A implementação (P0.07b) só começa depois da aprovação.
+**Status: FINAL — BOT TEST.** Aprovado pelo Game Director em 2026-10-15 (decisão sobre P0.02 e P0.07a), com as correções A–D e os ajustes de R1–R10 incorporados abaixo. A implementação é a P0.07b; o teto de déficit (§24.16) está decidido e sua implementação pertence à P1.09/P1.12.
 
 Este documento define **como o dinheiro existe, circula e é auditado** no Polis. Ele **não** define quanto custa nada, quem paga o quê nem alíquotas: isso pertence aos documentos de cada sistema (`02`, `04`, `05`, `09`, `10`, `11`, `18`, `19`...). O registro monetário só oferece as ferramentas e as garantias de integridade.
 
@@ -17,6 +17,7 @@ Este documento define **como o dinheiro existe, circula e é auditado** no Polis
 | `21` 21.60 | Dotações de cenário, contas reais, sem NPC e sem transação fictícia |
 | `CLAUDE.md` §5.2 | Conservação monetária: transferência move dinheiro existente; dinheiro novo só por fonte documentada |
 | Q1 (2026-10-14) | Fonte de dinheiro = dotação inicial explícita por conta, como lançamento de emissão; fonte contínua durante a formação da população; zero válido se explícito; valor ausente → cenário recusa iniciar; sem emissão periódica discricionária |
+| GD 2026-10-15 | R1–R10 aprovadas com ajustes; teto de déficit decidido (§24.16); correções A–D (conservação bruto/reservado/disponível, ordem de liquidação estável, retenção genérica sem módulo militar, auditoria) |
 | Q2 (2026-10-14) | Destinos: viagem, correio e fundação de empresa → caixa federal; leilão de lote público → Município do lote; milícia (fundação/melhorias) → sumidouro; campanhas → caixa federal pagador, destino final sumidouro; tratamento → hospital/prestador (`04` §13) |
 
 ---
@@ -77,17 +78,27 @@ O Exército **não tem conta própria**: o orçamento militar é federal e usa o
 - Contas **nunca são excluídas**. O fechamento de um dono (ex.: empresa dissolvida) é uma regra do sistema dono; o registro só impede mover dinheiro para uma conta marcada como encerrada (`ACCOUNT_CLOSED`), e exige saldo zero para encerrar.
 - O saldo guardado na conta é uma **cópia de desempenho**: a verdade é a soma dos lançamentos. Um comando de auditoria reconstrói os saldos a partir do log e compara (§24.17).
 
-### 24.3.3. Conservação em fórmula
+### 24.3.3. Saldo bruto, reservado e disponível; conservação
+
+Três conceitos distintos, **sem sobreposição**:
+
+| Conceito | Definição |
+|---|---|
+| **Saldo bruto** | Soma dos lançamentos da conta. É o dinheiro que a conta possui, **incluindo** o que está reservado |
+| **Reservado** | Soma das reservas ativas da conta (§24.7). Faz **parte** do saldo bruto; não é conta, nem retenção, nem dinheiro adicional |
+| **Disponível para gastar** | `saldo bruto − reservado`. Só serve para **autorizar gasto**; nunca entra na conservação |
 
 ```text
-soma(saldo de TODAS as contas, incluindo ISSUANCE) = 0
-emitido_total = −saldo(ISSUANCE)
-emitido_total = disponível + retido + sumidouro
+soma(saldo bruto de TODAS as contas, incluindo ISSUANCE) = 0
+emitido_total = −saldo bruto(ISSUANCE)
+emitido_total = saldos brutos das contas operacionais + retenções + sumidouro
 ```
 
-- **disponível** = soma dos saldos de `PLAYER`, `COMPANY`, `UNION`, `STATE`, `MUNICIPALITY`, `MILITIA_BANK` (menos reservas, quando se quer o *líquido*);
-- **retido** = soma dos saldos de `RETENTION` (dinheiro que existe e voltará a circular);
-- **dinheiro em circulação** (Q2) = disponível + retido, **excluído** o sumidouro.
+- **contas operacionais** = `PLAYER`, `COMPANY`, `UNION`, `STATE`, `MUNICIPALITY`, `MILITIA_BANK`;
+- **retenções** = saldo bruto das contas `RETENTION` (dinheiro que existe, em custódia, e voltará a circular);
+- **dinheiro em circulação** (Q2) = saldos brutos operacionais + retenções, **excluído** o sumidouro.
+
+A conservação usa **somente saldos brutos**. Reservas não são descontadas nessa fórmula e, portanto, não podem ser contadas duas vezes.
 
 ---
 
@@ -115,7 +126,7 @@ emitido_total = disponível + retido + sumidouro
 | `competence_day` | Dia de jogo de competência (§24.12) |
 | `at` | Instante de jogo (`core.timeline`), mais o instante real para auditoria |
 | `category`, `operation` | Para contas públicas: categoria orçamentária (`09` §12) e operação (§34). Texto livre validado quando a categoria for definida pela P1.09 |
-| `reference_kind`, `reference_id` | Fato gerador: `scenario`, `law`, `project`, `contract`, `journey`, `action`, `obligation`, `hold`, `bond`... |
+| `reference_kind`, `reference_id` | **Obrigatórios** (`REFERENCE_REQUIRED`). Fato gerador: `scenario`, `law`, `project`, `contract`, `journey`, `action`, `obligation`, `hold`, `bond`... |
 | `actor` | Quem pediu: jogador, `system` ou `scheduler`. Bot e humano são o mesmo tipo de ator |
 | `from_balance_before/after`, `to_balance_before/after` | Saldos de cada lado (`09` §34) |
 | `explained` | Detalhamento estruturado do cálculo que originou o valor, quando houve (§24.14) |
@@ -135,13 +146,13 @@ Todas devolvem `ActionResult` (padrão do projeto): `ok` + código + detalhe est
 | `quote(…)` / `can_afford(account, amount)` | Consulta **sem** mover dinheiro; devolve `Explained` (saldo, reservas, disponível, falta). É o que o `check_action` do Action Registry usa |
 | `hold` / `release_hold` / `consume_hold` | Reservas (§24.7) |
 | `open_obligation` / `settle_obligations` | Obrigações pendentes (§24.9) |
-| `accrue_remuneration` | Remuneração com limites S/T (§24.12) |
+| `submit_remuneration` / `liquidate_remuneration` / `pay_remuneration_now` | Remuneração com limites S/T e **ordem de liquidação estável** (§24.12) |
 | `grant_scenario_allocation` | Dotação (§24.11) |
 | `retain` / `release_retention` | Retenções (§24.10) |
-| `route_tax` | Destino do imposto de uma venda (§24.10.3) |
+| `register_tax_resolver` / `route_tax` | Interface de roteamento do imposto por território; sem módulo militar (§24.10.3) |
 | `reverse(entry, reason)` | Estorno técnico, auditado |
 
-`transfer` **recusa** as naturezas de remuneração (`NATURE_REQUIRES_PAYROLL`): salário, soldo, salário de Dono e salário político só passam por `accrue_remuneration`, para que ninguém contorne os contadores.
+`transfer` **recusa** as naturezas de remuneração (`NATURE_REQUIRES_PAYROLL`): salário, soldo, salário de Dono e salário político só passam por `submit_remuneration`/`liquidate_remuneration`, para que ninguém contorne os contadores.
 
 ### 24.5.3. Atomicidade, concorrência e idempotência
 
@@ -164,8 +175,10 @@ Erro técnico (não regra de jogo) se corrige com `REVERSAL`: novo lançamento n
 Uma reserva marca um valor da **própria conta** como indisponível, sem movê-lo.
 
 ```text
-saldo_disponível = saldo − soma(reservas ativas)
+disponível_para_gastar = saldo bruto − soma(reservas ativas)
 ```
+
+A reserva **não altera o saldo bruto** e não é descontada na conservação (§24.3.3).
 
 Usos previstos:
 
@@ -245,12 +258,14 @@ O valor retido está **na conta de retenção**, não no saldo do comprador nem 
 
 Sem retenção: o caixa federal **reserva** o valor (`Hold`, §24.7) quando o contrato é aceito; cada entrega **consome** a reserva e paga o fornecedor. As proteções contra pagamento e entrega duplos usam a idempotência (§24.5.3).
 
-### 24.10.3. Retenção de arrecadação durante ação de milícia (`19` 19.16, `09` §45.6)
+### 24.10.3. Retenção genérica e roteamento tributário (`19` 19.16, `09` §45.6)
 
-- Existe **uma conta `RETENTION` por ação de milícia** sobre uma região.
-- Função única `route_tax(territory, at)` devolve o destino de qualquer imposto: **caixa federal**, ou a conta de retenção da ação **ativa** que cobre a região do imposto (atribuição territorial, `09` §45.5). Nenhum sistema escolhe o destino por conta própria.
-- Só o imposto **efetivamente arrecadado** e vinculado à região **durante** a ação é retido; os 30 dias anteriores não são retirados retroativamente.
-- Encerramento (decidido pelo sistema militar): **vitória da milícia** → `RETENTION_RELEASE` ao banco da milícia; **repressão, derrota ou falha** → `RETENTION_RELEASE` ao caixa federal. Nada fica em custódia depois do encerramento. Se o destino não existir ou estiver encerrado, o registro recusa e o estado fica pendente e auditável; ele não escolhe um beneficiário novo ("nenhum beneficiário é inventado").
+O registro oferece **mecanismo genérico**; a regra militar pertence à P1.17. A P0.07b **não importa nem presume** nenhum módulo militar.
+
+- **Retenção genérica**: `open_retention(purpose, owner_ref)` cria uma conta `RETENTION` com identificador opaco (`owner_ref`, ex.: `contract:123`, `militia_action:7`). `retain` move dinheiro para ela; `release_retention(retention, destino, nature)` move o saldo (todo ou parte) para um **destino escolhido por quem chama** e recusa se o destino não existir ou estiver encerrado (`ACCOUNT_CLOSED`/`ACCOUNT_NOT_FOUND`); nenhum beneficiário é inventado. A conta só pode ser encerrada com saldo zero.
+- **Roteamento tributário**: `route_tax(territory_ref, at)` devolve a conta de destino de um imposto. `territory_ref` é um par opaco (`("city", id)`, `("state", id)`...), vindo da atribuição territorial de `09` §45.5. O destino padrão é a `UNION`. Outros módulos **registram resolvedores** com `register_tax_resolver(name, fn)`, onde `fn(territory_ref, at)` devolve uma conta de retenção ou `None`. Resolvedores são consultados em ordem alfabética do nome; se dois devolverem contas **diferentes**, o roteamento recusa com `TAX_ROUTE_AMBIGUOUS` (nunca escolhe por ordem de chegada). Sem resolvedor registrado, o imposto vai à `UNION`.
+- **Ligação militar (P1.17)**: a P1.17 registra um resolvedor que consulta as ações de milícia ativas e devolve a conta de retenção da ação que cobre o território; ao encerrar a ação, ela chama `release_retention` para o banco da milícia (vitória) ou para a `UNION` (repressão, derrota, falha), conforme `19` 19.16. Só o imposto **efetivamente arrecadado durante** a ação é roteado; os 30 dias anteriores não são retirados retroativamente.
+- A mesma receita **nunca** está em dois lugares: o imposto roteado vai **ou** à `UNION` **ou** à retenção, numa única perna.
 
 ### 24.10.4. Sumidouro (Q2)
 
@@ -274,44 +289,65 @@ Sem retenção: o caixa federal **reserva** o valor (`Hold`, §24.7) quando o co
 
 ## 24.12. Remuneração: contadores `C_S` e `C_T`
 
-Implementa 11.1.0 **sem alterar** a regra aprovada.
+Implementa 11.1.0 **sem alterar** a regra aprovada, com **ordem de liquidação estável**.
 
 ### 24.12.1. Dados
 
-`(jogador, dia_de_competência)` guarda `C_S` e `C_T` em centavos. Parâmetros lidos no instante do lançamento: `W` (salário mínimo), `S = 1.5 × skill relevante` (`skills.balance`, `[PROV]`; Físico para soldo), `T` (teto legal; `∞` se não houver). Leis passam a valer no instante de vigência (D15): um valor já lançado **não é recalculado** quando a lei muda.
+Por `(jogador, dia_de_competência)` o registro guarda, em centavos: `C_S`, `C_T` e `C_P` (parcela **política** já reconhecida; subconjunto de `C_T`). Parâmetros lidos no instante da liquidação: `W` (salário mínimo), `S = 1.5 × skill relevante` (`skills.balance`, `[PROV]`; Físico para soldo), `T` (teto legal; `∞` se não houver). Leis passam a valer no instante de vigência (D15): valor já reconhecido **não é recalculado** quando a lei muda.
 
-### 24.12.2. Cálculo (determinístico)
+O salário político devido de um dia vem de um **provedor** registrado pela P1.11 (`register_political_due_provider(fn)`, `fn(jogador, dia) → centavos`); sem provedor, `P_dia = 0`. O registro não conhece cargos.
+
+### 24.12.2. Reserva política sem dupla subtração
+
+```text
+P_reservada = max(0, P_dia − C_P)           # política ainda não reconhecida
+```
+
+- `P_reservada` é **derivada**, não guardada: ao reconhecer o salário político, `C_P` e `C_T` aumentam pelo valor reconhecido e `P_reservada` cai pelo mesmo valor (**consumo**). Se o valor reconhecido for menor que o devido (limitado por `T`), a diferença deixa de ser reservada (**liberação**), pois `P_dia` do dia já foi liquidado (marcação do dia como liquidado: `C_P` passa a valer como `P_dia`).
+- Se o jogador deixa o cargo antes do reconhecimento, o provedor devolve `P_dia = 0` e a reserva some; o substituto passa a ter a reserva a partir da posse e **não recebe retroativo** por períodos anteriores (R3).
+
+### 24.12.3. Cálculo
 
 ```text
 cap_S   = max(W, S)
 sobra_S = cap_S − C_S
-sobra_T = T − C_T − P_reservada            # T = ∞ → sem limite
-pagável_não_político = max(0, min(devido, sobra_S, sobra_T))
-pagável_político     = max(0, min(devido_político, T − C_T))
+sobra_T = T − C_T − P_reservada                 # T = ∞ → sem limite
+reconhecido_não_político = max(0, min(devido, sobra_S, sobra_T))
+reconhecido_político     = max(0, min(devido_político, T − C_T))
 ```
 
-- `P_reservada` = salário político **do dia** ainda não lançado para aquele jogador. Ele é **reservado desde o início do dia** em `sobra_T`, então o resultado da remuneração não política **não depende da ordem** em que os serviços pagam em relação ao salário político.
-- Entre remunerações **não políticas** do mesmo jogador no mesmo dia vale a **ordem do registro** (`seq`); em obrigações, o desempate é o id da obrigação.
+- A parcela política só **recebe prioridade** dentro de `T` porque `P_reservada` já foi subtraída de `sobra_T` das demais: o resultado não depende de quando o serviço político roda.
 - `W` prevalece sobre um `S` menor, mas **não cria dinheiro** e **não ultrapassa `T`**.
-- **Soldo**: `devido = W × m_patente` (Militar 1×, Capitão 2×, General 4×, Marechal 6×, `[PROV]`, parâmetros do sistema, não leis). O excedente acima do pagável **não é pago e não vira obrigação**.
-- Sem salário político: `pagável/dia = max(W, min(S, T))` (pois `T ≥ W`), como em 11.1.0.
+- **Soldo**: `devido = W × m_patente` (Militar 1×, Capitão 2×, General 4×, Marechal 6×, `[PROV]`, parâmetros do sistema, não leis); o excedente acima do reconhecível **não é pago e não vira obrigação**.
+- Sem salário político: `reconhecido/dia = max(W, min(S, T))` (pois `T ≥ W`).
 
-### 24.12.3. Competência e pagamento
+### 24.12.4. Ordem de liquidação estável (independente da ordem das chamadas)
 
-- **O contador conta o valor reconhecido (acumulado) no dia de competência**, não quando o dinheiro sai. O limite é aplicado **uma vez**, na competência; pagar depois (obrigação quitada) **não** reaplica limite nem altera contador de outro dia.
-- Fluxo de `accrue_remuneration(pagador, jogador, natureza, devido, dia, política, key)`:
-  1. calcula o pagável e o `Explained` (§24.14);
-  2. incrementa `C_S`/`C_T` do dia **na mesma transação** do pagamento;
-  3. se o pagador tem caixa → transfere; se não, aplica a **política declarada pelo sistema de origem**: `PENDING` (cria obrigação) ou `REFUSE` (nada é reconhecido, devolve `INSUFFICIENT_FUNDS`).
-- **Política por tipo de remuneração**: salário político → `PENDING` (aprovado). Salário de trabalho em empresa e do cargo Dono → **a decidir pela P1.04** (o `02` não diz o que acontece quando o caixa da empresa não cobre o salário; o registro suporta as duas políticas). Soldo e salário de servidores públicos → **a decidir pela P1.17/P1.09** (`09` §13 os classifica como despesa obrigatória; o registro suporta `PENDING` e `REFUSE`); o soldo excedente já foi descartado antes.
-- **Imposto de renda** (`11`: "reduz o salário líquido recebido"): o valor reconhecido nos contadores é o **bruto pagável**; o pagador paga o bruto, dividido numa transação em **líquido ao jogador + imposto à `route_tax`** (R1).
-- **Dia**: dia de jogo (`core.timeline`, fuso do jogo). Não há acúmulo entre dias.
-- **Salário político**: acumula **uma vez por dia de jogo, no tick diário, para o ocupante naquele instante**; o substituto passa a acumular a partir da posse. A `P_reservada` acompanha o ocupante (R3). Se o jogador já consumiu `T` antes de tomar posse naquele dia, o pagável político é o que sobra (fórmula acima); o caso é raro e fica visível no `Explained`.
-- Salário político e do Dono: pagador é a conta do governo/empresa correspondente (`09` §45.4: União paga Presidente e Deputados; Estado, Governador; Município, Prefeito).
+Serviços **não pagam** remuneração diretamente: eles **submetem** pedidos (`submit_remuneration`) e uma **liquidação** (`liquidate_remuneration`) os processa **como um conjunto**, em ordem determinada **apenas por dados do próprio pedido**, nunca pela ordem de chegada:
 
-### 24.12.4. Validações de `T`
+```text
+chave = (classe, dia_de_competência, instante_do_fato, conta_pagadora, natureza, reference_kind, reference_id, key)
+classe 0 = salário político   |   classe 1 = demais remunerações
+```
 
-As validações de proposta (`T ≥ W`; `T ≥ maior salário político vigente`) pertencem a `11`/P1.12; o registro **não** as repete, mas **nunca** produz pagável negativo se estiverem violadas (usa `max(0, …)`).
+- `instante_do_fato` é o instante de jogo em que a remuneração foi devida (ex.: a ação de trabalho), não o instante em que a chamada chegou.
+- A liquidação ordena o conjunto pela `chave` e aplica as fórmulas **em sequência** (cada pedido vê o `C_S`/`C_T` deixado pelos anteriores da mesma ordenação). A **falta de caixa do pagador** é avaliada na mesma sequência global; por isso o conjunto reconhecido é o mesmo, qualquer que seja a permutação dos pedidos.
+- **Lote de liquidação**: tudo que for submetido antes de uma chamada de `liquidate_remuneration`. A folha diária (política, Dono, soldo, servidores periódicos) é processada **em um único lote por tick**; remuneração de trabalho, que nasce de uma ação, liquida no ato (`pay_remuneration_now` = submeter + liquidar um pedido). O que um lote anterior já reconheceu e pagou é **definitivo** (o dinheiro já se moveu): a estabilidade vale **dentro** do lote; entre lotes vale a ordem do tempo de jogo em que as liquidações ocorrem. Serviços **não devem** liquidar em pedaços o que pode ir em um lote.
+- A `key` de idempotência do pedido impede reconhecer o mesmo pedido duas vezes (mesmo lote ou lotes diferentes).
+
+### 24.12.5. Competência, pagamento e imposto
+
+- **O contador conta o valor reconhecido no dia de competência**, não quando o dinheiro sai. O limite é aplicado **uma vez**, na liquidação; quitar depois uma obrigação **não** reaplica limite nem altera contadores de outro dia.
+- Para cada pedido reconhecido, na mesma transação: incrementa `C_S`/`C_T` (e `C_P`), e se o pagador tem caixa → transfere; se não, aplica a **política declarada pelo sistema pagador**: `PENDING` (cria obrigação, §24.9) ou `REFUSE` (nada é reconhecido; devolve `INSUFFICIENT_FUNDS`; o limite que sobrar vale para o próximo pedido da sequência). O tratamento de caixa insuficiente é **responsabilidade do sistema pagador**.
+- **Política por tipo**: salário político → `PENDING` (aprovado). Salário de trabalho e do Dono → **P1.04** decide (`02` não diz). Soldo e servidores públicos → **P1.17/P1.09** (`09` §13 os classifica como despesa obrigatória). O registro suporta as duas políticas.
+- **Imposto de renda** (R1): os contadores usam a remuneração **bruta** reconhecida; o imposto divide o bruto pago pelo pagador em **líquido ao jogador** + **imposto à conta tributária** (`route_tax`), numa só transação.
+- **Dia**: dia de jogo (`core.timeline`, fuso do jogo); sem acúmulo entre dias.
+- **Salário político** (R3): reconhecido **no tick diário** para o ocupante elegível naquele instante; pagador: União (Presidente e Deputados), Estado (Governador), Município (Prefeito) (`09` §45.4).
+- Explicabilidade: o `Explained` do pedido traz `devido`, `W`, `S`, `T`, `C_S`, `C_T`, `C_P`, `P_reservada`, `sobra_S`, `sobra_T`, qual limite restringiu, reconhecido, descartado, pendente, imposto e líquido, e a posição do pedido na ordenação.
+
+### 24.12.6. Validações de `T`
+
+As validações de proposta (`T ≥ W`; `T ≥ maior salário político vigente`) pertencem a `11`/P1.12; o registro **não** as repete, mas **nunca** produz valor negativo se estiverem violadas (usa `max(0, …)`).
 
 ---
 
@@ -363,34 +399,39 @@ Usa `core.breakdown.Explained`/`Calc` (valores `Decimal` exatos; o arredondament
 - O **estoque de dívida** (títulos, juros, vencimento, situação) é um dado da P1.09, não do registro. O registro fornece: as transferências, as reservas dos pagamentos futuros e as obrigações pendentes por serviço da dívida.
 - **Serviço da dívida sem caixa** → obrigação pendente + consequências de `09` §22 (atraso, restrições, crise); **nunca** emissão para evitar inadimplência.
 - A P1.09 **declara a origem dos recursos** de cada despesa financiada por dívida: o comprador do título. Empréstimo entre jogadores (`18`) usa o mesmo mecanismo (transferência real credor → devedor), sem criar dinheiro.
+- **Título é financiamento de caixa, não receita fiscal**: a venda de títulos fornece liquidez, **não reduz o déficit calculado** e **não contorna o teto** (§24.16). Despesa que ultrapassa o teto não se torna legal por ser financiada por dívida.
 
 ---
 
-## 24.16. Proposta: teto de déficit público (para decisão do Game Director)
+## 24.16. Teto de déficit público — decisão aprovada (GD 2026-10-15)
 
-`11` mantém o parâmetro "Teto de déficit público" (Federal, 0%–50%, padrão 10%, "déficit máximo permitido como % da receita anual de referência") como `[ABERTO]`, à espera desta arquitetura. **Proposta**, sem inventar mecânica nova além de definir os termos já citados:
+Fecha o `[ABERTO]` de `11` ("Teto de déficit público", Federal, 0%–50%, padrão 10%). A **implementação** pertence à P1.09/P1.12, não à P0.07b; a P0.07b fornece os dados (lançamentos por natureza, categoria e conta).
 
-**Definições** (para cada governo: União, cada Estado, cada Município; o parâmetro federal vale igual para todos):
+**Aplicação**: separadamente à **União**, a cada **Estado** e a cada **Município**, com o **mesmo parâmetro federal**.
 
-- **Receita** (R) = dinheiro **efetivamente recebido** na conta do governo por: impostos (União), transferências recebidas (Estados e Municípios), leilões de lote (Município), liberação de retenção ao caixa federal e demais receitas de natureza não financeira. **Não** conta: dotação de cenário, venda de títulos (financiamento) nem retenção ainda não liberada.
-- **Despesa** (E) = dinheiro **efetivamente pago** em despesas reais: obras, salários, soldo, subsídios, serviço da dívida (juros), campanhas etc. **Não** conta: repasses a níveis inferiores (são alocação de receita; o nível receptor os conta como receita) nem amortização de principal de título.
-- **Janela de referência**: últimos **360 dias de jogo (12 períodos de 30 dias)**, ou desde a abertura da conta se menor, **com mínimo de 30 dias**. `R_ref` = receita da janela **anualizada** (`R_janela × 360 / dias_da_janela`).
-- **Déficit** `Δ` = `E_janela − R_janela`, anualizado do mesmo jeito (`Δ ≤ 0` = superávit).
-
-**Regra**:
+**Janela**: móvel de **360 dias de jogo (12 períodos de 30 dias)**, ou desde a abertura da conta se menor, **com mínimo de 30 dias**; referência **anualizada**. Todas as quantias comparadas usam a **mesma unidade temporal**:
 
 ```text
-Δ_projetado = Δ + valor de novos compromissos DISCRICIONÁRIOS que a decisão cria
-exigido:     Δ_projetado ≤ teto% × R_ref
+R_ref   = R_janela × 360 / dias_da_janela           # receita de referência anualizada
+Δ_anual = (E_janela − R_janela) × 360 / dias_da_janela   # déficit anualizado (≤ 0 = superávit)
+Δ_proj  = Δ_anual + C_360
+exigido: Δ_proj ≤ teto% × R_ref
 ```
 
-- Vale **na aprovação de novas despesas discricionárias** (`09` §13, §31: projetos, subsídios novos, campanhas, investimentos). Se não cumprir: **recusa, redução, adiamento ou financiamento por dívida dentro do limite** (as opções de `09` §31).
-- Despesas **obrigatórias** (salários, serviço da dívida, contratos já assinados, constitucionais) **nunca** são recusadas pelo teto, mas contam em `Δ`. Passar do teto bloqueia só as novas discricionárias (`09` §24), sem criar dinheiro.
-- Com menos de 30 dias de histórico a regra **não bloqueia** (não há receita de referência), mas as restrições de caixa (saldo disponível, §24.7) e de `09` §31 continuam valendo.
-- Teto 0% = nenhuma discricionária nova que aumente o déficit; teto 50% = permite chegar a metade da receita anual de referência.
-- Explicabilidade: `Explained` com `Δ`, `R_ref`, teto, `Δ_projetado`, folga e o que restringiu.
+`C_360` = valor que o **novo compromisso discricionário** representa em pagamentos **dentro do horizonte projetado de 360 dias** (cronograma de pagamento do próprio compromisso; recorrente conta as parcelas do horizonte).
 
-**Decisão pedida ao GD**: aprovar, alterar ou rejeitar esta definição (janela de 360 dias anualizada; exclusão de repasses, financiamento e dotações; só discricionárias são bloqueadas). **Alternativa** (se preferir mais simples): usar só o período orçamentário de 30 dias (`09` §8), com `Δ_30d ≤ teto% × R_30d`; é mais fácil de explicar e mais sensível a oscilações. A recomendação é a janela de 360 dias, por casar com o texto de `11` ("receita anual"). A implementação é da P1.09/P1.12, **não** da P0.07b; sem decisão, o parâmetro continua não implementado.
+**Receita (R)**: dinheiro efetivamente recebido por impostos (União), **transferências recebidas** (Estados e Municípios; contam como receita do destinatário), leilões de lote (Município), liberação de retenção ao caixa federal e demais receitas não financeiras. **Não contam**: dotações iniciais de cenário, **emissão de títulos** e **dinheiro ainda retido**.
+
+**Despesa (E)**: dinheiro efetivamente pago em despesas reais (obras, salários, soldo, subsídios, campanhas, **juros pagos**...). **Não contam**: **transferências feitas a níveis inferiores** (não são nova despesa econômica para o remetente) e **amortização do principal** da dívida.
+
+**Efeito**:
+
+- O teto limita **novas despesas discricionárias** (`09` §13, §31). Recusa, redução, adiamento ou alteração para compensar; **financiar por dívida não torna legal** a despesa que passa do limite.
+- **Salários, obrigações existentes, contratos já assumidos e despesas constitucionais não são recusados** por esta regra, mas **continuam compondo** o déficit. Passar do teto bloqueia só as novas discricionárias (`09` §24).
+- **Menos de 30 dias de histórico**: o teto ainda **não bloqueia**; restrições de caixa, reservas (§24.7) e dívida continuam valendo.
+- **Dívida**: a emissão de títulos fornece liquidez com dinheiro de compradores reais, **não reduz o déficit calculado** e **não permite contornar o teto**; é fonte de financiamento de caixa, não receita fiscal.
+- Teto 0% = nenhuma discricionária nova que aumente o déficit anualizado; teto 50% = permite chegar a metade da receita de referência.
+- Explicabilidade (`20`): `Explained` com `R_ref`, `Δ_anual`, `C_360`, `Δ_proj`, teto, folga, dias da janela e o que restringiu.
 
 ---
 
@@ -401,14 +442,17 @@ exigido:     Δ_projetado ≤ teto% × R_ref
 1. soma de todos os saldos = 0;
 2. nenhuma conta comum com saldo < 0; `ISSUANCE` ≤ 0 e só se altera por `SCENARIO_GRANT`;
 3. saldo guardado = soma dos lançamentos de cada conta (reconstrução do log);
-4. `emitido_total = disponível + retido + sumidouro`;
+4. `emitido_total = saldos brutos operacionais + retenções + sumidouro` (reservas **não** entram na fórmula, §24.3.3);
 5. `SINK` nunca é origem;
 6. lançamentos imutáveis (sem `UPDATE`/`DELETE` via serviço; teste tenta e falha);
 7. toda transação com todas as pernas ou nenhuma; `seq` sem lacuna lógica;
 8. cada `key` de idempotência aparece uma vez;
-9. nenhuma reserva ativa maior que o saldo; nenhuma obrigação paga acima do devido;
+9. nenhuma reserva ativa maior que o saldo bruto; nenhuma obrigação paga acima do devido;
 10. `C_S` e `C_T` do dia = soma das remunerações reconhecidas naquela competência;
-11. remuneração só por `accrue_remuneration`; nenhuma natureza fora da lista.
+11. remuneração só por `submit_remuneration`/`liquidate_remuneration`; nenhuma natureza fora da lista;
+12. todo lançamento tem natureza, origem, destino e referência (`REFERENCE_REQUIRED`); estorno, retenção, liberação e dotação preservam as contrapartidas e apontam o original;
+13. `SINK` nunca é origem; só `SCENARIO_GRANT` tem origem `ISSUANCE`; título e empréstimo **transferem** dinheiro de contas existentes;
+14. o conjunto reconhecido em um lote de remuneração é **invariante à permutação** dos pedidos (§24.12.4).
 
 **Comandos** (P0.07b): `audit_ledger` (invariantes, exit code ≠ 0 se falhar) e `ledger_metrics` (emissão, circulação, retido, sumidouro, por tipo de conta, uso dos contadores). Logs estruturados e exportáveis (`CLAUDE.md` §8).
 
@@ -433,40 +477,42 @@ exigido:     Δ_projetado ≤ teto% × R_ref
 1. contas, lançamentos, transações, estorno, auditoria e imutabilidade;
 2. conservação, precisão em centavos, `MAX_AMOUNT`, idempotência, ordem de travamento;
 3. reservas e obrigações pendentes (com quitação determinística);
-4. contadores `C_S`/`C_T` e `accrue_remuneration`, com `Explained`;
+4. contadores `C_S`/`C_T`/`C_P`, submissão e **liquidação estável** de remuneração (`submit_remuneration`/`liquidate_remuneration`), com `Explained`;
 5. dotações de cenário e recusa por valor ausente (`SCENARIO_GRANT_UNSPECIFIED`);
-6. sumidouro e retenções (contrato e ação militar), `route_tax`;
+6. sumidouro, **retenções genéricas** e a **interface de roteamento tributário** (`register_tax_resolver`/`route_tax`), sem importar módulos militares (a ligação com ações de milícia é da P1.17);
 7. handler de pagamento da viagem; `audit_ledger` e `ledger_metrics`.
 
 **Fora** da P0.07b: caixa de empresa (P1.04), mercado e correio (P1.02/P1.05), orçamento, categorias e dívida (P1.09), teto de déficit, contratos (P1.08), milícias e Exército (P1.17), cenário completo (P1.18).
 
-**Testes obrigatórios**: caminho normal; limites (`MAX_AMOUNT`, 1 centavo, valores não inteiros em centavos); permissões (naturezas proibidas, origem `SINK`, emissão por natureza errada); estados inválidos (conta encerrada, mesma conta); efeitos econômicos (conservação após cada operação, em teste de propriedade com sequências aleatórias); idempotência (repetição e conflito); atomicidade (falha na 2ª perna não deixa a 1ª); concorrência (dois pagamentos disputando o mesmo saldo); reservas e obrigações (ordem de quitação, parcial, nunca cria dinheiro); contadores (ordem política × não política não altera o resultado; `W` > `S`; `T` binding; soldo excedente descartado; dia de competência; lei que muda depois do lançamento); retenção (valor nunca nos dois lados; liberação para o destino correto; sem retroatividade); dotação (zero explícito, ausente recusa, idempotência por conta); auditoria reconstrói saldos e detecta adulteração direta no banco.
+**Testes obrigatórios**: caminho normal; limites (`MAX_AMOUNT`, 1 centavo, valores não inteiros em centavos); permissões (naturezas proibidas, origem `SINK`, emissão por natureza errada); estados inválidos (conta encerrada, mesma conta); efeitos econômicos (conservação após cada operação, em teste de propriedade com sequências aleatórias); idempotência (repetição e conflito); atomicidade (falha na 2ª perna não deixa a 1ª); concorrência (dois pagamentos disputando o mesmo saldo); reservas e obrigações (ordem de quitação, parcial, nunca cria dinheiro); contadores (**permutar a ordem dos pedidos de um lote e verificar que o conjunto reconhecido é o mesmo**; ordem política × não política; reserva política consumida/liberada sem dupla subtração; `W` > `S`; `T` binding; soldo excedente descartado; dia de competência; lei que muda depois do lançamento); retenção genérica (valor nunca nos dois lados; liberação ao destino escolhido; destino inexistente recusa); roteamento tributário (padrão União; resolvedor registrado; ambiguidade recusa); invariante `emitido = brutos + retenções + sumidouro` com reservas ativas; dotação (zero explícito, ausente recusa, idempotência por conta); auditoria reconstrói saldos e detecta adulteração direta no banco.
 
 ---
 
-## 24.20. Interpretações técnicas registradas (padrões adotados; ratificáveis na aprovação)
+## 24.20. Interpretações técnicas R1–R10 (aprovadas pelo GD em 2026-10-15, com ajustes)
 
-Nenhuma altera mecânica aprovada. Cada uma é o padrão que a P0.07b usará **salvo objeção do GD**:
+Nenhuma altera mecânica de design.
 
-| Id | Interpretação |
+| Id | Interpretação aprovada |
 |---|---|
-| R1 | Os contadores `C_S`/`C_T` medem a remuneração **bruta** reconhecida; o imposto de renda é uma divisão do bruto pago pelo pagador (líquido ao jogador, imposto à União/retenção) |
-| R2 | O registro é **neutro quanto à incidência** do imposto sobre vendas: quem chama informa as pernas. Recomendação para P1.05/P1.08: o imposto é **retido do valor da venda** (o comprador paga o preço anunciado; o vendedor recebe preço − imposto), coerente com "reduz margens" em `11`. Compra do governo federal: a perna de imposto da União para a União **não gera lançamento** (fica no `Explained`) |
-| R3 | Salário político acumula uma vez por dia de jogo, no tick diário, para o ocupante naquele instante; `P_reservada` acompanha o ocupante |
-| R4 | Ordem de quitação de obrigações do mesmo devedor: competência mais antiga, depois id |
-| R5 | Base dos pisos municipais (`09` §45.3): "arrecadação própria" do Município = leilões de lote público; "transferências efetivamente recebidas" = repasses estaduais. Imposto atribuído por território (§45.5) é só rastreio e **não** compõe a base |
-| R6 | Centavos inteiros; arredondamento `HALF_EVEN` uma vez; última perna é o resto; `MAX_AMOUNT = 10^15` centavos `[PROV]` |
-| R7 | Reserva (mesma conta) e retenção (conta de custódia) são mecanismos distintos, com usos distintos (§24.7) |
-| R8 | "Município" do `09` = `City` do `08`; "Estado" = `State` |
-| R9 | A auditoria trata o saldo guardado como cache; a verdade é o log |
-| R10 | Fundação de milícia (`19` 19.7.1, "custo monetário"): o pagador é a conta do fundador, único dono existente no momento; melhorias saem do banco da milícia (`19` 19.8) |
+| R1 | Os contadores medem a remuneração **bruta** reconhecida; o imposto divide o valor entre o líquido ao jogador e a conta tributária. Caixa insuficiente é responsabilidade do sistema pagador |
+| R2 | Padrão para P1.05/P1.08: o comprador paga o preço anunciado; o imposto é **retido do valor da venda** e reduz o líquido do vendedor. Quando o comprador é o governo federal e o destino do imposto é a própria União, **não há transferência de uma conta para ela mesma**; o cálculo e a compensação ficam no `Explained` e na auditoria, **sem lançamento fictício** |
+| R3 | Salário político reconhecido no tick diário para o ocupante elegível; o substituto **não recebe retroativo** por períodos anteriores à posse; `P_reservada` acompanha o ocupante e é **reduzida pelo valor político reconhecido** (§24.12.2), para não ser descontada duas vezes |
+| R4 | Quitação de obrigações do mesmo devedor: competência mais antiga, depois id da obrigação |
+| R5 | Base dos pisos municipais: leilões de lote público + transferências efetivamente recebidas. Atribuição territorial de impostos federais é **rastreamento**, não receita municipal; outro tipo de receita municipal futura entra na base **só de forma explícita** |
+| R6 | Centavos inteiros; `HALF_EVEN`; última perna é o resto; `MAX_AMOUNT = 10^15` centavos `[PROV]` |
+| R7 | Reserva (valor fica na conta do dono, indisponível) x retenção (valor vai para custódia) |
+| R8 | Município = `City` do `08`; Estado = `State` |
+| R9 | Saldo guardado é cache; o histórico imutável de lançamentos é a verdade e o comando de auditoria reconstrói os saldos |
+| R10 | Fundação de milícia debitada da conta do fundador; melhorias debitadas do banco da milícia; ambas ao sumidouro |
 
 **Questões deixadas para tarefas seguintes (não bloqueiam a P0.07b)**:
 
-- **P1.04**: o `02` não diz o que ocorre quando o caixa da empresa não cobre um salário (política `PENDING` ou `REFUSE`); e como a empresa vira conta (fundação debita o fundador e credita a União; o capital inicial da empresa vem de transferência do dono, não de dinheiro novo).
-- **P1.05/P1.08**: incidência do imposto sobre vendas (R2) e quando o imposto de uma Requisição Especial é cobrado (recomendado: na liberação do escrow).
+- **P1.04**: política de caixa insuficiente da empresa no salário (`PENDING` ou `REFUSE`); capital inicial da empresa (transferência do dono, não dinheiro novo); produtor do Exército = Industrial/Produção (decidido).
+- **P1.05/P1.08**: aplicar R2; quando o imposto de uma Requisição Especial é cobrado (recomendado: na liberação do escrow).
 - **P1.06**: conta da escola particular (jogador dono ou empresa).
-- **P1.09**: categorias orçamentárias, comprometimento, serviço da dívida e o teto de déficit (§24.16).
+- **P1.09/P1.12**: categorias orçamentárias, comprometimento, serviço da dívida e **implementação** do teto de déficit (§24.16).
+- **P1.11**: provedor do salário político devido (§24.12.1).
+- **P1.17**: resolvedor tributário e uso de `release_retention` (§24.10.3).
 
 ---
 
@@ -478,4 +524,4 @@ Nenhuma altera mecânica aprovada. Cada uma é o padrão que a P0.07b usará **s
 
 ## 24.22. Status
 
-REVIEW — P0.07a. Ao ser aprovado pelo Game Director, passa a **FINAL — BOT TEST** e libera a P0.07b.
+FINAL — BOT TEST (aprovado pelo Game Director em 2026-10-15). Libera a P0.07b.

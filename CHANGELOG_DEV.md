@@ -4,32 +4,28 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
-## 2026-10-15 — P0.07a — registro monetário (documento de design)
+## 2026-10-15 — P0.07a — registro monetário (design/24, FINAL — BOT TEST)
 
-Documento novo `design/24-Registro-Monetario-REVIEW.md` (REVIEW), **sem código**. Incorpora Q1/Q2 e as decisões de 11.1.0, 09 §45, 18.14, 19.16 e 21.60. Branch `dev/p0.07a-registro-monetario` (PR sobre o #9).
+Documento `design/24-Registro-Monetario-FINAL-BOT-TEST.md`, **sem código**. Incorpora Q1/Q2 e as decisões de 11.1.0, 09 §45, 18.14, 19.16 e 21.60. **Aprovado pelo Game Director em 2026-10-15** (PR #10), com as correções A–D e os ajustes de R1–R10 incorporados. Branch `dev/p0.07a-registro-monetario`.
 
 ### O que define
-- **Contas** (`PLAYER`, `COMPANY`, `UNION`, `STATE`, `MUNICIPALITY`, `MILITIA_BANK`, `RETENTION`, `SINK`, `ISSUANCE`); conservação `soma(saldos)=0`, `emitido = disponível + retido + sumidouro`; sem saldo negativo (exceto a contrapartida técnica de emissão).
-- **Lançamentos** imutáveis, em centavos inteiros, com natureza, referência, saldos antes/depois, `Explained`; transações atômicas, idempotentes (`key`), travamento em ordem de id; estorno auditado.
-- **Reservas** (mesma conta) x **retenções** (conta de custódia): orçamento comprometido, campanhas, contrato do Exército (reserva); Requisição Especial e arrecadação durante ação de milícia (retenção, `route_tax`).
+- **Contas** (`PLAYER`, `COMPANY`, `UNION`, `STATE`, `MUNICIPALITY`, `MILITIA_BANK`, `RETENTION`, `SINK`, `ISSUANCE`); **saldo bruto / reservado / disponível para gastar** como conceitos distintos; conservação só com saldos brutos: `soma(brutos)=0` e `emitido = brutos operacionais + retenções + sumidouro` (reservas **não** entram na fórmula).
+- **Lançamentos** imutáveis, em centavos inteiros, com natureza, referência obrigatória, saldos antes/depois, `Explained`; transações atômicas, idempotentes, travamento em ordem de id; estorno auditado.
+- **Reservas** (mesma conta) x **retenções genéricas** (conta de custódia, destino escolhido por quem libera); **interface de roteamento tributário** (`register_tax_resolver`/`route_tax`) sem módulo militar; a ligação com ações de milícia é da P1.17.
 - **Obrigações pendentes** fora do caixa; quitação determinística; não cria dinheiro.
-- **Contadores `C_S`/`C_T`** com cálculo determinístico e dia de competência (o contador conta o valor reconhecido na competência), natureza como fechada lista; remuneração só por `accrue_remuneration`.
-- **Dotações** (única fonte de emissão), zero explícito, ausência recusa o cenário; **sumidouro** só recebe.
-- **Dívida pública**: título não cria dinheiro; P1.09 declara a origem dos recursos.
+- **Contadores `C_S`/`C_T`/`C_P`**: reserva política derivada (`P_reservada = max(0, P_dia − C_P)`), consumida/liberada sem dupla subtração; **ordem de liquidação estável**: pedidos são submetidos e liquidados como lote ordenado por chave intrínseca (classe, competência, instante do fato, pagador, natureza, referência, key), invariante à permutação.
+- **Dotações** (única fonte de emissão), zero explícito, ausência recusa o cenário; **sumidouro** só recebe; título e empréstimo transferem dinheiro de contas existentes.
+- **Teto de déficit público — decisão do GD (2026-10-15)**: janela móvel de 360 dias anualizada, aplicada a União/Estados/Municípios; só novas despesas discricionárias são bloqueadas; títulos não reduzem o déficit nem contornam o teto (`24` §24.16; `11` atualizado; implementação na P1.09/P1.12).
 - **Integração**: gancho de pagamento da viagem (P0.06.1), `check_action` com `can_afford`/`Explained`.
-- **Escopo e testes** da P0.07b.
 
-### Decisão real pedida ao Game Director
-- **Teto de déficit público** (`11`, `[ABERTO]`): proposta em `24` §24.16 (janela de 360 dias anualizada; receita e despesa definidas; só despesas discricionárias novas são bloqueadas; alternativa de 30 dias). Sem decisão, o parâmetro continua **não implementado**; isso não bloqueia a P0.07b.
-
-### Interpretações técnicas registradas (R1–R10, padrões ratificáveis; não alteram mecânica)
-R1 contadores medem o bruto e o IR divide o bruto; R2 incidência do imposto sobre vendas fora do registro (recomendação: retido do vendedor); R3 salário político no tick diário ao ocupante do instante; R4 ordem de quitação (competência, id); R5 base dos pisos municipais = leilões + repasses estaduais; R6 centavos, `HALF_EVEN`, última perna é o resto, `MAX_AMOUNT` `[PROV]`; R7 reserva x retenção; R8 Município = `City`; R9 saldo guardado é cache; R10 fundação de milícia é paga pelo fundador.
+### R1–R10 aprovadas (ajustes do GD)
+R2: compra do governo federal com imposto à própria União não gera lançamento de uma conta para ela mesma (compensação no `Explained`). R3: substituto sem retroativo; `P_reservada` reduzida pelo valor político reconhecido. R5: atribuição territorial de impostos federais é rastreamento, não receita municipal.
 
 ### Questões herdadas por tarefas seguintes (não bloqueiam a P0.07b)
-P1.04: política de falta de caixa da empresa no salário e o capital inicial da empresa; P1.05/P1.08: incidência e momento do imposto (Requisição Especial); P1.06: conta da escola particular; P1.09: categorias, comprometimento, serviço da dívida e teto de déficit.
+P1.04 (política de caixa insuficiente no salário, capital inicial da empresa); P1.05/P1.08 (R2, momento do imposto da Requisição Especial); P1.06 (conta da escola particular); P1.09/P1.12 (categorias, comprometimento, dívida, teto de déficit); P1.11 (provedor do salário político devido); P1.17 (resolvedor tributário).
 
 ### Documentos alterados
-`24` (novo), `09` (§45.9: ponteiro), `11` (teto de déficit aponta para `24` §24.16), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
+`24` (novo), `09` (§45.3, §45.9), `11` (teto de déficit decidido), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
 
 ---
 

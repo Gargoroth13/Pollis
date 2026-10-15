@@ -1,6 +1,6 @@
 # 11 — Leis Paramétricas
 
-> **Consolidação P0.01 (2026-10-14).** Decisões aprovadas do Game Director registradas em `CHANGELOG_DEV.md` ("P0.01 — consolidação documental"). Este documento permanece em **REVIEW** por dependências posteriores: o teto de déficit público ainda não tem proposta (após P0.07a) e a mecânica de zoneamento por lei depende da P1.07. Itens `[ABERTO]` não devem ser implementados.
+> **Consolidação P0.01 (2026-10-14).** Decisões aprovadas do Game Director registradas em `CHANGELOG_DEV.md` ("P0.01 — consolidação documental"). Este documento permanece em **REVIEW** por dependências posteriores: o teto de déficit público foi decidido em 2026-10-15 (`24` §24.16; implementação na P1.09/P1.12) e a mecânica de zoneamento por lei depende da P1.07. Itens `[ABERTO]` não devem ser implementados.
 
 **Status: REVIEW**
 
@@ -124,7 +124,7 @@ A soma dos pisos legais não pode ultrapassar 100% do orçamento.
 - União e Estados **não possuem pisos setoriais** até a arquitetura definir a distribuição por categoria.
 - A mesma base de 30 dias vale para os **três** pisos (Educação, Saúde e Infraestrutura). O piso constitucional de Educação é 5%; Saúde e Infraestrutura mantêm os mínimos legais deste catálogo.
 
-**Teto de déficit público: `[ABERTO]`.** Depende de registro monetário, obrigações e dívida (P0.07a). Uma proposta de teto de déficit foi apresentada depois da arquitetura monetária em `24 — Registro Monetário`, §24.16, e **aguarda decisão do Game Director**. O parâmetro permanece no catálogo, mas **não deve ser implementado** antes dessa decisão.
+**Teto de déficit público: decidido (GD 2026-10-15; definição completa em `24 — Registro Monetário`, §24.16).** Janela móvel de 360 dias de jogo com referência anualizada, aplicada separadamente à União, a cada Estado e a cada Município com o mesmo parâmetro federal. Receitas de dotações iniciais, emissão de títulos e dinheiro retido não contam; transferências recebidas contam como receita do destinatário; transferências a níveis inferiores e amortização do principal não contam como despesa; juros pagos contam. O teto limita **novas despesas discricionárias**; salários, obrigações existentes, contratos assumidos e despesas constitucionais não são recusados, mas compõem o déficit. Com menos de 30 dias de histórico não bloqueia. Emissão de títulos é financiamento de caixa: não reduz o déficit calculado nem contorna o teto. A implementação pertence à P1.09/P1.12.
 
 ### 11.2.2. Infraestrutura
 
