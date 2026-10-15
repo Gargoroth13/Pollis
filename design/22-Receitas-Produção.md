@@ -68,7 +68,7 @@
 | Armaduras Improvisadas | Aço + Plástico | Não existe |
 | Kit Médico Improvisado | Lã + Materiais hospitalares | Não existe |
 
-**Produtos militares do Exército (produzidos por empresas Industriais; receitas e estrela `[PROV]`, GD 2026-10-14, Q4):**
+**Produtos militares do Exército (produzidos por empresas Industriais / Produção; receitas e estrela `[PROV]`, GD 2026-10-14, Q4):**
 
 | Produto final | Ingredientes | Estrela mínima |
 |---|---|---|
@@ -76,7 +76,7 @@
 | Armaduras Militares | Aço + Plástico | 2★ [PROV] |
 | Kits de Primeiros Socorros do Exército | Lã + Materiais hospitalares | 2★ [PROV] |
 
-> Os produtos do Exército são entidades **distintas** das versões improvisadas da milícia (Armas/Armaduras/Kit Médico Improvisados). O abastecimento recorrente vem de produção ou fornecimento efetivo; o cenário pode iniciar com dotação explícita de itens. O 02 não diz qual sub-tipo Industrial os produz (lacuna `GAP_ARMY_PRODUCER_SUBTYPE_UNDEFINED`, recomendação: Produção, para o P1.04).
+> Os produtos do Exército são entidades **distintas** das versões improvisadas da milícia (Armas/Armaduras/Kit Médico Improvisados). O abastecimento recorrente vem de produção ou fornecimento efetivo; o cenário pode iniciar com dotação explícita de itens. A empresa produtora é do tipo **Industrial, sub-tipo Produção** (decisão do Game Director, 2026-10-15; a ser aplicada na P1.04).
 
 ### 2.2 Matriz — definida por terreno, não por skill 🤝
 

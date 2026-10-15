@@ -112,6 +112,17 @@ class UsesAreDerivedTests(CatalogTestCase):
             direct |= {i.key for i in services.recipe_of(key).inputs}
         self.assertEqual({p.key for p in Product.objects.all() if services.has_channel(p.key, Channel.SPECIAL_REQUISITION)}, direct)
 
+    def test_the_army_products_are_produced_by_industrial_production_companies(self):
+        """GD 2026-10-15: produtor = Industrial / Produção; o setor do PRODUTO continua distinto; milícia não é empresa."""
+        for key in ("military_weapons", "military_armor", "military_medical_kits"):
+            self.assertEqual(services.producer_sector_of(key), Sector.INDUSTRIAL_PRODUCTION, key)
+            self.assertEqual(Product.objects.get(key=key).sector, Sector.MILITARY_PROCUREMENT.value)
+        self.assertEqual(services.producer_sector_of("steel"), Sector.INDUSTRIAL_PRODUCTION)
+        self.assertEqual(services.producer_sector_of("chocolate"), Sector.INDUSTRIAL_CONSUMER)
+        self.assertEqual(services.producer_sector_of("iron"), Sector.MINING)
+        self.assertIsNone(services.producer_sector_of("improvised_weapons"))
+        self.assertIsNone(services.producer_sector_of("ghost"))
+
     def test_categories_and_base_prices_are_queryable(self):
         self.assertEqual(services.category_of("iron"), Category.MATERIAL)
         self.assertEqual(services.category_of("bread"), Category.FOOD)

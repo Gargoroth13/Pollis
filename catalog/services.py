@@ -18,7 +18,7 @@ from typing import FrozenSet, List, Optional, Tuple
 
 from players.services import ActionResult
 
-from .constants import (NO_STAR_SECTORS, RAW_SECTORS, Category, Channel, NutritionLevel, QolEffect, Sector,
+from .constants import (ARMY_PRODUCER_SECTOR, NO_STAR_SECTORS, RAW_SECTORS, Category, Channel, NutritionLevel, QolEffect, Sector,
                         UseKind)
 from .models import Product
 
@@ -126,6 +126,21 @@ def uses_of(key: str) -> List[ProductUse]:
     if Product.objects.filter(key=key, is_military=True).exists():
         uses.append(ProductUse(UseKind.MILITARY_ACTION))
     return uses
+
+
+def producer_sector_of(key: str) -> Optional[Sector]:
+    """
+    Setor da EMPRESA que produz o produto (GD 2026-10-15): matéria-prima e produtos industriais → o próprio setor;
+    produtos militares do Exército → Industrial / Produção (`ARMY_PRODUCER_SECTOR`); milícia → None (quem produz é a
+    milícia, não uma empresa); produto desconhecido → None.
+    """
+    value = Product.objects.filter(key=key).values_list("sector", flat=True).first()
+    if value is None:
+        return None
+    sector = Sector(value)
+    if sector == Sector.MILITARY_PROCUREMENT:
+        return ARMY_PRODUCER_SECTOR
+    return None if sector == Sector.MILITIA else sector
 
 
 def has_declared_use(key: str) -> bool:

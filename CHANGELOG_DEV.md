@@ -50,14 +50,15 @@ Aplicação ao `22` e ao catálogo (`catalog`) das decisões aprovadas Q3–Q8, 
 | Código | Lacuna | Bloqueia |
 |---|---|---|
 | `GAP_OPERATIONAL_MATERIALS_UNDEFINED` | materiais operacionais e consumo por funcionário (`02` §10/§20). **Aprovado (Q10)**: fora da primeira implementação de Empresas | P1.04 (limitação conhecida) |
-| `GAP_ARMY_PRODUCER_SUBTYPE_UNDEFINED` | o `02` não diz qual sub-tipo Industrial produz os itens do Exército. **Recomendação:** Produção (insumos de Produção/Bens), a confirmar no P1.04; nenhuma regra foi inventada | P1.04 |
 | `GAP_VEHICLE_RELATION_UNDEFINED` | produto Carro x veículo (veículos adiados, `04` §21) | sistema de veículos (futuro) |
 
-Resolvidas nesta tarefa (as linhas da tabela da P1.01 acima ficam como histórico): `GAP_FINISHINGS_UNDEFINED` (Q7), `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_FOOD_VALUES_UNDEFINED`, `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_COMMERCIAL_USES_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED` (todas por Q3–Q8 e valores `[PROV]`).
+**Decisão do GD (2026-10-15):** a empresa produtora dos produtos militares do Exército é **Industrial / Produção** (`catalog.constants.ARMY_PRODUCER_SECTOR`, `services.producer_sector_of`); a lacuna `GAP_ARMY_PRODUCER_SUBTYPE_UNDEFINED` foi **fechada** e sai de `KNOWN_GAPS`; a aplicação é da P1.04. Os produtos militares continuam entidades distintas dos improvisados da milícia. Valores `[PROV]` aprovados como pontos de partida do Bot Test, não definitivos. Duração do efeito alimentar e taxa de correio: P1.02.
+
+Resolvidas nesta tarefa (as linhas da tabela da P1.01 acima ficam como histórico) — `GAP_ARMY_PRODUCER_SUBTYPE_UNDEFINED` (GD 2026-10-15), `GAP_FINISHINGS_UNDEFINED` (Q7), `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_FOOD_VALUES_UNDEFINED`, `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_COMMERCIAL_USES_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED` (todas por Q3–Q8 e valores `[PROV]`).
 
 ### Itens `[PROV]` que pertencem a tarefas seguintes (não decididos aqui)
 - **P1.02 (Inventário):** duração do efeito temporário de alimento e taxa do correio (a taxa usará `base_price`, mas o percentual é `[PROV]` da P1.02); ordenação do auto-consumo "menor ganho".
-- **P1.04 (Empresas):** sub-tipo Industrial do Exército; salário do Dono.
+- **P1.04 (Empresas):** aplicar o produtor do Exército = Industrial/Produção (decidido); salário do Dono.
 - **Subsídio setorial (D16):** o catálogo já fornece categoria e canais; a lista de setores subsidiáveis é do `11`/P1.04, sem tabela paralela aqui.
 
 ### Testes

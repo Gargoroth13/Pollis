@@ -226,6 +226,8 @@ Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos 
 
 > **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FINISHINGS_UNDEFINED`, `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. A produção deve consultar `catalog.services.check_production_ready` e **recusar** enquanto houver `UNSPECIFIED_DESIGN_VALUE`. Ver `CHANGELOG_DEV.md` (2026-10-11).
 
+**Decisão do GD (2026-10-15):** os produtos militares do Exército são produzidos por empresas **Industrial / Produção** (usar `catalog.services.producer_sector_of`); permanecem distintos dos produtos improvisados da milícia.
+
 Implementar `02` utilizando `22` como fonte de produtos/receitas.
 
 ## [ ] P1.05 — Mercado e transparência
