@@ -3,7 +3,7 @@ from django.db.models import Q
 
 from geography.constants import RESOURCE_NAMES
 
-from .constants import NutritionLevel, QolEffect, Sector
+from .constants import Category, Channel, NutritionLevel, QolEffect, Sector
 
 
 def _choices(enum_cls):
@@ -28,6 +28,17 @@ class Product(models.Model):
     # Matéria-prima que é recurso espacial da Geografia (08 §15): valor de geography.constants.Resource.
     resource = models.CharField(max_length=32, null=True, blank=True, unique=True,
                                 choices=[(n, n) for n in sorted(RESOURCE_NAMES)])
+    # Classificação (GD 2026-10-14, Q6): UMA categoria principal; tags em campos separados. "Usável em receita" é DERIVADO.
+    # Vazio = ainda não classificado (a validação do catálogo o recusa como CATEGORY_MISSING).
+    category = models.CharField(max_length=16, choices=_choices(Category), blank=True, default="")
+    is_consumable = models.BooleanField(default=False)
+    is_permanent = models.BooleanField(default=False)
+    is_military = models.BooleanField(default=False)
+    # Canais comerciais DECLARADOS (Q8): lista de valores de constants.Channel. Nenhum canal é inferido.
+    commercial_channels = models.JSONField(default=list, blank=True)
+    # Valores provisórios [PROV] (provisional.py): preço-base de REFERÊNCIA (não é preço de mercado) e rendimento da Matriz.
+    base_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    raw_yield = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
     # Rastreabilidade com o design: onde está no 22 e como o nome aparece lá (antes da normalização).
     source_section = models.CharField(max_length=120, blank=True, default="")
     source_names = models.JSONField(default=list, blank=True)
@@ -37,6 +48,10 @@ class Product(models.Model):
         constraints = [
             models.CheckConstraint(condition=Q(min_stars__isnull=True) | Q(min_stars__gte=1, min_stars__lte=5),
                                    name="product_min_stars_1_to_5"),
+            models.CheckConstraint(condition=Q(base_price__isnull=True) | Q(base_price__gte=0),
+                                   name="product_base_price_non_negative_or_unspecified"),
+            models.CheckConstraint(condition=Q(raw_yield__isnull=True) | Q(raw_yield__gt=0),
+                                   name="product_raw_yield_positive_or_unspecified"),
         ]
 
     def __str__(self):

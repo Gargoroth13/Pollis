@@ -15,7 +15,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from geography.constants import RESOURCE_KIND, RESOURCE_NAMES, Resource, ResourceKind
 
-from .constants import (COMPANY_SECTORS, MAX_STARS, MIN_STARS, NO_STAR_SECTORS, RAW_SECTORS, RECIPE_SECTORS, Sector)
+from .constants import (COMPANY_SECTORS, MAX_STARS, MIN_STARS, MILITARY_SECTORS, NO_STAR_SECTORS, RAW_SECTORS,
+                        RECIPE_SECTORS, Category, Channel, Sector)
 from .definitions import KNOWN_GAPS, Gap, ProductDef
 
 
@@ -92,6 +93,42 @@ def find_cycles(products: Sequence[ProductDef]) -> List[Tuple[str, ...]]:
     return cycles
 
 
+def _validate_classification(r: "CatalogReport", p: ProductDef, by_key: Dict[str, ProductDef]) -> None:
+    """Categoria única, tags coerentes e canais declarados coerentes com a estrutura (GD 2026-10-14, Q6 e Q8)."""
+    if p.category is None:
+        r.error("CATEGORY_MISSING", p.key)
+        return
+    if not isinstance(p.category, Category):
+        r.error("CATEGORY_INVALID", p.key, repr(p.category))
+        return
+    if (p.category is Category.MILITARY) != (p.sector in MILITARY_SECTORS):
+        r.error("CATEGORY_SECTOR_MISMATCH", p.key, f"{p.category.value} x {p.sector.value}")
+    if p.is_military != (p.category is Category.MILITARY):
+        r.error("MILITARY_TAG_MISMATCH", p.key)
+    if p.food is not None and (p.category is not Category.FOOD or not p.is_consumable):
+        r.error("FOOD_NOT_CLASSIFIED_AS_FOOD", p.key)
+    if p.category is Category.FOOD and p.food is None:
+        r.error("FOOD_WITHOUT_PROFILE", p.key)
+    if p.is_consumable and p.is_permanent:
+        r.error("CONSUMABLE_AND_PERMANENT", p.key)
+    if len(set(p.channels)) != len(p.channels) or not all(isinstance(c, Channel) for c in p.channels):
+        r.error("CHANNEL_INVALID", p.key, repr(p.channels))
+        return
+    if Channel.RETAIL_SALE in p.channels and p.category not in (Category.FOOD, Category.EQUIPMENT, Category.DURABLE):
+        r.error("RETAIL_CHANNEL_NOT_FINAL_GOOD", p.key, p.category.value)
+    if Channel.INTER_COMPANY in p.channels and p.category is Category.MILITARY:
+        r.error("MILITARY_IN_INTER_COMPANY_TRADE", p.key)
+    if Channel.ARMY_PROCUREMENT in p.channels and p.sector != Sector.MILITARY_PROCUREMENT:
+        r.error("ARMY_CHANNEL_NOT_ARMY_PRODUCT", p.key)
+    if p.sector == Sector.MILITARY_PROCUREMENT and Channel.RETAIL_SALE in p.channels:
+        r.error("ARMY_PRODUCT_IN_RETAIL", p.key)
+    if Channel.SPECIAL_REQUISITION in p.channels:
+        feeds_militia = any(q.sector == Sector.MILITIA and any(i.key == p.key for i in (q.inputs or ()))
+                            for q in by_key.values())
+        if not feeds_militia:
+            r.error("REQUISITION_NOT_A_MILITIA_INPUT", p.key)
+
+
 def validate(products: Sequence[ProductDef], gaps: Sequence[Gap] = KNOWN_GAPS) -> CatalogReport:
     r = CatalogReport()
     keys = Counter(p.key for p in products)
@@ -109,9 +146,9 @@ def validate(products: Sequence[ProductDef], gaps: Sequence[Gap] = KNOWN_GAPS) -
     consumed_by: Dict[str, List[str]] = {k: [] for k in by_key}
     for p in products:
         # --- referências e estrutura da receita ---------------------------------------------------------------
-        if p.sector in RAW_SECTORS or p.sector == Sector.MILITARY_PROCUREMENT:
+        if p.sector in RAW_SECTORS:
             if p.inputs is not None:
-                r.error("RAW_WITH_RECIPE" if p.sector in RAW_SECTORS else "PROCURED_WITH_RECIPE", p.key)
+                r.error("RAW_WITH_RECIPE", p.key)
         elif p.sector in RECIPE_SECTORS and not p.inputs:
             r.error("PRODUCED_WITHOUT_RECIPE", p.key)
         seen = Counter(i.key for i in (p.inputs or ()))
@@ -128,6 +165,11 @@ def validate(products: Sequence[ProductDef], gaps: Sequence[Gap] = KNOWN_GAPS) -
                 r.error("INVALID_QUANTITY", p.key, f"{i.key}={i.quantity!r}")
         if p.yield_quantity is not None and not _is_positive(p.yield_quantity):
             r.error("INVALID_YIELD", p.key, repr(p.yield_quantity))
+        if p.raw_yield is not None and (not _is_positive(p.raw_yield) or p.sector not in RAW_SECTORS):
+            r.error("INVALID_RAW_YIELD", p.key, repr(p.raw_yield))
+        if p.base_price is not None and not _is_non_negative(p.base_price):
+            r.error("INVALID_BASE_PRICE", p.key, repr(p.base_price))
+        _validate_classification(r, p, by_key)
         if p.min_stars is not None:
             if not isinstance(p.min_stars, int) or not MIN_STARS <= p.min_stars <= MAX_STARS:
                 r.error("INVALID_STARS", p.key, repr(p.min_stars))
@@ -156,7 +198,7 @@ def validate(products: Sequence[ProductDef], gaps: Sequence[Gap] = KNOWN_GAPS) -
 
     # --- pendências de design (nunca impedem a carga, nunca concedem permissão) ------------------------------------
     for p in products:
-        has_use = bool(consumed_by.get(p.key)) or p.food is not None
+        has_use = bool(consumed_by.get(p.key)) or p.food is not None or bool(p.channels) or p.is_military
         if not has_use:
             r.warn("RAW_MATERIAL_WITHOUT_USE" if p.sector in RAW_SECTORS else "PRODUCT_WITHOUT_DECLARED_USE", p.key)
         if p.inputs and any(i.quantity is None for i in p.inputs):
@@ -165,6 +207,10 @@ def validate(products: Sequence[ProductDef], gaps: Sequence[Gap] = KNOWN_GAPS) -
             r.warn("RECIPE_YIELD_UNSPECIFIED", p.key)
         if p.min_stars is None and (p.sector in RAW_SECTORS or p.sector in COMPANY_SECTORS):
             r.warn("MIN_STARS_UNSPECIFIED", p.key)
+        if p.sector in RAW_SECTORS and p.raw_yield is None:
+            r.warn("RAW_YIELD_UNSPECIFIED", p.key)
+        if p.base_price is None:
+            r.warn("BASE_PRICE_UNSPECIFIED", p.key)
         if p.food is not None and p.food.nutrition_amount is None:
             r.warn("FOOD_NUTRITION_UNSPECIFIED", p.key)
         if p.food is not None and p.food.qol_intensity is None:

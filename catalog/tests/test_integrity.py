@@ -20,10 +20,12 @@ class IntegrityReportTests(CatalogTestCase):
 
     def test_design_pending_is_reported_but_does_not_fail(self):
         r = check_integrity()
-        self.assertIn("RAW_MATERIAL_WITHOUT_USE", r.pending_codes)
-        self.assertIn("PRODUCT_WITHOUT_DECLARED_USE", r.pending_codes)
-        self.assertLessEqual({g.code for g in KNOWN_GAPS}, set(r.pending_codes))
+        self.assertEqual(r.pending_codes, sorted(g.code for g in KNOWN_GAPS))
         self.assertEqual(r.codes, [])
+        Product.objects.filter(key="iron").update(base_price=None)
+        r = check_integrity()
+        self.assertIn("BASE_PRICE_UNSPECIFIED", r.pending_codes)        # pendência de design: listada, não reprova
+        self.assertEqual(r.codes, ["PRODUCT_DIFFERS_FROM_DEFINITIONS"])  # mas o banco divergiu das definições
 
     def test_a_cycle_written_directly_to_the_database_is_detected(self):
         RecipeInput.objects.create(recipe=Recipe.objects.get(product__key="iron") if Recipe.objects.filter(product__key="iron").exists()
@@ -53,6 +55,14 @@ class IntegrityReportTests(CatalogTestCase):
         sync_catalog()
         self.assertTrue(check_integrity().ok)
 
+    def test_a_changed_classification_or_channel_in_the_database_is_detected(self):
+        Product.objects.filter(key="military_armor").update(commercial_channels=["army_procurement", "retail_sale"])
+        r = check_integrity()
+        self.assertIn("ARMY_PRODUCT_IN_RETAIL", r.codes)
+        self.assertIn("PRODUCT_DIFFERS_FROM_DEFINITIONS", r.codes)
+        Product.objects.filter(key="steel").update(category="")
+        self.assertIn("CATEGORY_MISSING", check_integrity().codes)
+
     def test_a_broken_resource_link_is_detected(self):
         Product.objects.filter(key="gold").update(resource=None)
         r = check_integrity()
@@ -75,7 +85,7 @@ class CommandTests(TestCase):
         out = StringIO()
         call_command("check_catalog", "--pending", stdout=out)
         self.assertIn("integridade: OK", out.getvalue())
-        self.assertIn("PENDÊNCIA GAP_FINISHINGS_UNDEFINED", out.getvalue())
+        self.assertIn("PENDÊNCIA GAP_OPERATIONAL_MATERIALS_UNDEFINED", out.getvalue())
 
     def test_check_fails_on_an_empty_catalog(self):
         with self.assertRaises(CommandError):
