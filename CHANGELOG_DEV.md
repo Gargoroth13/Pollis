@@ -4,6 +4,35 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-15 — P0.07a — registro monetário (documento de design)
+
+Documento novo `design/24-Registro-Monetario-REVIEW.md` (REVIEW), **sem código**. Incorpora Q1/Q2 e as decisões de 11.1.0, 09 §45, 18.14, 19.16 e 21.60. Branch `dev/p0.07a-registro-monetario` (PR sobre o #9).
+
+### O que define
+- **Contas** (`PLAYER`, `COMPANY`, `UNION`, `STATE`, `MUNICIPALITY`, `MILITIA_BANK`, `RETENTION`, `SINK`, `ISSUANCE`); conservação `soma(saldos)=0`, `emitido = disponível + retido + sumidouro`; sem saldo negativo (exceto a contrapartida técnica de emissão).
+- **Lançamentos** imutáveis, em centavos inteiros, com natureza, referência, saldos antes/depois, `Explained`; transações atômicas, idempotentes (`key`), travamento em ordem de id; estorno auditado.
+- **Reservas** (mesma conta) x **retenções** (conta de custódia): orçamento comprometido, campanhas, contrato do Exército (reserva); Requisição Especial e arrecadação durante ação de milícia (retenção, `route_tax`).
+- **Obrigações pendentes** fora do caixa; quitação determinística; não cria dinheiro.
+- **Contadores `C_S`/`C_T`** com cálculo determinístico e dia de competência (o contador conta o valor reconhecido na competência), natureza como fechada lista; remuneração só por `accrue_remuneration`.
+- **Dotações** (única fonte de emissão), zero explícito, ausência recusa o cenário; **sumidouro** só recebe.
+- **Dívida pública**: título não cria dinheiro; P1.09 declara a origem dos recursos.
+- **Integração**: gancho de pagamento da viagem (P0.06.1), `check_action` com `can_afford`/`Explained`.
+- **Escopo e testes** da P0.07b.
+
+### Decisão real pedida ao Game Director
+- **Teto de déficit público** (`11`, `[ABERTO]`): proposta em `24` §24.16 (janela de 360 dias anualizada; receita e despesa definidas; só despesas discricionárias novas são bloqueadas; alternativa de 30 dias). Sem decisão, o parâmetro continua **não implementado**; isso não bloqueia a P0.07b.
+
+### Interpretações técnicas registradas (R1–R10, padrões ratificáveis; não alteram mecânica)
+R1 contadores medem o bruto e o IR divide o bruto; R2 incidência do imposto sobre vendas fora do registro (recomendação: retido do vendedor); R3 salário político no tick diário ao ocupante do instante; R4 ordem de quitação (competência, id); R5 base dos pisos municipais = leilões + repasses estaduais; R6 centavos, `HALF_EVEN`, última perna é o resto, `MAX_AMOUNT` `[PROV]`; R7 reserva x retenção; R8 Município = `City`; R9 saldo guardado é cache; R10 fundação de milícia é paga pelo fundador.
+
+### Questões herdadas por tarefas seguintes (não bloqueiam a P0.07b)
+P1.04: política de falta de caixa da empresa no salário e o capital inicial da empresa; P1.05/P1.08: incidência e momento do imposto (Requisição Especial); P1.06: conta da escola particular; P1.09: categorias, comprometimento, serviço da dívida e teto de déficit.
+
+### Documentos alterados
+`24` (novo), `09` (§45.9: ponteiro), `11` (teto de déficit aponta para `24` §24.16), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
+
+---
+
 ## 2026-10-15 — P0.02 — catálogo `22` auditado e atualizado
 
 Aplicação ao `22` e ao catálogo (`catalog`) das decisões aprovadas Q3–Q8, Q10 (GD 2026-10-14). **Estrutura** vem do `22`; **números** vêm só da tabela `[PROV]` (`catalog/provisional.py`), exportável por `manage.py list_provisional [--format text|json|markdown]`. Branch `dev/p0.02-catalogo-22` (PR sobre `dev/p0.01-consolidacao-documental`, pois o PR #8 ainda não foi mergeado).

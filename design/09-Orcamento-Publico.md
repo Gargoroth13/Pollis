@@ -930,3 +930,5 @@ Destino das cobranças:
 O sumidouro é uma conta contábil identificada e indisponível para gastos normais. Seu saldo faz parte da conservação contábil, mas é excluído do dinheiro em circulação. Lançamentos não são apagados.
 
 Saldos iniciais de caixas de governo também são configurados por cenário.
+
+A arquitetura do registro monetário (contas, lançamentos, reservas, obrigações pendentes, contadores salariais, retenções, dotações e relação com a dívida pública) está em `24 — Registro Monetário` (REVIEW, P0.07a), que também traz a proposta de teto de déficit público.

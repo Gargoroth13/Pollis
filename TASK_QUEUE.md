@@ -55,7 +55,7 @@ Critérios:
 
 Pré-requisito transversal: não existe sistema de dinheiro em nenhum documento nem na fila. Posição: depois de P0.01 e P0.02, antes de P1.02. Duas fases:
 
-- **P0.07a — Documento de design** para aprovação do Game Director (sem código);
+- **P0.07a — Documento de design** para aprovação do Game Director (sem código) — **entregue em 2026-10-15** como `design/24-Registro-Monetario-REVIEW.md` (aguarda aprovação; decisão real pedida: teto de déficit, §24.16; interpretações técnicas R1–R10 ratificáveis);
 - **P0.07b — Implementação**, somente após aprovação do P0.07a.
 
 **Decisões do Game Director já aprovadas (2026-10-14):**

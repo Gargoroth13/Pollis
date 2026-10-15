@@ -124,7 +124,7 @@ A soma dos pisos legais não pode ultrapassar 100% do orçamento.
 - União e Estados **não possuem pisos setoriais** até a arquitetura definir a distribuição por categoria.
 - A mesma base de 30 dias vale para os **três** pisos (Educação, Saúde e Infraestrutura). O piso constitucional de Educação é 5%; Saúde e Infraestrutura mantêm os mínimos legais deste catálogo.
 
-**Teto de déficit público: `[ABERTO]`.** Depende de registro monetário, obrigações e dívida (P0.07a). Uma proposta de teto de déficit será apresentada depois da arquitetura monetária. O parâmetro permanece no catálogo, mas **não deve ser implementado** antes disso.
+**Teto de déficit público: `[ABERTO]`.** Depende de registro monetário, obrigações e dívida (P0.07a). Uma proposta de teto de déficit foi apresentada depois da arquitetura monetária em `24 — Registro Monetário`, §24.16, e **aguarda decisão do Game Director**. O parâmetro permanece no catálogo, mas **não deve ser implementado** antes dessa decisão.
 
 ### 11.2.2. Infraestrutura
 
