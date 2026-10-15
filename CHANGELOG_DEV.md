@@ -4,6 +4,38 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-15 — P0.02 — catálogo `22` auditado e atualizado
+
+Aplicação ao `22` e ao catálogo (`catalog`) das decisões aprovadas Q3–Q8, Q10 (GD 2026-10-14). **Estrutura** vem do `22`; **números** vêm só da tabela `[PROV]` (`catalog/provisional.py`), exportável por `manage.py list_provisional [--format text|json|markdown]`. Branch `dev/p0.02-catalogo-22` (PR sobre `dev/p0.01-consolidacao-documental`, pois o PR #8 ainda não foi mergeado).
+
+### O que mudou
+- **`design/22` (CRLF preservado):** Pão com perfil `média / sem efeito` (`[PROV]`); milícia "Kit Médico Improvisado"; tabela de receitas do Exército (Armas Militares = Aço+Madeira+Plástico, Armaduras Militares = Aço+Plástico, Kits de Primeiros Socorros do Exército = Lã+Materiais hospitalares; 2★ `[PROV]`; entidades distintas das improvisadas); novas §3 (classificação e canais, **gerada**) e §4 (parâmetros `[PROV]` e preço-base por produto, **geradas**). Um teste confere documento x código.
+- **Catálogo:** 73 produtos, 29 matérias-primas, **44 receitas** (+3 do Exército), **8 alimentos** (+Pão). Novos campos em `Product`: `category` (Alimento/Material/Equipamento/Durável/Militar, **uma** por produto), tags `is_consumable`/`is_permanent`/`is_military`, `commercial_channels` (declarados: varejo, entre empresas, fornecimento ao Exército, requisição especial), `base_price` e `raw_yield` (`[PROV]`). Migração `catalog/0002_classification_and_provisional_values`.
+- **Valores `[PROV]` (Q3/Q4/Q5):** receita 1 unidade de cada insumo → 1 unidade; Matriz 1★ e rendimento 1; Exército 2★; Nutrição 0/5/15/30/50 por nível; intensidade de QoL 0/0,05/0,10 (debuff −, magnitude 0,05); preço-base: matéria-prima 10,00 e produto feito = soma dos insumos ÷ rendimento + 5,00 × estrelas (sem estrela conta 1). São **referência**, não preço de mercado, e calibráveis mudando `provisional.py` + `sync_catalog`.
+- **Classificação e canais (Q6/Q8):** nenhum canal inferido; Varejo só bens finais (alimentos, duráveis, roupas, calçados, caneta, papel); matérias-primas e intermediários só entre empresas; produtos do Exército só por contrato federal e fora de Varejo e do comércio entre empresas; Requisição Especial da milícia cobre exatamente os insumos diretos das receitas improvisadas (Aço, Madeira, Plástico, Lã, Materiais hospitalares). EPIs, materiais escolares/hospitalares e uniforme não estão no Varejo (uso institucional/operacional, Q10 fora da primeira implementação). Sem limite de capacidade de inventário nem de estoque do Exército (Q6). Sem produto Acabamentos (Q7).
+- **Validação:** erros novos `CATEGORY_MISSING/INVALID`, `CATEGORY_SECTOR_MISMATCH`, `MILITARY_TAG_MISMATCH`, `FOOD_NOT_CLASSIFIED_AS_FOOD`, `FOOD_WITHOUT_PROFILE`, `CONSUMABLE_AND_PERMANENT`, `CHANNEL_INVALID`, `RETAIL_CHANNEL_NOT_FINAL_GOOD`, `MILITARY_IN_INTER_COMPANY_TRADE`, `ARMY_CHANNEL_NOT_ARMY_PRODUCT`, `ARMY_PRODUCT_IN_RETAIL`, `REQUISITION_NOT_A_MILITIA_INPUT`, `INVALID_RAW_YIELD`, `INVALID_BASE_PRICE`; removido `PROCURED_WITH_RECIPE`. Pendências novas (apenas se o valor voltar a faltar): `RAW_YIELD_UNSPECIFIED`, `BASE_PRICE_UNSPECIFIED`. NULL continua ≠ 0 e a recusa `UNSPECIFIED_DESIGN_VALUE` continua existindo.
+- **Serviços:** `category_of`, `channels_of`, `has_channel`, `base_price_of`; `uses_of` inclui canais comerciais e ação militar; `check_production_ready` aceita os produtos do Exército (produzidos por empresas Industriais).
+- **Auditoria dos critérios da fila:** Petróleo em Extrativismo ✔; usos compatíveis: todo produto declara ao menos um uso (teste); estrela mínima em todo produto produzido ✔ (milícia "Não existe"); múltiplos ingredientes ✔; catálogo utilizável como seed único (`sync_catalog` idempotente e atômico) ✔.
+
+### Lacunas que permanecem (todas em `KNOWN_GAPS`)
+| Código | Lacuna | Bloqueia |
+|---|---|---|
+| `GAP_OPERATIONAL_MATERIALS_UNDEFINED` | materiais operacionais e consumo por funcionário (`02` §10/§20). **Aprovado (Q10)**: fora da primeira implementação de Empresas | P1.04 (limitação conhecida) |
+| `GAP_ARMY_PRODUCER_SUBTYPE_UNDEFINED` | o `02` não diz qual sub-tipo Industrial produz os itens do Exército. **Recomendação:** Produção (insumos de Produção/Bens), a confirmar no P1.04; nenhuma regra foi inventada | P1.04 |
+| `GAP_VEHICLE_RELATION_UNDEFINED` | produto Carro x veículo (veículos adiados, `04` §21) | sistema de veículos (futuro) |
+
+Resolvidas nesta tarefa (as linhas da tabela da P1.01 acima ficam como histórico): `GAP_FINISHINGS_UNDEFINED` (Q7), `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_FOOD_VALUES_UNDEFINED`, `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_COMMERCIAL_USES_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED` (todas por Q3–Q8 e valores `[PROV]`).
+
+### Itens `[PROV]` que pertencem a tarefas seguintes (não decididos aqui)
+- **P1.02 (Inventário):** duração do efeito temporário de alimento e taxa do correio (a taxa usará `base_price`, mas o percentual é `[PROV]` da P1.02); ordenação do auto-consumo "menor ganho".
+- **P1.04 (Empresas):** sub-tipo Industrial do Exército; salário do Dono.
+- **Subsídio setorial (D16):** o catálogo já fornece categoria e canais; a lista de setores subsidiáveis é do `11`/P1.04, sem tabela paralela aqui.
+
+### Testes
+Reescritos os testes de `catalog` ao estado aprovado (130 testes): doc ↔ código (receitas, Exército, §3, §4), números só da tabela `[PROV]`, regras de classificação/canais, cada novo código de erro, estados "não especificado" simulados com produtos sintéticos, constraints do banco, carga/sync dos novos campos.
+
+---
+
 ## 2026-10-14 — P0.01 — consolidação documental
 
 Consolidação, em PR documental único (#8), das decisões aprovadas do Game Director (mensagens de 2026-10-12, 2026-10-13 e 2026-10-14, esta última com Q1–Q12 e confirmações). **Somente documentos**: nenhum código, teste ou migração foi alterado. `06`, `11` e `19` **permanecem em REVIEW** por dependências de execução (abaixo); `07` e `09` permanecem FINAL (alterações aditivas). O P0.01 é considerado concluído como fase de consolidação; isso **não** significa que todas as decisões D1–D25 estejam executadas: ver "Dependências".

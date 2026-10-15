@@ -1,9 +1,9 @@
 """
 Vocabulário do catálogo de Produtos e Receitas (design/22).
 
-Nada aqui é regra de balanceamento: são os NOMES das categorias que o `22` já declara. Valores numéricos (quantidades,
-rendimento, Nutrição, intensidade de QoL) NÃO existem neste módulo: o `22` não os fornece e a decisão do Game Director
-(2026-10-11) é não inventá-los. Ficam como "não especificado" (`None`), distinto de zero.
+Nada aqui é regra de balanceamento: são os NOMES das categorias que o `22` declara. Valores numéricos NÃO existem neste
+módulo: os valores `[PROV]` (decisão do Game Director, 2026-10-14, Q3) vivem em `provisional.py`, numa tabela auditável. Um
+valor que nem o `22` nem a tabela provisória fornecem fica "não especificado" (`None`), distinto de zero.
 """
 import enum
 
@@ -21,17 +21,19 @@ class Sector(str, enum.Enum):
     INDUSTRIAL_TECHNOLOGY = "industrial_technology"  # "Tecnológica"
     # Produzido por milícias, com receita mas sem estrela ("Não existe")
     MILITIA = "militia"
-    # Produtos militares do Exército: sem receita de produção, comprados pelo governo
+    # Produtos militares do Exército: produzidos por empresas Industriais (receitas provisórias, GD 2026-10-14, Q4) e
+    # fornecidos ao Exército por contrato federal. O sub-tipo Industrial responsável NÃO está definido (GAP).
     MILITARY_PROCUREMENT = "military_procurement"
 
 
 RAW_SECTORS = frozenset({Sector.AGRO, Sector.EXTRACTIVE, Sector.MINING})
 COMPANY_SECTORS = frozenset({Sector.INDUSTRIAL_PRODUCTION, Sector.INDUSTRIAL_FOOD, Sector.INDUSTRIAL_CONSUMER,
-                             Sector.INDUSTRIAL_TECHNOLOGY})
+                             Sector.INDUSTRIAL_TECHNOLOGY, Sector.MILITARY_PROCUREMENT})
 # Setores cujos produtos TÊM receita no catálogo.
 RECIPE_SECTORS = COMPANY_SECTORS | {Sector.MILITIA}
-# Setores em que "estrela mínima" não se aplica (22: "Não existe" para milícia; compra do governo não é produção).
-NO_STAR_SECTORS = frozenset({Sector.MILITIA, Sector.MILITARY_PROCUREMENT})
+# Setores em que "estrela mínima" não se aplica (22: "Não existe" para milícia).
+NO_STAR_SECTORS = frozenset({Sector.MILITIA})
+MILITARY_SECTORS = frozenset({Sector.MILITIA, Sector.MILITARY_PROCUREMENT})
 
 MIN_STARS, MAX_STARS = 1, 5          # 22 usa 1★ a 5★ (02 §14)
 
@@ -53,7 +55,28 @@ class QolEffect(str, enum.Enum):
     DEBUFF = "debuff"            # "debuff"
 
 
+class Category(str, enum.Enum):
+    """Categoria PRINCIPAL do produto, uma só por produto (GD 2026-10-14, Q6). Características que se sobrepõem
+    (consumível, permanente, militar, uso em receita) ficam em campos/tags separados, não nesta categoria."""
+    FOOD = "food"              # Alimento
+    MATERIAL = "material"      # Material (matéria-prima e insumo intermediário)
+    EQUIPMENT = "equipment"    # Equipamento
+    DURABLE = "durable"        # Durável
+    MILITARY = "military"      # Militar
+
+
+class Channel(str, enum.Enum):
+    """Canal comercial DECLARADO no catálogo (GD 2026-10-14, Q8). Nenhum canal é inferido do nome nem dos ingredientes."""
+    RETAIL_SALE = "retail_sale"                # Varejo vende o bem final aos jogadores
+    INTER_COMPANY = "inter_company"            # circula entre empresas (matéria-prima, intermediário, bem final p/ revenda)
+    ARMY_PROCUREMENT = "army_procurement"      # fornecimento ao Exército por contrato com o governo federal (19.11, Fluxo B)
+    SPECIAL_REQUISITION = "special_requisition"  # compra anônima da milícia por Requisição Especial (19.11, Fluxo A)
+
+
 class UseKind(str, enum.Enum):
-    """Usos que o `22` declara HOJE. São DERIVADOS (receitas e perfil de alimento); não há tabela paralela."""
+    """Usos declarados no catálogo. Insumo e consumo são DERIVADOS (receitas e perfil de alimento); os canais comerciais são
+    DECLARADOS no produto. Não há tabela paralela de permissões."""
     RECIPE_INPUT = "recipe_input"            # é insumo da receita de outro produto
     PLAYER_CONSUMPTION = "player_consumption"  # consumido pelo jogador como alimento (04 §15)
+    COMMERCIAL_CHANNEL = "commercial_channel"  # canal comercial declarado (Q8)
+    MILITARY_ACTION = "military_action"      # recurso de ações militares (19): produtos com a tag militar

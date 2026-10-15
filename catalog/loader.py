@@ -15,7 +15,7 @@ from typing import Dict, Optional, Sequence
 
 from django.db import transaction
 
-from .constants import NutritionLevel, QolEffect, Sector
+from .constants import Category, Channel, NutritionLevel, QolEffect, Sector
 from .definitions import PRODUCTS, FoodDef, InputDef, ProductDef
 from .models import FoodProfile, Product, Recipe, RecipeInput
 from .validation import CatalogReport, validate
@@ -58,7 +58,11 @@ def load_from_db() -> Dict[str, ProductDef]:
             yield_quantity=_dec(recipe.yield_quantity) if recipe is not None else None,
             food=None if food is None else FoodDef(NutritionLevel(food.nutrition_level), QolEffect(food.qol_effect),
                                                    _dec(food.nutrition_amount), _dec(food.qol_intensity)),
-            source_section=p.source_section, source_names=tuple(p.source_names))
+            source_section=p.source_section, source_names=tuple(p.source_names),
+            category=Category(p.category) if p.category else None, is_consumable=p.is_consumable,
+            is_permanent=p.is_permanent, is_military=p.is_military,
+            channels=tuple(Channel(c) for c in p.commercial_channels),
+            base_price=_dec(p.base_price), raw_yield=_dec(p.raw_yield))
     return out
 
 
@@ -79,7 +83,11 @@ def sync_catalog(products: Sequence[ProductDef] = PRODUCTS) -> SyncResult:
         changed.append(d)
         obj = Product.objects.filter(key=d.key).first()
         fields = dict(name=d.name, sector=d.sector.value, min_stars=d.min_stars, resource=d.resource,
-                      source_section=d.source_section, source_names=list(d.source_names))
+                      source_section=d.source_section, source_names=list(d.source_names),
+                      category=d.category.value if d.category else "", is_consumable=d.is_consumable,
+                      is_permanent=d.is_permanent, is_military=d.is_military,
+                      commercial_channels=[c.value for c in d.channels], base_price=d.base_price,
+                      raw_yield=d.raw_yield)
         if obj is None:
             obj = Product.objects.create(key=d.key, **fields)
             created += 1

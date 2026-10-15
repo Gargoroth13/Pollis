@@ -28,7 +28,7 @@ Critérios:
 
 ---
 
-## [ ] P0.02 — Auditoria do catálogo `22 — Receitas-Produção`
+## [x] P0.02 — Auditoria do catálogo `22 — Receitas-Produção`  *(concluída em 2026-10-15; PR sobre o #8; resultado em `CHANGELOG_DEV.md`)*
 
 **Objetivo:** garantir que Produto, usos permitidos e Receitas estejam consistentes com Empresas, Inventário, Mercado e Militar.
 
