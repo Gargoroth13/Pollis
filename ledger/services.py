@@ -231,11 +231,31 @@ class HoldUse:
     amount: int
 
 
-def _hash(legs: Sequence[Leg], reference: Tuple[str, str], competence_day: Optional[int], uses: Sequence[HoldUse],
-          reverses: Optional[int]) -> str:
-    payload = [[[l.from_id, l.to_id, l.amount, Nature(l.nature).value, l.category, l.operation] for l in legs],
-               list(reference), competence_day, [[u.hold_id, u.amount] for u in uses], reverses]
+def canonical_payload(legs: Sequence[Leg], reference: Tuple[str, str], competence_day: Optional[int],
+                      uses: Sequence[HoldUse], reverses: Optional[int]) -> Dict[str, Any]:
+    """Conteúdo que identifica a requisição para a idempotência (e que a auditoria confere contra os lançamentos)."""
+    return {"legs": [[l.from_id, l.to_id, l.amount, Nature(l.nature).value, l.category, l.operation] for l in legs],
+            "reference": list(reference), "competence_day": competence_day,
+            "uses": [[u.hold_id, u.amount] for u in uses], "reverses": reverses}
+
+
+def payload_digest(payload: Dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+class _KeyRace(Exception):
+    """Interna: outra requisição gravou a mesma `key` entre a nossa checagem e a nossa gravação."""
+
+
+def _existing_transaction(key: str) -> Optional[Transaction]:
+    return Transaction.objects.filter(key=key).first()
+
+
+def _same_key_result(existing: Transaction, payload_hash: str) -> ActionResult:
+    """Contrato da idempotência: mesma chave + mesmo conteúdo = a transação original; conteúdo diferente = conflito."""
+    if existing.payload_hash != payload_hash:
+        return _refuse("IDEMPOTENCY_CONFLICT", key=existing.key)
+    return _result_of(existing, True)
 
 
 def _result_of(tx: Transaction, already: bool) -> ActionResult:
@@ -249,7 +269,8 @@ def post_transaction(legs: Sequence[Leg], *, key: str, reference_kind: str, refe
                      reverses: Optional[int] = None, _internal: bool = False) -> ActionResult:
     """
     Grava TODAS as pernas ou nenhuma. `key` é a chave de idempotência: repetir o mesmo conteúdo devolve o resultado original
-    (`already_posted=True`); a mesma chave com conteúdo diferente recusa (`IDEMPOTENCY_CONFLICT`).
+    (`already_posted=True`), inclusive quando duas requisições concorrentes tentam criá-la; só a mesma chave com conteúdo DIFERENTE
+    recusa (`IDEMPOTENCY_CONFLICT`).
     Recusas: KEY_REQUIRED, REFERENCE_REQUIRED, EMPTY_TRANSACTION, NATURE_INVALID, NATURE_REQUIRES_PAYROLL, AMOUNT_*,
     SAME_ACCOUNT, ACCOUNT_NOT_FOUND, ACCOUNT_CLOSED, SINK_NOT_SPENDABLE, ISSUANCE_NOT_ALLOWED, NATURE_ACCOUNT_MISMATCH,
     HOLD_NOT_FOUND, HOLD_INSUFFICIENT, INSUFFICIENT_FUNDS, IDEMPOTENCY_CONFLICT.
@@ -278,25 +299,34 @@ def post_transaction(legs: Sequence[Leg], *, key: str, reference_kind: str, refe
         problem = amount_problem(u.amount)
         if problem:
             return _refuse(problem, amount=u.amount)
-    payload_hash = _hash(legs, (reference_kind, reference_id), competence_day, uses, reverses)
+    payload = canonical_payload(legs, (reference_kind, reference_id), competence_day, uses, reverses)
+    payload_hash = payload_digest(payload)
     at = game_clock.now() if at is None else at
     day = competence_day_of(at) if competence_day is None else competence_day
     try:
         with transaction.atomic():
-            existing = Transaction.objects.filter(key=key).first()
+            existing = _existing_transaction(key)
             if existing is not None:
-                if existing.payload_hash != payload_hash:
-                    return _refuse("IDEMPOTENCY_CONFLICT", key=key)
-                return _result_of(existing, True)
-            return _post(legs, key, payload_hash, reference_kind, reference_id, at, day, actor, list(uses), reverses)
+                return _same_key_result(existing, payload_hash)
+            return _post(legs, key, payload, payload_hash, reference_kind, reference_id, at, day, actor, list(uses), reverses)
     except _Refuse as r:
         return r.result
+    except _KeyRace:
+        # A transação (e o que ela tinha feito, como consumir reservas) foi desfeita; relê o vencedor da corrida.
+        winner = _existing_transaction(key)
+        if winner is None:          # a outra requisição também desfez: não há original a devolver
+            return _refuse("IDEMPOTENCY_CONFLICT", key=key, why="concurrent_request_rolled_back")
+        return _same_key_result(winner, payload_hash)
 
 
-def _post(legs: List[Leg], key: str, payload_hash: str, reference_kind: str, reference_id: str, at: int, day: int,
-          actor: str, uses: List[HoldUse], reverses: Optional[int]) -> ActionResult:
+def _post(legs: List[Leg], key: str, payload: Dict[str, Any], payload_hash: str, reference_kind: str, reference_id: str,
+          at: int, day: int, actor: str, uses: List[HoldUse], reverses: Optional[int]) -> ActionResult:
     ids = sorted({i for l in legs for i in (l.from_id, l.to_id)})
     locked = {a.pk: a for a in Account.objects.select_for_update().filter(pk__in=ids).order_by("pk")}   # ordem crescente
+    # Quem esperou o travel das contas pode ter perdido a corrida pela chave: reconfere já com as contas travadas.
+    winner = _existing_transaction(key)
+    if winner is not None:
+        return _same_key_result(winner, payload_hash)
     for i in ids:
         if i not in locked:
             _fail("ACCOUNT_NOT_FOUND", account=i)
@@ -322,9 +352,9 @@ def _post(legs: List[Leg], key: str, payload_hash: str, reference_kind: str, ref
             resolved_at=at if left == 0 else None)
     running = {i: locked[i].balance for i in ids}
     try:
-        tx = _create_transaction(key, payload_hash, actor, at)
+        tx = _create_transaction(key, payload, payload_hash, actor, at)
     except IntegrityError:                  # corrida por chave: outra requisição gravou primeiro
-        raise _Refuse(_refuse("IDEMPOTENCY_CONFLICT", key=key))
+        raise _KeyRace()
     entries: List[Entry] = []
     for n, l in enumerate(legs):
         origin, dest = locked[l.from_id], locked[l.to_id]
@@ -355,9 +385,9 @@ def _post(legs: List[Leg], key: str, payload_hash: str, reference_kind: str, ref
     return _result_of(tx, False)
 
 
-def _create_transaction(key: str, payload_hash: str, actor: str, at: int) -> Transaction:
+def _create_transaction(key: str, payload: Dict[str, Any], payload_hash: str, actor: str, at: int) -> Transaction:
     with transaction.atomic():      # savepoint: a violação da chave única não envenena a transação externa
-        return Transaction.objects.create(key=key, payload_hash=payload_hash, actor=actor, at=at)
+        return Transaction.objects.create(key=key, payload=payload, payload_hash=payload_hash, actor=actor, at=at)
 
 
 def transfer(from_id: int, to_id: int, amount: int, nature: Nature, *, key: str, reference_kind: str, reference_id,
@@ -386,18 +416,26 @@ def hold(account_id: int, amount: int, *, key: str, reference_kind: str, referen
             return _refuse("ACCOUNT_CLOSED", account=account_id)
         if AccountKind(account.kind) in (AccountKind.SINK, AccountKind.ISSUANCE):
             return _refuse("SINK_NOT_SPENDABLE", account=account_id)
-        existing = Hold.objects.filter(key=key).first()
-        if existing is not None:
+        def _replay(existing: Hold) -> ActionResult:
             same = (existing.account_id, existing.original_amount, existing.reference_kind, existing.reference_id) == (
                 account_id, amount, reference_kind, str(reference_id))
             return ActionResult(True, "OK", {"hold_id": existing.pk, "already_posted": True}) if same else _refuse(
                 "IDEMPOTENCY_CONFLICT", key=key)
+
+        existing = Hold.objects.filter(key=key).first()
+        if existing is not None:
+            return _replay(existing)
         available = account.balance - reserved_of(account_id)
         if available < amount:
             q = _quote_from(account_id, amount, account.balance, at)
             return _refuse("INSUFFICIENT_AVAILABLE", account=account_id, **q.to_dict())
-        h = Hold.objects.create(key=key, account=account, original_amount=amount, amount=amount,
-                                reference_kind=reference_kind, reference_id=str(reference_id), created_at=at)
+        try:
+            with transaction.atomic():      # savepoint: a corrida pela chave não envenena a transação externa
+                h = Hold.objects.create(key=key, account=account, original_amount=amount, amount=amount,
+                                        reference_kind=reference_kind, reference_id=str(reference_id), created_at=at)
+        except IntegrityError:
+            winner = Hold.objects.filter(key=key).first()
+            return _replay(winner) if winner is not None else _refuse("IDEMPOTENCY_CONFLICT", key=key)
         return ActionResult(True, "OK", {"hold_id": h.pk, "already_posted": False, "amount": amount})
 
 

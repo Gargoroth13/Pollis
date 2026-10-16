@@ -1,11 +1,12 @@
 import random
 from decimal import Decimal
+from unittest import mock
 
 from ledger import services as ledger
 from ledger.audit import audit_ledger
 from ledger.constants import MAX_AMOUNT, AccountKind, Nature
-from ledger.models import Account, Entry, LedgerImmutableError, Transaction
-from ledger.services import Leg, post_transaction
+from ledger.models import Account, Entry, Hold, LedgerImmutableError, Transaction
+from ledger.services import HoldUse, Leg, post_transaction
 
 from .base import LedgerTestCase
 
@@ -146,6 +147,96 @@ class IdempotencyAndAtomicityTests(LedgerTestCase):
         self.assertEqual((self.bal(a), self.bal(b), self.bal(c)), (0, 0, 100))
 
 
+class IdempotencyRaceTests(LedgerTestCase):
+    """
+    O caminho da corrida SEM threads: a checagem inicial e a reconferência depois do travamento "não veem" a transação que
+    outra requisição já gravou; a violação da chave única na gravação deve resultar na transação ORIGINAL (mesmo conteúdo)
+    ou em IDEMPOTENCY_CONFLICT (conteúdo diferente) — nunca em erro, nem em gravação duplicada, nem em reserva consumida.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.a, self.b = self.company(1), self.company(2)
+        self.fund(self.a, 1000)
+
+    def blind_first_lookups(self, n=2):
+        calls = {"n": 0}
+        real = ledger._existing_transaction
+
+        def lookup(key):
+            calls["n"] += 1
+            return None if calls["n"] <= n else real(key)
+        return mock.patch.object(ledger, "_existing_transaction", side_effect=lookup), calls
+
+    def go(self, amount=100, key="race", **kw):
+        return ledger.transfer(self.a.pk, self.b.pk, amount, Nature.SALE, key=key, reference_kind="t", reference_id=1, **kw)
+
+    def test_lost_race_with_same_payload_returns_the_original(self):
+        first = self.go()
+        patch, calls = self.blind_first_lookups()
+        with patch:
+            second = self.go()
+        self.assertGreaterEqual(calls["n"], 3)                       # passou pela releitura depois da violação
+        self.assertTrue(second.ok, second)
+        self.assertTrue(second.detail["already_posted"])
+        self.assertEqual((second.detail["transaction_id"], second.detail["seqs"]), (first.detail["transaction_id"], first.detail["seqs"]))
+        self.assertEqual((self.bal(self.b), Entry.objects.filter(nature="sale").count()), (100, 1))
+
+    def test_lost_race_with_different_payload_is_a_conflict(self):
+        self.go()
+        patch, _ = self.blind_first_lookups()
+        with patch:
+            second = self.go(amount=101)
+        self.assertEqual(second.code, "IDEMPOTENCY_CONFLICT")
+        self.assertEqual((self.bal(self.b), Entry.objects.filter(nature="sale").count()), (100, 1))
+
+    def test_losing_the_race_rolls_back_what_the_attempt_had_done_including_holds(self):
+        h = ledger.hold(self.a.pk, 100, key="h", reference_kind="t", reference_id=1).detail["hold_id"]
+        first = self.go(uses=[HoldUse(h, 40)])
+        patch, _ = self.blind_first_lookups()
+        with patch:
+            second = self.go(uses=[HoldUse(h, 40)])
+        self.assertTrue(second.ok and second.detail["already_posted"])
+        self.assertEqual(second.detail["transaction_id"], first.detail["transaction_id"])
+        self.assertEqual(Hold.objects.get(pk=h).amount, 60)           # consumido UMA vez
+
+    def test_winner_check_after_locking_accounts_catches_the_race_before_writing(self):
+        first = self.go()
+        patch, calls = self.blind_first_lookups(n=1)                  # só a primeira checagem é cega
+        with patch:
+            second = self.go()
+        self.assertEqual(calls["n"], 2)                                # a reconferência já achou o vencedor
+        self.assertTrue(second.ok and second.detail["already_posted"])
+        self.assertEqual(second.detail["transaction_id"], first.detail["transaction_id"])
+
+    def test_same_contract_for_hold_obligation_and_remuneration_request(self):
+        from ledger import obligations
+        h1 = ledger.hold(self.a.pk, 10, key="hk", reference_kind="t", reference_id=1)
+        o1 = obligations.open_obligation(self.a.pk, self.b.pk, 10, Nature.GOV_TRANSFER, key="ok", reference_kind="t",
+                                         reference_id=1, competence_day=1)
+
+        def blind(manager):
+            real, calls = manager.filter, {"n": 0}
+
+            def filt(*args, **kw):
+                if "key" in kw and calls["n"] == 0:
+                    calls["n"] += 1
+                    return real(pk__in=[])
+                return real(*args, **kw)
+            return mock.patch.object(manager, "filter", side_effect=filt)
+        with blind(Hold.objects):
+            h2 = ledger.hold(self.a.pk, 10, key="hk", reference_kind="t", reference_id=1)
+            h3 = ledger.hold(self.a.pk, 11, key="hk", reference_kind="t", reference_id=1)
+        self.assertTrue(h2.ok and h2.detail["already_posted"] and h2.detail["hold_id"] == h1.detail["hold_id"])
+        self.assertEqual(h3.code, "IDEMPOTENCY_CONFLICT")
+        from ledger.models import Obligation
+        with blind(Obligation.objects):
+            o2 = obligations.open_obligation(self.a.pk, self.b.pk, 10, Nature.GOV_TRANSFER, key="ok", reference_kind="t",
+                                             reference_id=1, competence_day=1)
+        self.assertTrue(o2.ok and o2.detail["already_posted"] and o2.detail["obligation_id"] == o1.detail["obligation_id"])
+        self.assertEqual(Hold.objects.filter(key="hk").count(), 1)
+
+
 class RouteTests(LedgerTestCase):
     def test_sink_only_receives(self):
         a = self.company(1)
@@ -205,6 +296,49 @@ class ImmutabilityAndReversalTests(LedgerTestCase):
         with self.assertRaises(LedgerImmutableError):
             tx.save()
 
+    def test_transaction_cannot_be_changed_in_bulk_through_the_orm(self):
+        a, b = self.company(1), self.company(2)
+        self.fund(a, 100)
+        self.pay(a, b, 10)
+        before = list(Transaction.objects.values_list("pk", "key", "payload_hash", "actor", "at"))
+        with self.assertRaises(LedgerImmutableError):
+            Transaction.objects.all().update(actor="x")
+        with self.assertRaises(LedgerImmutableError):
+            Transaction.objects.filter(pk__gt=0).update(payload_hash="0" * 64)
+        txs = list(Transaction.objects.all())
+        for t in txs:
+            t.actor = "tampered"
+        with self.assertRaises(LedgerImmutableError):
+            Transaction.objects.bulk_update(txs, ["actor"])
+        with self.assertRaises(LedgerImmutableError):
+            Transaction.objects.update_or_create(key=txs[0].key, defaults={"actor": "x"})
+        with self.assertRaises(LedgerImmutableError):
+            Transaction.objects.all().delete()
+        with self.assertRaises(LedgerImmutableError):
+            Transaction.objects.all()._raw_delete(Transaction.objects.db)
+        with self.assertRaises(LedgerImmutableError):
+            Transaction.objects.bulk_create([Transaction(key=txs[0].key, payload_hash="x", at=1)], update_conflicts=True,
+                                            update_fields=["actor"], unique_fields=["key"])
+        self.assertEqual(list(Transaction.objects.values_list("pk", "key", "payload_hash", "actor", "at")), before)
+
+    def test_entry_cannot_be_changed_in_bulk_through_the_orm(self):
+        a, b = self.company(1), self.company(2)
+        self.fund(a, 100)
+        self.pay(a, b, 10)
+        before = list(Entry.objects.values_list("seq", "amount", "nature", "from_account", "to_account"))
+        entries = list(Entry.objects.all())
+        for e in entries:
+            e.amount = 1
+        with self.assertRaises(LedgerImmutableError):
+            Entry.objects.bulk_update(entries, ["amount"])
+        with self.assertRaises(LedgerImmutableError):
+            Entry.objects.update_or_create(seq=entries[0].seq, defaults={"amount": 1})
+        with self.assertRaises(LedgerImmutableError):
+            Entry.objects.all()._raw_delete(Entry.objects.db)
+        with self.assertRaises(LedgerImmutableError):
+            Entry.objects.bulk_create(entries[:1], update_conflicts=True, update_fields=["amount"], unique_fields=["seq"])
+        self.assertEqual(list(Entry.objects.values_list("seq", "amount", "nature", "from_account", "to_account")), before)
+
     def test_reversal_mirrors_and_points_to_original(self):
         a, b = self.company(1), self.company(2)
         self.fund(a, 100)
@@ -235,6 +369,17 @@ class ImmutabilityAndReversalTests(LedgerTestCase):
                               reference_id=1).detail["seqs"][0]
         self.assertEqual(ledger.reverse(seq, "x", key="r2").code, "REVERSAL_NOT_POSSIBLE")
         self.assertEqual(self.bal(ledger.sink_account()), 10)
+
+
+class TransactionInstanceImmutabilityTests(LedgerTestCase):
+    audit_at_end = False          # o teste cria de propósito uma transação sem lançamentos (a auditoria a apontaria)
+
+    def test_new_instances_can_be_created_but_saved_ones_cannot_be_saved_again(self):
+        t = Transaction.objects.create(key="manual", payload_hash="x", at=1)
+        with self.assertRaises(LedgerImmutableError):
+            t.save()
+        with self.assertRaises(LedgerImmutableError):
+            t.save(update_fields=["actor"])
 
 
 class RandomSequenceConservationTests(LedgerTestCase):

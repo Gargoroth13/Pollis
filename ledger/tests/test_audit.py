@@ -8,9 +8,9 @@ from django.db import IntegrityError, connection, transaction
 from ledger import services as ledger
 from ledger.audit import audit_ledger, ledger_metrics
 from ledger.constants import Nature
-from ledger.models import Account, Entry, Obligation, RemunerationCounter, Transaction
+from ledger.models import Account, Entry, Hold, Obligation, RemunerationCounter, Transaction
 
-from .base import LedgerTestCase
+from .base import D, LedgerTestCase
 
 
 class AuditTests(LedgerTestCase):
@@ -133,3 +133,160 @@ class AuditTests(LedgerTestCase):
         out = StringIO()
         call_command("ledger_metrics", stdout=out)
         self.assertEqual(json.loads(out.getvalue())["emitted_total"], 1000)
+
+
+class AuditRobustnessTests(LedgerTestCase):
+    """Adulteração direta (fora do ORM protegido) e valores fora do domínio viram ACHADOS estruturados, nunca exceção."""
+    audit_at_end = False
+
+    def setUp(self):
+        super().setUp()
+        self.a, self.b = self.company(1), self.company(2)
+        self.fund(self.a, 1000)
+        self.pay(self.a, self.b, 300, category="shop", operation="buy")
+        self.sale_tx = Entry.objects.get(nature="sale").transaction
+
+    def report(self):
+        rep = audit_ledger()                                     # não pode levantar
+        json.dumps(rep.to_dict(), default=str)                   # e o resultado é exportável
+        return rep
+
+    def codes(self):
+        return {f["code"] for f in self.report().findings}
+
+    def sql(self, statement, params=()):
+        with connection.cursor() as c:
+            c.execute(statement, params)
+
+    def test_clean_baseline(self):
+        self.assertTrue(self.report().ok, self.report().findings)
+
+    # --- metadados da transação ---
+    def test_tampered_transaction_instant_actor_hash_and_key(self):
+        self.sql("UPDATE ledger_transaction SET at = at + 5 WHERE id = %s", [self.sale_tx.pk])
+        self.assertIn("TRANSACTION_AT_MISMATCH", self.codes())
+        self.sql("UPDATE ledger_transaction SET at = %s WHERE id = %s", [self.sale_tx.at, self.sale_tx.pk])
+        self.assertTrue(self.report().ok)
+        self.sql("UPDATE ledger_transaction SET actor = 'outro' WHERE id = %s", [self.sale_tx.pk])
+        self.assertIn("TRANSACTION_ACTOR_MISMATCH", self.codes())
+        self.sql("UPDATE ledger_transaction SET actor = %s WHERE id = %s", [self.sale_tx.actor, self.sale_tx.pk])
+        self.sql("UPDATE ledger_transaction SET payload_hash = %s WHERE id = %s", ["0" * 64, self.sale_tx.pk])
+        self.assertIn("TRANSACTION_HASH_MISMATCH", self.codes())
+        self.sql("UPDATE ledger_transaction SET payload_hash = %s WHERE id = %s", [self.sale_tx.payload_hash, self.sale_tx.pk])
+        self.sql("UPDATE ledger_transaction SET key = '' WHERE id = %s", [self.sale_tx.pk])
+        self.assertIn("TRANSACTION_KEY_EMPTY", self.codes())
+
+    def test_tampered_payload_content_is_caught_even_if_the_hash_is_recomputed(self):
+        from ledger.services import payload_digest
+        payload = dict(self.sale_tx.payload)
+        payload["legs"] = [list(payload["legs"][0][:2]) + [payload["legs"][0][2] + 1] + list(payload["legs"][0][3:])]
+        h = payload_digest(payload)
+        self.sql("UPDATE ledger_transaction SET payload = %s, payload_hash = %s WHERE id = %s",
+                 [json.dumps(payload), h, self.sale_tx.pk])
+        codes = self.codes()
+        self.assertIn("TRANSACTION_PAYLOAD_MISMATCH", codes)      # hash coerente com o payload, mas o payload não é o que foi gravado
+        self.assertNotIn("TRANSACTION_HASH_MISMATCH", codes)
+
+    def test_payload_of_the_wrong_shape(self):
+        for raw in ('[1, 2]', '"texto"', '{}', 'null'):
+            self.sql("UPDATE ledger_transaction SET payload = %s WHERE id = %s", [raw, self.sale_tx.pk])
+            rep = self.report()
+            self.assertFalse(rep.ok, raw)
+            self.assertTrue({f["code"] for f in rep.findings} & {"TRANSACTION_PAYLOAD_INVALID", "TRANSACTION_HASH_MISMATCH",
+                                                                 "TRANSACTION_PAYLOAD_MISMATCH"}, raw)
+
+    def test_entry_reference_and_day_diverging_from_payload(self):
+        self.sql("UPDATE ledger_entry SET reference_id = 'outra' WHERE nature = 'sale'")
+        self.assertIn("TRANSACTION_PAYLOAD_MISMATCH", self.codes())
+        self.sql("UPDATE ledger_entry SET reference_id = %s WHERE nature = 'sale'", [self.sale_tx.payload["reference"][1]])
+        self.sql("UPDATE ledger_entry SET category = 'x' WHERE nature = 'sale'")
+        self.assertIn("TRANSACTION_PAYLOAD_MISMATCH", self.codes())
+
+    def test_entries_of_one_transaction_that_disagree_with_each_other(self):
+        buyer, seller = self.company(3), self.company(4)
+        self.fund(buyer, 1000)
+        res = ledger.post_taxed_payment(buyer.pk, seller.pk, 1000, nature=Nature.SALE, tax_rate=D("0.1"), key="tx2",
+                                        reference_kind="sale", reference_id=9)
+        last = res.detail["seqs"][-1]
+        self.sql("UPDATE ledger_entry SET at = at + 1 WHERE seq = %s", [last])
+        self.assertTrue({"TRANSACTION_AT_MISMATCH"} <= self.codes())
+        self.sql("UPDATE ledger_entry SET at = at - 1, reference_id = 'x' WHERE seq = %s", [last])
+        self.assertIn("TRANSACTION_ENTRIES_INCONSISTENT", self.codes())
+
+    # --- valores fora do domínio das enumerações ---
+    def test_invalid_enum_values_are_findings_not_exceptions(self):
+        h = ledger.hold(self.a.pk, 10, key="h", reference_kind="t", reference_id=1).detail["hold_id"]
+        from ledger import obligations
+        o = obligations.open_obligation(self.a.pk, self.b.pk, 5, Nature.GOV_TRANSFER, key="o", reference_kind="t",
+                                       reference_id=1, competence_day=1).detail["obligation_id"]
+        Account.objects.filter(pk=self.b.pk).update(kind="bogus")
+        self.sql("UPDATE ledger_entry SET nature = 'inventada' WHERE nature = 'sale'")
+        Hold.objects.filter(pk=h).update(status="???")
+        Obligation.objects.filter(pk=o).update(status="zzz", nature="nada")
+        rep = self.report()
+        found = {(f["model"], f["field"]) for f in rep.findings if f["code"] == "INVALID_ENUM_VALUE"}
+        self.assertTrue({("Account", "kind"), ("Entry", "nature"), ("Hold", "status"), ("Obligation", "status"),
+                         ("Obligation", "nature")} <= found, found)
+        for f in rep.findings:
+            self.assertNotEqual(f["code"], "AUDIT_SECTION_FAILED", f)       # nenhuma seção caiu: foi tratado explicitamente
+        self.assertTrue(all(f["invariant"] == 15 for f in rep.findings if f["code"] == "INVALID_ENUM_VALUE"))
+
+    def test_invalid_enum_values_in_remuneration_requests_and_explained(self):
+        from ledger.models import RemunerationRequest
+        RemunerationRequest.objects.create(
+            key="r1", payload_hash="x", player_id=1, payer=self.a, nature="bogus", due=10, competence_day=1, earned_at=1,
+            policy="talvez", reference_kind="t", reference_id="1", status="quase")
+        RemunerationRequest.objects.create(
+            key="r2", payload_hash="x", player_id=1, payer=self.a, nature="political_salary", due=10, competence_day=1,
+            earned_at=1, policy="pending", reference_kind="t", reference_id="1", status="recognized", recognized=10,
+            pending=10, explained=["não é dict"])
+        rep = self.report()
+        found = {(f.get("model"), f.get("field")) for f in rep.findings if f["code"] == "INVALID_ENUM_VALUE"}
+        self.assertTrue({("RemunerationRequest", "nature"), ("RemunerationRequest", "status"),
+                         ("RemunerationRequest", "policy")} <= found, found)
+        self.assertIn("REQUEST_EXPLAINED_INVALID", {f["code"] for f in rep.findings})
+        self.assertNotIn("AUDIT_SECTION_FAILED", {f["code"] for f in rep.findings})
+
+    def test_non_remuneration_nature_in_a_request_is_reported(self):
+        from ledger.models import RemunerationRequest
+        RemunerationRequest.objects.create(
+            key="r1", payload_hash="x", player_id=1, payer=self.a, nature="sale", due=10, competence_day=1, earned_at=1,
+            policy="pending", reference_kind="t", reference_id="1")
+        self.assertIn("REQUEST_NATURE_NOT_REMUNERATION", self.codes())
+
+    def test_unexpected_failure_in_one_section_becomes_a_finding_and_other_sections_still_run(self):
+        from unittest import mock
+        from ledger import audit
+        Account.objects.filter(pk=self.a.pk).update(balance=1)         # um problema real, em outra seção
+        boom = mock.Mock(side_effect=RuntimeError("falha inesperada"))
+        sections = tuple((n, boom if n == "transactions" else f) for n, f in audit._SECTIONS)
+        with mock.patch.object(audit, "_SECTIONS", sections):
+            rep = audit.audit_ledger()
+        codes = {f["code"] for f in rep.findings}
+        self.assertIn("AUDIT_SECTION_FAILED", codes)
+        self.assertIn("STORED_BALANCE_DIFFERS_FROM_LOG", codes)       # a seção do log ainda rodou
+        failed = next(f for f in rep.findings if f["code"] == "AUDIT_SECTION_FAILED")
+        self.assertEqual(failed["section"], "transactions")
+        self.assertIn("falha inesperada", failed["error"])
+
+    def test_command_reports_invalid_data_without_a_traceback(self):
+        Account.objects.filter(pk=self.b.pk).update(kind="bogus")
+        out = StringIO()
+        with self.assertRaises(CommandError) as cm:
+            call_command("audit_ledger", stdout=out)
+        self.assertIn("violação", str(cm.exception))
+        self.assertIn("INVALID_ENUM_VALUE", out.getvalue())
+        out = StringIO()
+        with self.assertRaises(CommandError):
+            call_command("audit_ledger", "--json", stdout=out)
+        data = json.loads(out.getvalue())
+        self.assertFalse(data["ok"])
+        self.assertTrue(any(f["code"] == "INVALID_ENUM_VALUE" for f in data["findings"]))
+
+    def test_metrics_tolerate_unknown_account_kind(self):
+        Account.objects.filter(pk=self.b.pk).update(kind="bogus")
+        m = ledger_metrics()
+        self.assertIn("bogus", m["by_account_kind"])
+        self.assertEqual(m["emitted_total"], 1000)
+
+    # (Entrada apontando para conta inexistente não é testada: a chave estrangeira do banco já a impede.)

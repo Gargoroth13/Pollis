@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from core import clock as game_clock
 from core.breakdown import Calc
@@ -195,16 +195,24 @@ def submit_remuneration(*, key: str, player_id: int, payer_id: int, nature: Natu
         return _refuse("SAME_ACCOUNT", account=payer_id)
     h = _request_hash([player_id, payer_id, nature.value, due, earned_at, policy.value, reference_kind, reference_id,
                        str(tax_rate), tax_territory, day])
+    def _replay(existing: RemunerationRequest) -> ActionResult:
+        if existing.payload_hash != h:
+            return _refuse("IDEMPOTENCY_CONFLICT", key=key)
+        return ActionResult(True, "OK", {"request_id": existing.pk, "status": existing.status, "already_posted": True})
+
     with transaction.atomic():
         existing = RemunerationRequest.objects.filter(key=key).first()
         if existing is not None:
-            if existing.payload_hash != h:
-                return _refuse("IDEMPOTENCY_CONFLICT", key=key)
-            return ActionResult(True, "OK", {"request_id": existing.pk, "status": existing.status, "already_posted": True})
-        r = RemunerationRequest.objects.create(
-            key=key, payload_hash=h, player_id=player_id, payer=payer, nature=nature.value, due=due, competence_day=day,
-            earned_at=earned_at, policy=policy.value, reference_kind=reference_kind, reference_id=reference_id,
-            tax_rate=Decimal(tax_rate), tax_territory=tax_territory)
+            return _replay(existing)
+        try:
+            with transaction.atomic():
+                r = RemunerationRequest.objects.create(
+                    key=key, payload_hash=h, player_id=player_id, payer=payer, nature=nature.value, due=due,
+                    competence_day=day, earned_at=earned_at, policy=policy.value, reference_kind=reference_kind,
+                    reference_id=reference_id, tax_rate=Decimal(tax_rate), tax_territory=tax_territory)
+        except IntegrityError:
+            winner = RemunerationRequest.objects.filter(key=key).first()
+            return _replay(winner) if winner is not None else _refuse("IDEMPOTENCY_CONFLICT", key=key)
     return ActionResult(True, "OK", {"request_id": r.pk, "status": r.status, "already_posted": False})
 
 

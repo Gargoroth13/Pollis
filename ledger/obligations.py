@@ -10,7 +10,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from core import clock as game_clock
 from players.services import ActionResult
@@ -55,17 +55,25 @@ def open_obligation(debtor_id: int, creditor_id: int, amount: int, nature: Natur
         for i in (debtor_id, creditor_id):
             if AccountKind(accounts[i].kind) in (AccountKind.SINK, AccountKind.ISSUANCE):
                 return _refuse("NATURE_ACCOUNT_MISMATCH", account=i)
-        existing = Obligation.objects.filter(key=key).first()
-        if existing is not None:
+        def _replay(existing: Obligation) -> ActionResult:
             same = (existing.debtor_id, existing.creditor_id, existing.amount_due, existing.nature, existing.competence_day,
                     existing.reference_kind, existing.reference_id) == (
                 debtor_id, creditor_id, amount, nature.value, day, reference_kind, reference_id)
             return ActionResult(True, "OK", {"obligation_id": existing.pk, "already_posted": True}) if same \
                 else _refuse("IDEMPOTENCY_CONFLICT", key=key)
-        ob = Obligation.objects.create(
-            key=key, debtor_id=debtor_id, creditor_id=creditor_id, amount_due=amount, nature=nature.value,
-            competence_day=day, reference_kind=reference_kind, reference_id=reference_id, tax_rate=Decimal(tax_rate),
-            tax_territory=tax_territory, created_at=at)
+
+        existing = Obligation.objects.filter(key=key).first()
+        if existing is not None:
+            return _replay(existing)
+        try:
+            with transaction.atomic():
+                ob = Obligation.objects.create(
+                    key=key, debtor_id=debtor_id, creditor_id=creditor_id, amount_due=amount, nature=nature.value,
+                    competence_day=day, reference_kind=reference_kind, reference_id=reference_id,
+                    tax_rate=Decimal(tax_rate), tax_territory=tax_territory, created_at=at)
+        except IntegrityError:
+            winner = Obligation.objects.filter(key=key).first()
+            return _replay(winner) if winner is not None else _refuse("IDEMPOTENCY_CONFLICT", key=key)
         return ActionResult(True, "OK", {"obligation_id": ob.pk, "already_posted": False, "amount": amount})
 
 

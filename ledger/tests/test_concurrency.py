@@ -12,7 +12,8 @@ from django.test import TransactionTestCase
 from ledger import services as ledger
 from ledger.audit import audit_ledger
 from ledger.constants import AccountKind, Nature
-from ledger.models import Account, Entry
+from ledger.services import HoldUse
+from ledger.models import Account, Entry, Hold, Obligation, Transaction
 
 
 def _retry(fn, attempts=60):
@@ -61,14 +62,56 @@ class ConcurrencyTests(TransactionTestCase):
         self.assertEqual(ledger.balance_of(self.b.pk) + ledger.balance_of(self.c.pk), 60)
         self.assertTrue(audit_ledger().ok, audit_ledger().findings)
 
-    def test_same_idempotency_key_in_parallel_posts_once(self):
+    def test_same_key_same_payload_in_parallel_returns_the_original_transaction_to_everyone(self):
+        """Contrato: nenhuma requisição concorrente com a mesma chave e o mesmo conteúdo recebe conflito ou erro."""
         def pay():
             return ledger.transfer(self.a.pk, self.b.pk, 30, Nature.SALE, key="dup", reference_kind="t", reference_id=1)
-        results = self._run([pay, pay, pay])
-        self.assertTrue(all(r.ok or r.code == "IDEMPOTENCY_CONFLICT" for r in results), results)
-        self.assertGreaterEqual(sum(1 for r in results if r.ok), 1)
+        results = self._run([pay] * 6)
+        self.assertTrue(all(r is not None and r.ok for r in results), [(r.code, r.detail) if r else None for r in results])
+        self.assertEqual(len({r.detail["transaction_id"] for r in results}), 1)           # todas veem a MESMA transação
+        self.assertEqual(len({tuple(r.detail["seqs"]) for r in results}), 1)
+        self.assertEqual(sum(1 for r in results if not r.detail["already_posted"]), 1)    # exatamente uma criou
         self.assertEqual(ledger.balance_of(self.b.pk), 30)
         self.assertEqual(Entry.objects.filter(nature="sale").count(), 1)
+        self.assertEqual(Transaction.objects.filter(key="dup").count(), 1)
+
+    def test_same_key_different_payloads_in_parallel_one_wins_the_rest_conflict(self):
+        def pay(amount):
+            return lambda: ledger.transfer(self.a.pk, self.b.pk, amount, Nature.SALE, key="dup", reference_kind="t",
+                                           reference_id=1)
+        results = self._run([pay(10), pay(11), pay(12), pay(13)])
+        self.assertEqual(sorted(r.code for r in results), ["IDEMPOTENCY_CONFLICT"] * 3 + ["OK"])
+        winner = next(r for r in results if r.ok)
+        self.assertEqual(ledger.balance_of(self.b.pk), winner.detail["amount"])
+        self.assertEqual(Entry.objects.filter(nature="sale").count(), 1)
+
+    def test_parallel_replays_that_consume_a_hold_consume_it_once(self):
+        h = ledger.hold(self.a.pk, 50, key="h", reference_kind="t", reference_id=1).detail["hold_id"]
+
+        def pay():
+            return ledger.transfer(self.a.pk, self.b.pk, 50, Nature.SALE, key="dup", reference_kind="t", reference_id=1,
+                                   uses=[HoldUse(h, 50)])
+        results = self._run([pay] * 4)
+        self.assertTrue(all(r.ok for r in results), [(r.code, r.detail) for r in results])
+        self.assertEqual(Hold.objects.get(pk=h).status, "consumed")
+        self.assertEqual(ledger.balance_of(self.b.pk), 50)
+
+    def test_parallel_hold_obligation_and_request_with_the_same_key_return_the_original(self):
+        from ledger import obligations
+
+        def hold():
+            return ledger.hold(self.a.pk, 10, key="hk", reference_kind="t", reference_id=1)
+
+        def obligation():
+            return obligations.open_obligation(self.a.pk, self.b.pk, 10, Nature.GOV_TRANSFER, key="ok", reference_kind="t",
+                                               reference_id=1, competence_day=1)
+        for job, ident in ((hold, "hold_id"), (obligation, "obligation_id")):
+            results = self._run([job] * 4)
+            self.assertTrue(all(r.ok for r in results), [(r.code, r.detail) for r in results])
+            self.assertEqual(len({r.detail[ident] for r in results}), 1)
+            self.assertEqual(sum(1 for r in results if not r.detail["already_posted"]), 1)
+        self.assertEqual(Hold.objects.filter(key="hk").count(), 1)
+        self.assertEqual(Obligation.objects.filter(key="ok").count(), 1)
 
     def test_opposite_direction_payments_do_not_deadlock_and_conserve(self):
         ledger.create_scenario("conc2", {})

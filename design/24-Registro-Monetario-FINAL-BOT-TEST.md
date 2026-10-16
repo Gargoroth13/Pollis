@@ -158,7 +158,7 @@ Todas devolvem `ActionResult` (padrão do projeto): `ok` + código + detalhe est
 
 - Cada transação roda em **uma transação de banco**. Falha em qualquer perna desfaz todas.
 - **Ordem de travamento**: as contas envolvidas são travadas em **ordem crescente de id** (evita *deadlock*). O saldo é lido e gravado sob esse travamento.
-- **Idempotência**: toda requisição traz uma `key` única do chamador (ex.: `travel:{jogador}:{instante}:{origem}:{destino}`, `grant:{scenario}:{account}`, `wage:{player}:{day}:{company}:{n}`). Repetir a mesma `key` com o mesmo conteúdo devolve o resultado original (`already_posted=True`) sem novo efeito. A mesma `key` com conteúdo diferente recusa com `IDEMPOTENCY_CONFLICT`.
+- **Idempotência**: toda requisição traz uma `key` única do chamador (ex.: `travel:{jogador}:{instante}:{origem}:{destino}`, `grant:{scenario}:{account}`, `wage:{player}:{day}:{company}:{n}`). Repetir a mesma `key` com o mesmo conteúdo devolve o resultado original (`already_posted=True`) sem novo efeito. A mesma `key` com conteúdo diferente recusa com `IDEMPOTENCY_CONFLICT`, e **só** nesse caso. O contrato vale também **sob concorrência**: se duas requisições com a mesma `key` e o mesmo conteúdo disputam a criação, a que perde desfaz tudo o que tinha feito (inclusive reservas consumidas) e devolve a transação **original** (`already_posted=True`), nunca conflito nem erro; a mesma regra vale para reservas, obrigações e pedidos de remuneração. Cada transação guarda o conteúdo canônico (`payload`, pernas, referência, dia, reservas usadas, estorno) e o `payload_hash` desse conteúdo, para a auditoria conferir.
 - **Falha de caixa**: `INSUFFICIENT_FUNDS` com `Explained` (saldo, reservas, disponível, valor pedido, falta). Nada é gravado.
 - **Hot account**: a `UNION` recebe quase todo imposto e taxa e será a linha mais disputada. Na primeira versão há **um único travamento por conta** e o gargalo é **medido** (`CLAUDE.md` §9) antes de otimizar; a interface não muda se for preciso fatiar o caixa federal depois (risco R-LEDGER-01).
 
@@ -444,7 +444,7 @@ exigido: Δ_proj ≤ teto% × R_ref
 3. saldo guardado = soma dos lançamentos de cada conta (reconstrução do log);
 4. `emitido_total = saldos brutos operacionais + retenções + sumidouro` (reservas **não** entram na fórmula, §24.3.3);
 5. `SINK` nunca é origem;
-6. lançamentos imutáveis (sem `UPDATE`/`DELETE` via serviço; teste tenta e falha);
+6. lançamentos **e transações** imutáveis (sem `UPDATE`/`DELETE` por instância, `QuerySet.update/delete`, `bulk_update`, `update_or_create` ou `bulk_create` com *upsert*; teste tenta e falha);
 7. toda transação com todas as pernas ou nenhuma; `seq` sem lacuna lógica;
 8. cada `key` de idempotência aparece uma vez;
 9. nenhuma reserva ativa maior que o saldo bruto; nenhuma obrigação paga acima do devido;
@@ -452,7 +452,9 @@ exigido: Δ_proj ≤ teto% × R_ref
 11. remuneração só por `submit_remuneration`/`liquidate_remuneration`; nenhuma natureza fora da lista;
 12. todo lançamento tem natureza, origem, destino e referência (`REFERENCE_REQUIRED`); estorno, retenção, liberação e dotação preservam as contrapartidas e apontam o original;
 13. `SINK` nunca é origem; só `SCENARIO_GRANT` tem origem `ISSUANCE`; título e empréstimo **transferem** dinheiro de contas existentes;
-14. o conjunto reconhecido em um lote de remuneração é **invariante à permutação** dos pedidos (§24.12.4).
+14. o conjunto reconhecido em um lote de remuneração é **invariante à permutação** dos pedidos (§24.12.4);
+15. todo valor de enumeração gravado (tipo de conta, natureza, estado, política) está no domínio; um valor inválido é **achado estruturado**, nunca exceção (a auditoria roda cada seção isolada e converte falha inesperada em achado `AUDIT_SECTION_FAILED`);
+16. os metadados de cada transação conferem com seus lançamentos: chave não vazia, instante e ator, referência e dia iguais em todas as pernas, `payload_hash` = hash do `payload`, e `payload` (pernas, referência, dia, estorno) = o que foi gravado.
 
 **Comandos** (P0.07b): `audit_ledger` (invariantes, exit code ≠ 0 se falhar) e `ledger_metrics` (emissão, circulação, retido, sumidouro, por tipo de conta, uso dos contadores). Logs estruturados e exportáveis (`CLAUDE.md` §8).
 

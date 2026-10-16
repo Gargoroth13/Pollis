@@ -26,10 +26,22 @@ Implementa `design/24` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev
 Provedor de `W`/`S`/`T` a partir de `skills`/`11` (P1.04/P1.12) e provedor do salário político (P1.11); valores de dotação do cenário (P1.18, configuração); política de caixa insuficiente por tipo (P1.04/P1.17/P1.09); ligação do tratamento (P0.04) a um prestador; resolvedor tributário militar (P1.17). Nenhuma delas bloqueia o registro.
 
 ### Testes
-149 testes novos (`ledger/tests/`): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 815 testes OK; `check` e `makemigrations --check` limpos.
+171 testes no app (`ledger/tests/`; 148 na primeira entrega + 23 das correções abaixo): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 838 testes OK (após as correções); `check` e `makemigrations --check` limpos.
 
 ### Documentos alterados
 `24` (centavos nos serviços, chave da viagem, `P_liberada`, §24.19.1), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
+
+### P0.07b — correções antes da auditoria externa (2026-10-16)
+
+Pedidas pelo Game Director sobre o PR #11; nenhuma altera decisão de mecânica.
+1. **Idempotência sob concorrência** (`post_transaction`): mesma chave + mesmo conteúdo devolve SEMPRE a transação original, inclusive quando duas requisições disputam a criação (a perdedora desfaz o que fez, como reservas consumidas, e relê o vencedor; há também reconferência depois de travar as contas). `IDEMPOTENCY_CONFLICT` ficou só para conteúdo diferente. Mesmo contrato aplicado a reservas, obrigações e pedidos de remuneração (antes uma corrida podia levantar `IntegrityError`). Cada `Transaction` passou a guardar o conteúdo canônico (`payload`) além do `payload_hash`. Migração `0001` regenerada (o app ainda não foi mergeado nem aplicado em lugar algum).
+2. **Imutabilidade em lote**: `Transaction` ganhou o mesmo manager protegido de `Entry`; `QuerySet.update`, `bulk_update`, `update_or_create`, `delete`, `_raw_delete` e `bulk_create(update_conflicts=True)` levantam `LedgerImmutableError`; `save()` de transação já gravada continua recusado.
+3. **Auditoria robusta**: valores fora do domínio das enumerações (conta, natureza, estados, política) viram achado `INVALID_ENUM_VALUE`; cada seção roda isolada e falha inesperada vira `AUDIT_SECTION_FAILED`; novo invariante 16 confere chave, instante, ator, referência, dia, hash e conteúdo canônico de cada transação contra os lançamentos (adulteração direta de metadados é detectada mesmo com o hash recalculado); `ledger_metrics` tolera tipo de conta desconhecido.
+4. Documento `24`: §24.5.3 (contrato de idempotência sob concorrência) e §24.17 (invariantes 6, 15 e 16).
+
+**Evidências (2026-10-16):** `manage.py test` → `Ran 838 tests ... OK`; `manage.py test ledger` → 171 OK; `test_concurrency` repetido 10 vezes sem falha; `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected`.
+
+**Limitação conhecida:** em SQLite a corrida real entre threads é serializada pelo banco, então o caminho da violação de chave única é exercitado de forma determinística nos testes (por simulação da checagem cega) e, em paralelo, pelos testes com threads; em PostgreSQL vale também o travamento de contas com `FOR UPDATE`. Os serviços (não a auditoria) ainda levantam `ValueError` se encontrarem um tipo de conta inválido no banco ao operar.
 
 ---
 

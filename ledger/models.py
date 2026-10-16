@@ -19,11 +19,30 @@ class LedgerImmutableError(Exception):
 
 
 class _ImmutableQuerySet(models.QuerySet):
+    """
+    Nenhuma operação em lote do ORM altera ou apaga linhas imutáveis. `bulk_update` e `update_or_create` passam por
+    `update()`/`save()` e herdam a recusa; `bulk_create` com `update_conflicts` (upsert) é recusado aqui.
+    """
+
     def update(self, **kwargs):
-        raise LedgerImmutableError("lançamentos são imutáveis")
+        raise LedgerImmutableError("registros imutáveis do ledger não podem ser alterados")
+
+    def update_or_create(self, *args, **kwargs):
+        raise LedgerImmutableError("registros imutáveis do ledger não podem ser alterados")
+
+    def bulk_update(self, *args, **kwargs):
+        raise LedgerImmutableError("registros imutáveis do ledger não podem ser alterados")
 
     def delete(self):
-        raise LedgerImmutableError("lançamentos são imutáveis")
+        raise LedgerImmutableError("registros imutáveis do ledger não podem ser apagados")
+
+    def _raw_delete(self, using):
+        raise LedgerImmutableError("registros imutáveis do ledger não podem ser apagados")
+
+    def bulk_create(self, objs, *args, update_conflicts=False, **kwargs):
+        if update_conflicts:
+            raise LedgerImmutableError("registros imutáveis do ledger não aceitam upsert")
+        return super().bulk_create(objs, *args, update_conflicts=False, **kwargs)
 
 
 class Account(models.Model):
@@ -54,13 +73,16 @@ class Transaction(models.Model):
     """Conjunto de lançamentos gravados juntos (atômico) sob uma chave de idempotência."""
 
     key = models.CharField(max_length=200, unique=True)
-    payload_hash = models.CharField(max_length=64)
+    payload_hash = models.CharField(max_length=64)         # sha256 do `payload` canônico (a auditoria confere os dois)
+    payload = models.JSONField(default=dict)               # conteúdo canônico: pernas, referência, dia, reservas usadas, estorno
     actor = models.CharField(max_length=60, default="system")
     at = models.BigIntegerField()                          # tempo de jogo
     created_real = models.DateTimeField(auto_now_add=True)
 
+    objects = _ImmutableQuerySet.as_manager()
+
     def save(self, *args, **kwargs):
-        if self.pk is not None:
+        if not self._state.adding:
             raise LedgerImmutableError("transações são imutáveis")
         super().save(*args, **kwargs)
 
