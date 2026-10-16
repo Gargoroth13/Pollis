@@ -104,7 +104,7 @@ A conservação usa **somente saldos brutos**. Reservas não são descontadas ne
 
 ## 24.4. Precisão e limites técnicos
 
-- Todo valor é **inteiro em centavos** (`BigInteger`). O serviço aceita `Decimal` e **recusa** quem não está exatamente em centavos (`AMOUNT_NOT_IN_CENTAVOS`), em vez de arredondar sem avisar. Float é proibido (igual a `core.breakdown`).
+- Todo valor é **inteiro em centavos** (`BigInteger`). As operações do registro recebem **só inteiros**; `Decimal`, `float`, texto e booleano são **recusados** (`AMOUNT_NOT_IN_CENTAVOS`), em vez de arredondar sem avisar. A conversão de reais (`Decimal`) para centavos fica em `ledger.money.from_reais`, que **recusa** o que não estiver exatamente em centavos (`ValueError`). Float é proibido (igual a `core.breakdown`).
 - **Valores calculados** (alíquotas, divisão proporcional) arredondam **uma vez**, com `ROUND_HALF_EVEN` (mesma regra já usada em `travel.rules.charge_amount`), e a **última perna é o resto** (`total − soma das demais`), de modo que nenhuma fração se perde nem se cria.
 - Valor de lançamento > 0 (`AMOUNT_NOT_POSITIVE`). Não existe lançamento de valor zero.
 - **Limite técnico** de valor por lançamento e por saldo: `MAX_AMOUNT = 10^15 centavos` (R$ 10 trilhões) `[PROV]`, calibrável. É o "limite técnico utilizado pelo sistema monetário" citado em `11` 11.1.1 (teto de preço). Passar dele recusa com `AMOUNT_TOO_LARGE`.
@@ -158,7 +158,7 @@ Todas devolvem `ActionResult` (padrão do projeto): `ok` + código + detalhe est
 
 - Cada transação roda em **uma transação de banco**. Falha em qualquer perna desfaz todas.
 - **Ordem de travamento**: as contas envolvidas são travadas em **ordem crescente de id** (evita *deadlock*). O saldo é lido e gravado sob esse travamento.
-- **Idempotência**: toda requisição traz uma `key` única do chamador (ex.: `travel:{journey_id}`, `grant:{scenario}:{account}`, `wage:{player}:{day}:{company}:{n}`). Repetir a mesma `key` com o mesmo conteúdo devolve o resultado original (`already_posted=True`) sem novo efeito. A mesma `key` com conteúdo diferente recusa com `IDEMPOTENCY_CONFLICT`.
+- **Idempotência**: toda requisição traz uma `key` única do chamador (ex.: `travel:{jogador}:{instante}:{origem}:{destino}`, `grant:{scenario}:{account}`, `wage:{player}:{day}:{company}:{n}`). Repetir a mesma `key` com o mesmo conteúdo devolve o resultado original (`already_posted=True`) sem novo efeito. A mesma `key` com conteúdo diferente recusa com `IDEMPOTENCY_CONFLICT`.
 - **Falha de caixa**: `INSUFFICIENT_FUNDS` com `Explained` (saldo, reservas, disponível, valor pedido, falta). Nada é gravado.
 - **Hot account**: a `UNION` recebe quase todo imposto e taxa e será a linha mais disputada. Na primeira versão há **um único travamento por conta** e o gargalo é **medido** (`CLAUDE.md` §9) antes de otimizar; a interface não muda se for preciso fatiar o caixa federal depois (risco R-LEDGER-01).
 
@@ -300,10 +300,10 @@ O salário político devido de um dia vem de um **provedor** registrado pela P1.
 ### 24.12.2. Reserva política sem dupla subtração
 
 ```text
-P_reservada = max(0, P_dia − C_P)           # política ainda não reconhecida
+P_reservada = max(0, P_dia − C_P − P_liberada)   # política ainda não reconhecida
 ```
 
-- `P_reservada` é **derivada**, não guardada: ao reconhecer o salário político, `C_P` e `C_T` aumentam pelo valor reconhecido e `P_reservada` cai pelo mesmo valor (**consumo**). Se o valor reconhecido for menor que o devido (limitado por `T`), a diferença deixa de ser reservada (**liberação**), pois `P_dia` do dia já foi liquidado (marcação do dia como liquidado: `C_P` passa a valer como `P_dia`).
+- `P_reservada` é **derivada**, não guardada: ao reconhecer o salário político, `C_P` e `C_T` aumentam pelo valor reconhecido e `P_reservada` cai pelo mesmo valor (**consumo**). Se o valor reconhecido for menor que o devido (limitado por `T`), a diferença deixa de ser reservada (**liberação**), e o registro guarda essa diferença como `P_liberada` (por jogador e dia; equivale a marcar essa parte de `P_dia` como liquidada, sem impedir dois pedidos políticos no mesmo dia). `P_reservada = max(0, P_dia − C_P − P_liberada)` nunca desconta a mesma parcela duas vezes.
 - Se o jogador deixa o cargo antes do reconhecimento, o provedor devolve `P_dia = 0` e a reserva some; o substituto passa a ter a reserva a partir da posse e **não recebe retroativo** por períodos anteriores (R3).
 
 ### 24.12.3. Cálculo
@@ -462,7 +462,7 @@ exigido: Δ_proj ≤ teto% × R_ref
 
 ## 24.18. Integração com os sistemas existentes
 
-- **Viagem (P0.06.1)**: o serviço já expõe `register_payment_handler`. A P0.07b registra o handler do registro: jogador → `UNION`, natureza `TRAVEL_FEE`, `key = travel:<journey_id>`, preenchendo `Journey.charged`. Sem o registro, nada muda hoje (viagem calcula e não cobra).
+- **Viagem (P0.06.1)**: o serviço já expõe `register_payment_handler`. A P0.07b registra o handler do registro: jogador → `UNION`, natureza `TRAVEL_FEE`, `key = travel:<jogador>:<instante>:<origem>:<destino>` (o pagamento acontece antes de a `Journey` existir, então não há id da viagem; a chave composta identifica a partida), preenchendo `Journey.charged`. O handler só cobra **enquanto houver cenário monetário ativo**; sem cenário, a viagem se comporta como antes (calcula e registra, não cobra). `check_action` consulta o saldo (`quote`) e devolve `INSUFFICIENT_FUNDS` sem cobrar. Sem o registro, nada muda hoje (viagem calcula e não cobra).
 - **Action Registry (P1.03)**: `check_action` usa `can_afford`/`quote` e informa `INSUFFICIENT_FUNDS` com `Explained` **antes** de executar; a execução usa os mesmos serviços para humanos e Bots.
 - **Jogador**: a conta é criada com o jogador (`ensure_account`) e recebe a dotação do cenário; o registro **não** altera o modelo de jogador.
 - **Tratamento (P0.04)**: hoje pendente "do sistema de dinheiro" (CHANGELOG). Será ligado quando existir um prestador ou hospital que receba o pagamento (`04` §13); o registro só recebe a conta de destino.
@@ -485,6 +485,17 @@ exigido: Δ_proj ≤ teto% × R_ref
 **Fora** da P0.07b: caixa de empresa (P1.04), mercado e correio (P1.02/P1.05), orçamento, categorias e dívida (P1.09), teto de déficit, contratos (P1.08), milícias e Exército (P1.17), cenário completo (P1.18).
 
 **Testes obrigatórios**: caminho normal; limites (`MAX_AMOUNT`, 1 centavo, valores não inteiros em centavos); permissões (naturezas proibidas, origem `SINK`, emissão por natureza errada); estados inválidos (conta encerrada, mesma conta); efeitos econômicos (conservação após cada operação, em teste de propriedade com sequências aleatórias); idempotência (repetição e conflito); atomicidade (falha na 2ª perna não deixa a 1ª); concorrência (dois pagamentos disputando o mesmo saldo); reservas e obrigações (ordem de quitação, parcial, nunca cria dinheiro); contadores (**permutar a ordem dos pedidos de um lote e verificar que o conjunto reconhecido é o mesmo**; ordem política × não política; reserva política consumida/liberada sem dupla subtração; `W` > `S`; `T` binding; soldo excedente descartado; dia de competência; lei que muda depois do lançamento); retenção genérica (valor nunca nos dois lados; liberação ao destino escolhido; destino inexistente recusa); roteamento tributário (padrão União; resolvedor registrado; ambiguidade recusa); invariante `emitido = brutos + retenções + sumidouro` com reservas ativas; dotação (zero explícito, ausente recusa, idempotência por conta); auditoria reconstrói saldos e detecta adulteração direta no banco.
+
+### 24.19.1. Decisões técnicas da implementação (P0.07b; não alteram a mecânica)
+
+- **Pedido sem caixa, política `PENDING`**: se o disponível do pagador não cobre o pagamento (líquido + imposto que sai da conta), o pedido reconhecido vira **uma obrigação do valor bruto inteiro**, sem pagamento parcial na liquidação; a quitação parcial é feita depois por `settle_obligations`, que recolhe o imposto em parcelas proporcionais (arredondado uma vez; a última fecha o resto). Se há caixa, paga na hora, mesmo havendo obrigações antigas de outros pedidos.
+- **Política `REFUSE`** não altera nenhum contador: o limite que sobrar vale para o pedido seguinte da mesma sequência.
+- **Pedido que não cabe em nenhum limite** (reconhecido 0) fica processado (`NO_ROOM`) e não é reaproveitado; para pedir de novo, usa-se nova `key`.
+- **Roteamento tributário ambíguo ou inválido durante uma liquidação** desfaz o **lote inteiro** (nada é reconhecido nem pago): é erro de configuração, não de um pedido.
+- **Provedor de limites ausente** (`register_limits_provider`): a liquidação recusa com `REMUNERATION_LIMITS_UNSPECIFIED`; o registro não inventa `W`, `S` nem `T`.
+- **Viagem**: o handler só cobra com cenário monetário ativo (§24.18).
+- **Banco**: o saldo não-negativo (exceto `ISSUANCE`) também é restrição do banco de dados (defesa em profundidade).
+- **Concorrência**: em PostgreSQL as contas são travadas com `SELECT ... FOR UPDATE` em ordem de id; em SQLite o banco serializa as escritas. Os testes verificam a propriedade (um só vencedor, saldo nunca negativo, conservação) nos dois.
 
 ---
 

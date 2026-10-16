@@ -4,6 +4,35 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-16 — P0.07b — registro monetário implementado (app `ledger`)
+
+Implementa `design/24` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p0.07b-ledger`, empilhada sobre o PR #10 (que sobre #9 → #8). **Não mergeada; aguarda auditoria externa e aprovação do Game Director.**
+
+### O que foi entregue
+- **Contas e lançamentos** (`ledger/models.py`, `services.py`): contas por tipo; lançamentos imutáveis (modelo, queryset e restrições de banco), em centavos inteiros, com natureza fechada, referência obrigatória, saldos antes/depois e `Explained`; transações atômicas e idempotentes por `key` (mesmo conteúdo devolve o original, conteúdo diferente = `IDEMPOTENCY_CONFLICT`); contas travadas em ordem de id; `MAX_AMOUNT = 10^15` `[PROV]`; estorno técnico que espelha e aponta o original (nunca de emissão, remuneração ou sumidouro). Saldo não-negativo (exceto `ISSUANCE`) também é restrição do banco.
+- **Saldo bruto / reservado / disponível**; reservas (`hold`/`release_hold`, consumo por `HoldUse` na mesma transação); `quote`/`can_afford` sem mover dinheiro.
+- **Retenções genéricas** (`open_retention`/`retain`/`release_retention`, destino escolhido por quem chama) e **interface de roteamento tributário** (`register_tax_resolver`/`route_tax`/`post_taxed_payment`; padrão União; ambiguidade = `TAX_ROUTE_AMBIGUOUS`; compra da União com imposto à União não gera lançamento para ela mesma). Nenhum módulo militar importado (P1.17 conecta).
+- **Sumidouro** só recebe; **dotações de cenário** como única fonte de emissão (`SCENARIO_GRANT`, zero explícito vale, ausente recusa com `SCENARIO_GRANT_UNSPECIFIED`, idempotente por conta).
+- **Obrigações pendentes** (`ledger/obligations.py`): fora do caixa, quitação por competência e id, parcial permitida, imposto recolhido em parcelas que fecham o total, cancelamento com motivo.
+- **Remuneração** (`ledger/remuneration.py`): `submit_remuneration` → `liquidate_remuneration` (lote em ordem estável pela chave intrínseca) e `pay_remuneration_now`; contadores `C_S`/`C_T`/`C_P`; reserva política derivada sem dupla subtração (`P_liberada`); `W > S`, `T` binding, soldo excedente descartado sem obrigação; políticas `PENDING`/`REFUSE`; imposto de renda sobre o bruto; `Explained` completo por pedido; `preview_remuneration` para feedback. Limites (`W`,`S`,`T`) e salário político devido vêm de **provedores** registrados pelos sistemas donos; sem provedor a liquidação recusa.
+- **Viagem**: handler de pagamento (`PLAYER → UNION`, `TRAVEL_FEE`) que só cobra com cenário monetário ativo; `check_action` informa `INSUFFICIENT_FUNDS` sem cobrar. Em `travel.services`, `register_payment_handler` ganhou `active=` e `check_funds=` opcionais (comportamento anterior preservado).
+- **Jogador**: conta criada com o jogador (hook) e dotação do cenário ativo.
+- **Auditoria** (`audit_ledger`, exit code ≠ 0) reconstrói saldos a partir do log e confere os invariantes 1–13 e contadores; **métricas** (`ledger_metrics`).
+
+### Decisões técnicas registradas (não alteram mecânica; ver `24` §24.19.1)
+`PENDING` sem caixa vira obrigação do bruto inteiro; `REFUSE` não toca contadores; roteamento tributário ambíguo desfaz o lote; chave da viagem é composta (`travel:<jogador>:<instante>:<origem>:<destino>`) porque o pagamento ocorre antes de a `Journey` existir; `P_liberada` substitui a marcação "dia liquidado" (mesmo efeito, aceita dois pedidos políticos no mesmo dia); operações do registro recebem só inteiros em centavos (`from_reais` converte e recusa o que não for exato).
+
+### Pendências conhecidas (tarefas seguintes)
+Provedor de `W`/`S`/`T` a partir de `skills`/`11` (P1.04/P1.12) e provedor do salário político (P1.11); valores de dotação do cenário (P1.18, configuração); política de caixa insuficiente por tipo (P1.04/P1.17/P1.09); ligação do tratamento (P0.04) a um prestador; resolvedor tributário militar (P1.17). Nenhuma delas bloqueia o registro.
+
+### Testes
+149 testes novos (`ledger/tests/`): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 815 testes OK; `check` e `makemigrations --check` limpos.
+
+### Documentos alterados
+`24` (centavos nos serviços, chave da viagem, `P_liberada`, §24.19.1), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
+
+---
+
 ## 2026-10-15 — P0.07a — registro monetário (design/24, FINAL — BOT TEST)
 
 Documento `design/24-Registro-Monetario-FINAL-BOT-TEST.md`, **sem código**. Incorpora Q1/Q2 e as decisões de 11.1.0, 09 §45, 18.14, 19.16 e 21.60. **Aprovado pelo Game Director em 2026-10-15** (PR #10), com as correções A–D e os ajustes de R1–R10 incorporados. Branch `dev/p0.07a-registro-monetario`.
