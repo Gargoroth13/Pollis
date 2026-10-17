@@ -26,7 +26,8 @@ from players.services import ActionResult
 from .constants import (GRANT_ROLE_KINDS, MAX_AMOUNT, OPERATIONAL_KINDS, REMUNERATION_NATURES, RETENTION_IN_NATURES,
                         RETENTION_OUT_NATURES, SINGLETON_KINDS, SINK_NATURES, TAX_NATURES, AccountKind, HoldStatus,
                         Nature, ObligationStatus)
-from .models import (Account, Entry, Hold, LedgerScenario, Obligation, ScenarioGrantLine, Transaction)
+from .models import (Account, Entry, Hold, LedgerScenario, Obligation, ScenarioGrantLine, Transaction, grant_history,
+                     lock_scenarios)
 from .money import amount_problem, competence_day_of, is_centavos, percent_of
 
 
@@ -313,6 +314,10 @@ def _check_grant(permit: _GrantPermit, leg: Leg, locked: Dict[int, Account]) -> 
     line = ScenarioGrantLine.objects.filter(scenario=sc, role=permit.role).first()
     if line is None or line.amount is None:
         _fail("SCENARIO_GRANT_UNSPECIFIED", scenario=permit.scenario, missing=[permit.role])
+    inconsistent = grant_history(permit.scenario, permit.role).exclude(amount=line.amount)
+    if inconsistent.exists():           # linha adulterada fora do ORM: nenhuma emissão nova antes de a auditoria descobrir
+        _fail("GRANT_HISTORY_INCONSISTENT", scenario=permit.scenario, role=permit.role, configured=line.amount,
+              historical=sorted(set(inconsistent.values_list("amount", flat=True)[:5])))
     kind = AccountKind(locked[leg.to_id].kind)
     if kind not in allowed:
         _fail("GRANT_ROLE_ACCOUNT_MISMATCH", scenario=permit.scenario, role=permit.role, account=leg.to_id,
@@ -719,8 +724,7 @@ def create_scenario(name: str, lines: Dict[str, Optional[int]]) -> LedgerScenari
 # e ela pede UM cenário): não há ciclo, logo não há deadlock. Cada passo relê o que importa DEPOIS de adquirir o bloqueio
 # (em READ COMMITTED a leitura anterior ao bloqueio pode estar velha). Em SQLite o banco serializa as escritas.
 def _lock_scenarios(name: Optional[str] = None) -> List[LedgerScenario]:
-    qs = LedgerScenario.objects.select_for_update().order_by("pk")
-    return list(qs if name is None else qs.filter(name=name))
+    return lock_scenarios(names=None if name is None else [name])
 
 
 def set_grant_line(scenario: str, role: str, amount: Optional[int]) -> ScenarioGrantLine:
@@ -738,15 +742,11 @@ def set_grant_line(scenario: str, role: str, amount: Optional[int]) -> ScenarioG
             raise LedgerScenario.DoesNotExist(f"cenário inexistente: {scenario!r}")
         sc = locked[0]
         current = ScenarioGrantLine.objects.filter(scenario=sc, role=role).first()          # relido após o bloqueio
-        if current is not None and current.amount != amount and _line_has_grants(scenario, role):
-            raise LedgerRefusal(_refuse("GRANT_LINE_LOCKED", scenario=scenario, role=role, configured=current.amount))
+        if grant_history(scenario, role).exclude(amount=amount).exists():       # inclusive recriar a linha com outro valor
+            raise LedgerRefusal(_refuse("GRANT_LINE_LOCKED", scenario=scenario, role=role,
+                                        configured=None if current is None else current.amount, requested=amount))
         line, _ = ScenarioGrantLine.objects.update_or_create(scenario=sc, role=role, defaults={"amount": amount})
         return line
-
-
-def _line_has_grants(scenario: str, role: str) -> bool:
-    rows = Entry.objects.filter(nature=Nature.SCENARIO_GRANT.value, reference_kind="scenario", reference_id=scenario)
-    return any((e or {}).get("role") == role for e in rows.values_list("explained", flat=True))
 
 
 def activate_scenario(name: str, required_roles: Iterable[str]) -> ActionResult:

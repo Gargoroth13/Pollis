@@ -21,7 +21,7 @@ from django.test import TransactionTestCase
 from ledger import services as ledger
 from ledger.audit import audit_ledger
 from ledger.constants import AccountKind
-from ledger.models import Entry, LedgerScenario, ScenarioGrantLine
+from ledger.models import Entry, GrantLineLockedError, LedgerScenario, ScenarioGrantLine
 
 HOLD = 1.2          # quanto tempo a thread "lenta" segura o bloqueio nos testes de ordem estrita (segundos)
 ON_PG = connection.vendor == "postgresql"
@@ -78,8 +78,8 @@ def run_together(*fns):
     jobs = [Job(fn, barrier).start() for fn in fns]
     for j in jobs:
         j.join()
-    for j in jobs:
-        assert j.error is None, repr(j.error)
+    for j in jobs:      # a recusa da guarda de imutabilidade da linha é um desfecho válido da corrida
+        assert j.error is None or isinstance(j.error, GrantLineLockedError), repr(j.error)
     return jobs
 
 
@@ -118,6 +118,39 @@ class ScenarioPropertyTests(ScenarioConcurrencyBase):
                 self.assertEqual((line, grant.result.code), (900, "GRANT_AMOUNT_MISMATCH"))
             self.assertLedgerClean()
         self.assertEqual(sum(outcomes.values()), 8, outcomes)
+
+    def _orm_mutation_versus_grant(self, mutate, refused_when_grant_first, label):
+        outcomes = Counter()
+        for n in range(8):
+            name = f"{label}{n}"
+            bank = ledger.get_or_create_account(AccountKind.MILITIA_BANK, 300 + n)
+            ledger.create_scenario(name, {"militia_bank": 500})
+            self.assertTrue(ledger.activate_scenario(name, ["militia_bank"]).ok)
+            grant, change = run_together(
+                lambda: ledger.grant_scenario_allocation(name, bank.pk, 500, role="militia_bank"),
+                lambda: mutate(name))
+            rows = list(ScenarioGrantLine.objects.filter(scenario__name=name, role="militia_bank").values_list("amount", flat=True))
+            if self.emitted(bank):             # a dotação foi primeiro: a linha continua exatamente como foi emitida
+                outcomes["grant_first"] += 1
+                self.assertEqual((rows, grant.result.ok), ([500], True))
+                self.assertIsInstance(change.error, GrantLineLockedError, change.result)
+            else:                              # a mutação foi primeiro: a dotação vê a configuração já mudada
+                outcomes["mutation_first"] += 1
+                self.assertIsNone(change.error)
+                self.assertEqual(rows, refused_when_grant_first[0])
+                self.assertEqual(grant.result.code, refused_when_grant_first[1])
+            self.assertLedgerClean()
+        self.assertEqual(sum(outcomes.values()), 8, outcomes)
+
+    def test_orm_update_versus_grant_never_changes_a_line_that_already_emitted(self):
+        self._orm_mutation_versus_grant(
+            lambda name: ScenarioGrantLine.objects.filter(scenario__name=name).update(amount=900),
+            ([900], "GRANT_AMOUNT_MISMATCH"), "ou")
+
+    def test_orm_delete_versus_grant_never_deletes_a_line_that_already_emitted(self):
+        self._orm_mutation_versus_grant(
+            lambda name: ScenarioGrantLine.objects.filter(scenario__name=name).delete(),
+            ([], "SCENARIO_GRANT_UNSPECIFIED"), "od")
 
     def test_concurrent_activations_never_deadlock_and_leave_exactly_one_active(self):
         names = [f"act{n}" for n in range(6)]
@@ -274,3 +307,45 @@ class PostgresLockOrderTests(ScenarioConcurrencyBase):
         self.assertEqual(self.active_names(), ["B"])                         # a segunda esperou e foi a última
         self.assertGreater(two.ended - two.started, HOLD / 2)
         self.assertLedgerClean()
+
+
+@unittest.skipUnless(ON_PG, "ordem estrita de bloqueio: só tem efeito em PostgreSQL (SELECT ... FOR UPDATE)")
+class PostgresOrmGuardLockOrderTests(PostgresLockOrderTests.__bases__[0]):
+    """A guarda de imutabilidade da linha segue o mesmo protocolo: uma emissão em andamento termina ANTES da mutação."""
+
+    setUp = PostgresLockOrderTests.setUp
+    slow_after_check = PostgresLockOrderTests.slow_after_check
+
+    def _mutation_waits_and_is_refused(self, mutate):
+        entered = threading.Event()
+        with self.slow_after_check(entered):
+            grant = Job(lambda: ledger.grant_scenario_allocation("A", self.bank.pk, 500, role="militia_bank")).start()
+            self.assertTrue(entered.wait(10))
+            change = Job(mutate).start()
+            grant.join(), change.join()
+        self.assertIsNone(grant.error)
+        self.assertTrue(grant.result.ok, grant.result)
+        self.assertIsInstance(change.error, GrantLineLockedError, (change.error, change.result))   # histórico lido DEPOIS do bloqueio
+        self.assertGreaterEqual(change.ended, grant.ended - 0.3, "a mutação terminou antes de a emissão confirmar")
+        self.assertGreater(change.ended - change.started, HOLD / 2, "a mutação não esperou o bloqueio")
+        self.assertEqual(list(ScenarioGrantLine.objects.filter(scenario__name="A").values_list("role", "amount")),
+                         [("militia_bank", 500)])
+        self.assertEqual(self.emitted(self.bank), 500)
+        self.assertLedgerClean()
+
+    def test_orm_update_waits_for_a_grant_in_flight_and_is_refused(self):
+        self._mutation_waits_and_is_refused(
+            lambda: ScenarioGrantLine.objects.filter(scenario__name="A").update(amount=900))
+
+    def test_orm_delete_waits_for_a_grant_in_flight_and_is_refused(self):
+        self._mutation_waits_and_is_refused(lambda: ScenarioGrantLine.objects.filter(scenario__name="A").delete())
+
+    def test_instance_save_waits_for_a_grant_in_flight_and_is_refused(self):
+        def change():
+            line = ScenarioGrantLine.objects.get(scenario__name="A", role="militia_bank")
+            line.amount = 900
+            line.save()
+        self._mutation_waits_and_is_refused(change)
+
+    def test_scenario_delete_waits_for_a_grant_in_flight_and_is_refused(self):
+        self._mutation_waits_and_is_refused(lambda: LedgerScenario.objects.filter(name="A").delete())

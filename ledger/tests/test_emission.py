@@ -238,13 +238,14 @@ class AuditEmissionTests(EmissionTestCase):
         self.assertTrue(audit_ledger().ok)
 
     def test_line_changed_after_the_fact_is_a_divergence(self):
-        ScenarioGrantLine.objects.filter(scenario__name="emi", role="union").update(amount=4_000)
+        self.raw("UPDATE ledger_scenariograntline SET amount = 4000 WHERE role = 'union'")      # SQL direto: o ORM recusa
         self.assertIn("GRANT_AMOUNT_MISMATCH", self.codes())
 
     def test_line_removed_or_scenario_removed(self):
-        ScenarioGrantLine.objects.filter(scenario__name="emi", role="union").delete()
+        self.raw("DELETE FROM ledger_scenariograntline WHERE role = 'union'")                   # SQL direto: o ORM recusa
         self.assertIn("GRANT_LINE_MISSING", self.codes())
-        LedgerScenario.objects.filter(name="emi").delete()
+        self.raw("DELETE FROM ledger_scenariograntline")
+        self.raw("DELETE FROM ledger_ledgerscenario WHERE name = 'emi'")
         self.assertIn("GRANT_SCENARIO_UNKNOWN", self.codes())
 
     def test_entry_tampered_in_the_database(self):
