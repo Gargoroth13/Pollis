@@ -7,7 +7,8 @@ ACHADO estruturado. A auditoria nunca encerra por causa de um dado inválido: ca
 inesperada escapar, vira o achado `AUDIT_SECTION_FAILED` em vez de interromper as demais. Não escreve nada.
 
 Invariantes 1–14: ver design/24 §24.17. 15: valores de enumeração dentro do domínio. 16: metadados da transação (chave,
-instante, ator, hash, conteúdo canônico) conferem com os lançamentos.
+instante, ator, hash, conteúdo canônico) conferem com os lançamentos. 17: consumo de reservas registrado = consumo das
+reservas. 18: toda emissão (`SCENARIO_GRANT`) corresponde a uma dotação explícita do cenário (papel, tipo de conta, valor, chave).
 """
 from __future__ import annotations
 
@@ -17,9 +18,10 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from django.db.models import Count, Sum
 
-from .constants import (OPERATIONAL_KINDS, REMUNERATION_NATURES, SINK_NATURES, AccountKind, HoldStatus, Nature,
+from .constants import (GRANT_ROLE_KINDS, OPERATIONAL_KINDS, REMUNERATION_NATURES, SINK_NATURES, AccountKind, HoldStatus, Nature,
                         ObligationStatus, Policy, RequestStatus)
-from .models import (Account, Entry, Hold, Obligation, RemunerationCounter, RemunerationRequest, Transaction)
+from .models import (Account, Entry, Hold, LedgerScenario, Obligation, RemunerationCounter, RemunerationRequest,
+                     ScenarioGrantLine, Transaction)
 from .services import payload_digest
 
 _OPERATIONAL_VALUES = frozenset(k.value for k in OPERATIONAL_KINDS)
@@ -304,8 +306,53 @@ def _remuneration(rep: AuditReport, ctx: Dict[str, Any]) -> None:
             rep.add(10, "COUNTER_WITHOUT_RECOGNIZED_REQUESTS", player=key_[0], day=key_[1])
 
 
+def _grants(rep: AuditReport, ctx: Dict[str, Any]) -> None:
+    """
+    18: cada dotação (`SCENARIO_GRANT`) corresponde a uma linha explícita do cenário: cenário existente, papel conhecido e
+    compatível com o tipo da conta de destino, valor IGUAL ao da linha, chave `grant:<cenário>:<conta>`, uma só por
+    (cenário, conta) e transação de uma única perna. Dado que falta ou está malformado é achado, não exceção. O estado ATIVO do
+    cenário não é reconferido aqui: ele pode mudar depois da emissão; quem o exige é o serviço, na hora de emitir.
+    """
+    kind_of = ctx["kind_of"]
+    scenarios = {sc.name: sc.pk for sc in LedgerScenario.objects.all()}
+    lines = {(l.scenario_id, l.role): l.amount for l in ScenarioGrantLine.objects.all()}
+    grants = Entry.objects.filter(nature=Nature.SCENARIO_GRANT.value)
+    multi = set(Entry.objects.filter(transaction_id__in=grants.values("transaction_id")).values("transaction_id")
+                .annotate(n=Count("pk")).filter(n__gt=1).values_list("transaction_id", flat=True))
+    seen: Dict[Any, int] = {}
+    for e in grants.select_related("transaction").order_by("seq").iterator(chunk_size=2000):
+        where = {"seq": e.seq, "scenario": e.reference_id, "account": e.to_account_id}
+        explained = e.explained if isinstance(e.explained, dict) else {}
+        if e.reference_kind != "scenario" or e.reference_id not in scenarios:
+            rep.add(18, "GRANT_SCENARIO_UNKNOWN", reference_kind=e.reference_kind, **where)
+            continue
+        scenario_pk = scenarios[e.reference_id]
+        if explained.get("scenario") != e.reference_id:
+            rep.add(18, "GRANT_EXPLAINED_MISMATCH", recorded=repr(explained.get("scenario"))[:80], **where)
+        if e.transaction.key != f"grant:{e.reference_id}:{e.to_account_id}":
+            rep.add(18, "GRANT_KEY_MISMATCH", key=e.transaction.key, **where)
+        if e.transaction_id in multi:
+            rep.add(18, "GRANT_TRANSACTION_NOT_SINGLE", transaction=e.transaction_id, **where)
+        if (scenario_pk, e.to_account_id) in seen:
+            rep.add(18, "GRANT_DUPLICATE", first_seq=seen[(scenario_pk, e.to_account_id)], **where)
+        seen.setdefault((scenario_pk, e.to_account_id), e.seq)
+        role = explained.get("role")
+        allowed = GRANT_ROLE_KINDS.get(role) if isinstance(role, str) else None
+        if allowed is None:
+            rep.add(18, "GRANT_ROLE_INVALID", role=repr(role)[:80], **where)
+            continue
+        dest_kind = kind_of.get(e.to_account_id)
+        if dest_kind not in allowed:
+            rep.add(18, "GRANT_ROLE_ACCOUNT_MISMATCH", role=role, account_kind=getattr(dest_kind, "value", None), **where)
+        configured = lines.get((scenario_pk, role))
+        if configured is None:
+            rep.add(18, "GRANT_LINE_MISSING", role=role, **where)
+        elif configured != e.amount:
+            rep.add(18, "GRANT_AMOUNT_MISMATCH", role=role, configured=configured, amount=e.amount, **where)
+
+
 _SECTIONS: Sequence[tuple] = (
-    ("accounts", _accounts), ("log", _log), ("emission", _emission), ("transactions", _transactions),
+    ("accounts", _accounts), ("log", _log), ("emission", _emission), ("grants", _grants), ("transactions", _transactions),
     ("holds_and_obligations", _holds_and_obligations), ("remuneration", _remuneration),
 )
 

@@ -23,7 +23,7 @@ from core import clock as game_clock
 from core.breakdown import Calc, Explained
 from players.services import ActionResult
 
-from .constants import (MAX_AMOUNT, OPERATIONAL_KINDS, REMUNERATION_NATURES, RETENTION_IN_NATURES,
+from .constants import (GRANT_ROLE_KINDS, MAX_AMOUNT, OPERATIONAL_KINDS, REMUNERATION_NATURES, RETENTION_IN_NATURES,
                         RETENTION_OUT_NATURES, SINGLETON_KINDS, SINK_NATURES, TAX_NATURES, AccountKind, HoldStatus,
                         Nature, ObligationStatus)
 from .models import (Account, Entry, Hold, LedgerScenario, Obligation, ScenarioGrantLine, Transaction)
@@ -255,6 +255,22 @@ class _KeyRace(Exception):
     """Interna: outra requisição gravou a mesma `key` entre a nossa checagem e a nossa gravação."""
 
 
+class _GrantPermit:
+    """
+    Permissão de emissão (design/24 §24.11). Só `grant_scenario_allocation` a cria. `SCENARIO_GRANT` NÃO é gravável por
+    `transfer`/`post_transaction` sem ela, e mesmo com ela `_post` revalida a dotação contra o cenário, dentro da transação
+    e com as contas travadas (cenário ativo, papel, tipo de conta, valor exato da linha). Uma permissão forjada, portanto,
+    não emite nada além do que o cenário já configurou, uma vez por conta.
+    """
+    __slots__ = ("scenario", "role", "account_id", "amount")
+
+    def __init__(self, scenario: str, role: str, account_id: int, amount: int):
+        self.scenario, self.role, self.account_id, self.amount = scenario, role, account_id, amount
+
+    def expected_key(self) -> str:
+        return f"grant:{self.scenario}:{self.account_id}"
+
+
 def _existing_transaction(key: str) -> Optional[Transaction]:
     return Transaction.objects.filter(key=key).first()
 
@@ -272,16 +288,51 @@ def _result_of(tx: Transaction, already: bool) -> ActionResult:
                                      "amount": sum(e.amount for e in entries)})
 
 
+def _grant_permitted(permit: Optional[_GrantPermit], legs: Sequence[Leg], key: str, reference_kind: str,
+                     reference_id: str) -> bool:
+    """A permissão existe e descreve EXATAMENTE esta transação: uma perna, ao destino e valor autorizados, chave e referência."""
+    if not isinstance(permit, _GrantPermit) or len(legs) != 1:
+        return False
+    leg = legs[0]
+    return (Nature(leg.nature) == Nature.SCENARIO_GRANT and leg.to_id == permit.account_id and leg.amount == permit.amount
+            and key == permit.expected_key() and (reference_kind, reference_id) == ("scenario", permit.scenario)
+            and (leg.explained or {}) == {"scenario": permit.scenario, "role": permit.role})
+
+
+def _check_grant(permit: _GrantPermit, leg: Leg, locked: Dict[int, Account]) -> None:
+    """Revalida a dotação contra a configuração explícita do cenário (dentro da transação, contas já travadas)."""
+    sc = LedgerScenario.objects.select_for_update().filter(name=permit.scenario).first()
+    if sc is None:
+        _fail("SCENARIO_NOT_FOUND", scenario=permit.scenario)
+    if not sc.active:
+        _fail("SCENARIO_NOT_ACTIVE", scenario=permit.scenario)
+    allowed = GRANT_ROLE_KINDS.get(permit.role)
+    if allowed is None:
+        _fail("GRANT_ROLE_UNKNOWN", scenario=permit.scenario, role=permit.role, known=sorted(GRANT_ROLE_KINDS))
+    line = ScenarioGrantLine.objects.filter(scenario=sc, role=permit.role).first()
+    if line is None or line.amount is None:
+        _fail("SCENARIO_GRANT_UNSPECIFIED", scenario=permit.scenario, missing=[permit.role])
+    kind = AccountKind(locked[leg.to_id].kind)
+    if kind not in allowed:
+        _fail("GRANT_ROLE_ACCOUNT_MISMATCH", scenario=permit.scenario, role=permit.role, account=leg.to_id,
+              account_kind=kind.value, allowed=sorted(k.value for k in allowed))
+    if leg.amount != line.amount:
+        _fail("GRANT_AMOUNT_MISMATCH", scenario=permit.scenario, role=permit.role, configured=line.amount,
+              requested=leg.amount)
+
+
 def post_transaction(legs: Sequence[Leg], *, key: str, reference_kind: str, reference_id, at: Optional[int] = None,
                      competence_day: Optional[int] = None, actor: str = "system", uses: Sequence[HoldUse] = (),
-                     reverses: Optional[int] = None, _internal: bool = False) -> ActionResult:
+                     reverses: Optional[int] = None, _internal: bool = False,
+                     _grant: Optional[_GrantPermit] = None) -> ActionResult:
     """
     Grava TODAS as pernas ou nenhuma. `key` é a chave de idempotência: repetir o mesmo conteúdo devolve o resultado original
     (`already_posted=True`), inclusive quando duas requisições concorrentes tentam criá-la; só a mesma chave com conteúdo DIFERENTE
     recusa (`IDEMPOTENCY_CONFLICT`).
     Recusas: KEY_REQUIRED, REFERENCE_REQUIRED, EMPTY_TRANSACTION, NATURE_INVALID, NATURE_REQUIRES_PAYROLL, AMOUNT_*,
-    SAME_ACCOUNT, ACCOUNT_NOT_FOUND, ACCOUNT_CLOSED, SINK_NOT_SPENDABLE, ISSUANCE_NOT_ALLOWED, NATURE_ACCOUNT_MISMATCH,
-    HOLD_NOT_FOUND, HOLD_INSUFFICIENT, INSUFFICIENT_FUNDS, IDEMPOTENCY_CONFLICT.
+    SAME_ACCOUNT, ACCOUNT_NOT_FOUND, ACCOUNT_CLOSED, SINK_NOT_SPENDABLE, ISSUANCE_NOT_ALLOWED (inclusive `SCENARIO_GRANT` fora da
+    via de dotação), NATURE_ACCOUNT_MISMATCH, SCENARIO_NOT_FOUND, SCENARIO_NOT_ACTIVE, GRANT_ROLE_UNKNOWN,
+    SCENARIO_GRANT_UNSPECIFIED, GRANT_ROLE_ACCOUNT_MISMATCH, GRANT_AMOUNT_MISMATCH, HOLD_NOT_FOUND, HOLD_INSUFFICIENT, INSUFFICIENT_FUNDS, IDEMPOTENCY_CONFLICT.
     """
     legs = list(legs)
     reference_id = str(reference_id)
@@ -303,6 +354,10 @@ def post_transaction(legs: Sequence[Leg], *, key: str, reference_kind: str, refe
             return _refuse("SAME_ACCOUNT", account=l.from_id)
         if nature in REMUNERATION_NATURES and not _internal:
             return _refuse("NATURE_REQUIRES_PAYROLL", nature=nature.value)
+        if nature == Nature.SCENARIO_GRANT and not _grant_permitted(_grant, legs, key, reference_kind, reference_id):
+            return _refuse("ISSUANCE_NOT_ALLOWED", why="grant_path_only", nature=nature.value)
+    if _grant is not None and not any(Nature(l.nature) == Nature.SCENARIO_GRANT for l in legs):
+        return _refuse("ISSUANCE_NOT_ALLOWED", why="grant_permit_misused")
     for u in uses:
         problem = amount_problem(u.amount)
         if problem:
@@ -316,7 +371,8 @@ def post_transaction(legs: Sequence[Leg], *, key: str, reference_kind: str, refe
             existing = _existing_transaction(key)
             if existing is not None:
                 return _same_key_result(existing, payload_hash)
-            return _post(legs, key, payload, payload_hash, reference_kind, reference_id, at, day, actor, list(uses), reverses)
+            return _post(legs, key, payload, payload_hash, reference_kind, reference_id, at, day, actor, list(uses), reverses,
+                         _grant)
     except _Refuse as r:
         return r.result
     except _KeyRace:
@@ -328,7 +384,8 @@ def post_transaction(legs: Sequence[Leg], *, key: str, reference_kind: str, refe
 
 
 def _post(legs: List[Leg], key: str, payload: Dict[str, Any], payload_hash: str, reference_kind: str, reference_id: str,
-          at: int, day: int, actor: str, uses: List[HoldUse], reverses: Optional[int]) -> ActionResult:
+          at: int, day: int, actor: str, uses: List[HoldUse], reverses: Optional[int],
+          grant: Optional[_GrantPermit] = None) -> ActionResult:
     ids = sorted({i for l in legs for i in (l.from_id, l.to_id)})
     locked = {a.pk: a for a in Account.objects.select_for_update().filter(pk__in=ids).order_by("pk")}   # ordem crescente
     # Quem esperou o travel das contas pode ter perdido a corrida pela chave: reconfere já com as contas travadas.
@@ -344,6 +401,8 @@ def _post(legs: List[Leg], key: str, payload: Dict[str, Any], payload_hash: str,
         problem = _route_problem(locked[l.from_id], locked[l.to_id], Nature(l.nature))
         if problem:
             _fail(problem, from_account=l.from_id, to_account=l.to_id, nature=Nature(l.nature).value)
+    if grant is not None:
+        _check_grant(grant, legs[0], locked)
     # reservas consumidas primeiro: pagar o que estava reservado
     reserved_cache: Dict[int, int] = {}
     for u in uses:
@@ -652,11 +711,23 @@ def create_scenario(name: str, lines: Dict[str, Optional[int]]) -> LedgerScenari
 
 
 def set_grant_line(scenario: str, role: str, amount: Optional[int]) -> ScenarioGrantLine:
+    """Linha de dotação do papel. Papel fora de `GRANT_ROLE_KINDS` é recusado; depois que a linha já gerou dotações, o valor
+    não muda (a auditoria compara cada dotação com a linha: alterar a linha reescreveria o que foi emitido)."""
     if amount is not None and (not isinstance(amount, int) or isinstance(amount, bool) or amount < 0 or amount > MAX_AMOUNT):
         raise ValueError(f"dotação inválida: {amount!r}")
+    if role not in GRANT_ROLE_KINDS:
+        raise ValueError(f"papel de dotação desconhecido: {role!r} (conhecidos: {sorted(GRANT_ROLE_KINDS)})")
     sc = LedgerScenario.objects.get(name=scenario)
+    current = ScenarioGrantLine.objects.filter(scenario=sc, role=role).first()
+    if current is not None and current.amount != amount and _line_has_grants(scenario, role):
+        raise LedgerRefusal(_refuse("GRANT_LINE_LOCKED", scenario=scenario, role=role, configured=current.amount))
     line, _ = ScenarioGrantLine.objects.update_or_create(scenario=sc, role=role, defaults={"amount": amount})
     return line
+
+
+def _line_has_grants(scenario: str, role: str) -> bool:
+    rows = Entry.objects.filter(nature=Nature.SCENARIO_GRANT.value, reference_kind="scenario", reference_id=scenario)
+    return any((e or {}).get("role") == role for e in rows.values_list("explained", flat=True))
 
 
 def activate_scenario(name: str, required_roles: Iterable[str]) -> ActionResult:
@@ -684,15 +755,20 @@ def active_scenario() -> Optional[LedgerScenario]:
 def grant_scenario_allocation(scenario: str, account_id: int, amount: int, *, role: str = "", at: Optional[int] = None,
                               actor: str = "scenario") -> ActionResult:
     """
-    Dotação: `ISSUANCE → conta`, natureza `SCENARIO_GRANT`, referência `scenario:<nome>`. ÚNICA fonte de dinheiro novo.
-    Idempotente por `(cenário, conta)`: uma dotação por conta. Valor 0 não gera lançamento (é registrado na linha do cenário).
+    Dotação: `ISSUANCE → conta`, natureza `SCENARIO_GRANT`, referência `scenario:<nome>`. ÚNICA fonte de dinheiro novo e a única
+    via que grava `SCENARIO_GRANT`. Só emite o que o cenário ATIVO configurou: o papel tem de existir (linha explícita), ser
+    compatível com o tipo da conta de destino e o valor tem de ser exatamente o da linha (sem valor padrão, sem arredondar).
+    Recusas: SCENARIO_NOT_FOUND, SCENARIO_NOT_ACTIVE, GRANT_ROLE_UNKNOWN, SCENARIO_GRANT_UNSPECIFIED,
+    GRANT_ROLE_ACCOUNT_MISMATCH, GRANT_AMOUNT_MISMATCH, AMOUNT_*. Idempotente por `(cenário, conta)`: uma dotação por conta.
+    Valor 0 não gera lançamento (é registrado na linha do cenário).
     """
     if not LedgerScenario.objects.filter(name=scenario).exists():
         return _refuse("SCENARIO_NOT_FOUND", scenario=scenario)
+    permit = _GrantPermit(scenario, role, account_id, amount)
     return post_transaction(
         [Leg(issuance_account().pk, account_id, amount, Nature.SCENARIO_GRANT, operation="grant",
              explained={"scenario": scenario, "role": role})],
-        key=f"grant:{scenario}:{account_id}", reference_kind="scenario", reference_id=scenario, at=at, actor=actor)
+        key=permit.expected_key(), reference_kind="scenario", reference_id=scenario, at=at, actor=actor, _grant=permit)
 
 
 def grant_for_role(account_id: int, role: str, *, at: Optional[int] = None) -> ActionResult:

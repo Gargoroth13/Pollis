@@ -26,10 +26,32 @@ Implementa `design/24` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev
 Provedor de `W`/`S`/`T` a partir de `skills`/`11` (P1.04/P1.12) e provedor do salário político (P1.11); valores de dotação do cenário (P1.18, configuração); política de caixa insuficiente por tipo (P1.04/P1.17/P1.09); ligação do tratamento (P0.04) a um prestador; resolvedor tributário militar (P1.17). Nenhuma delas bloqueia o registro.
 
 ### Testes
-193 testes no app (`ledger/tests/`; 148 na primeira entrega + 23 da primeira correção + 22 da revisão consolidada): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 860 testes OK em SQLite (1 pulado) e em PostgreSQL 16 (após a revisão consolidada); `check` e `makemigrations --check` limpos.
+223 testes no app (`ledger/tests/`; 148 na primeira entrega + 23 da primeira correção + 22 da revisão consolidada + 30 da correção da emissão): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 890 testes OK em SQLite (1 pulado) e em PostgreSQL 16 (após a correção da emissão); `check` e `makemigrations --check` limpos.
 
 ### Documentos alterados
 `24` (centavos nos serviços, chave da viagem, `P_liberada`, §24.19.1), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
+
+### P0.07b — bloqueio P0 da emissão (2026-10-17)
+
+Achado da revisão externa do commit `7c6238a`: `SCENARIO_GRANT` era aceita por `transfer()`/`post_transaction()` (`ISSUANCE` → conta operacional) sem validar a dotação, e `grant_scenario_allocation()` só verificava se o cenário existia. Corrigido sem reabrir decisões de mecânica (design/24 §24.11).
+1. **Via única de emissão, no serviço.** `post_transaction` recusa `SCENARIO_GRANT` (`ISSUANCE_NOT_ALLOWED`, `why=grant_path_only`) sem uma permissão interna (`_GrantPermit`) que só `grant_scenario_allocation` cria e que tem de descrever exatamente a transação (uma perna, destino, valor, chave `grant:<cenário>:<conta>`, referência, `explained`). Mesmo com permissão, `_post` revalida a dotação **dentro da transação, com as contas travadas**: uma permissão forjada só consegue o que o cenário já configurou, uma vez por conta. Chamar `transfer()`/`post_transaction()` com a natureza, a chave e a referência corretas é recusado.
+2. **Validação da dotação** (`grant_scenario_allocation`): cenário existente e **ativo** (`SCENARIO_NOT_FOUND`, `SCENARIO_NOT_ACTIVE`); papel conhecido (`GRANT_ROLE_UNKNOWN`) com linha explícita (`SCENARIO_GRANT_UNSPECIFIED`); papel compatível com o tipo da conta (`GRANT_ROLE_ACCOUNT_MISMATCH`); valor **exatamente** igual à linha (`GRANT_AMOUNT_MISMATCH`). Sem valor padrão novo e sem emissão alternativa.
+3. **Auditoria — invariante 18**: cada dotação é reconferida só pelo log e pela configuração (cenário, `explained`, chave, transação de uma perna, duplicidade por (cenário, conta), papel, tipo de conta, linha, valor). Os testes incluem adulteração direta no banco e emissão inválida que contorna a validação do serviço (a auditoria não confia nele).
+4. **Testes**: novo `ledger/tests/test_emission.py` (29 casos): transferência direta a partir de `ISSUANCE`, `post_transaction` direto com `SCENARIO_GRANT` (inclusive imitando a dotação exata), permissão reaproveitada ou forjada, valor divergente (acima e abaixo), papel incompatível, papel desconhecido/vazio, linha ausente ou `NULL`, cenário inexistente/inativo/desativado por outro, replay após desativação, e a auditoria; cada recusa confere que saldos, lançamentos e transações ficaram idênticos. Mais um teste de concorrência (dotações paralelas à mesma conta emitem uma vez).
+
+**Decisões técnicas a confirmar pelo Game Director** (o design 24 não as define; não alteram mecânica de jogo, mas fixam interpretação):
+- **Mapa fechado papel → tipo de conta** (`GRANT_ROLE_KINDS`): `player`→jogador/Bot, `union`→União, `state`→Estado, `municipality`→Município, `militia_bank`→banco de milícia, que é exatamente o que o §24.11 nomeia. **Empresas não são papel de dotação** (o §24.11 não as lista). Os testes, que usam contas de empresa, registram um papel só de teste por `mock.patch.dict`; o mapa de produção não muda.
+- **"Autorizado pelo estado do cenário" = cenário ATIVO.** Ativar já exige todas as linhas explícitas (§24.11); só um cenário fica ativo.
+- **Linha que já gerou dotações não muda de valor** (`GRANT_LINE_LOCKED`), para a auditoria comparar cada dotação com a linha; `set_grant_line` também recusa papel fora do mapa.
+
+**Evidências reais**
+- PostgreSQL 16.15 (cluster local descartável, UTF8, `POLIS_EXPECT_DB=postgresql`): suíte completa → `Ran 890 tests ... OK` (0 pulados); `test_concurrency` repetido 15 vezes seguidas → 15 OK; `test_concurrency` + `test_emission` repetidos 10 vezes (antes do teste de concorrência de emissão) → 10 OK.
+- SQLite: suíte completa → `Ran 890 tests ... OK (skipped=1)`; `ledger`: 223 testes; `manage.py check` sem problemas e `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+- Um teste novo falhou de forma intermitente na primeira versão (expectativa do teste, não do código): divergências concorrentes recebem `GRANT_AMOUNT_MISMATCH` se chegam antes da dotação válida e `IDEMPOTENCY_CONFLICT` se chegam depois (mesma chave, conteúdo diferente). Ambas são recusas corretas; a asserção passou a exigir "exatamente uma OK, as outras recusadas por um desses dois códigos".
+
+**Pendências residuais**: as mesmas da entrada abaixo (sem CI em PostgreSQL; uma única instância local; `ValueError` dos serviços com tipo de conta inválido; provedores P1.x). Novas: o estado *ativo* do cenário só é exigido na emissão (a auditoria não o reconfere, pois muda depois); e a permissão `_GrantPermit` é protegida por revalidação, não por inacessibilidade em Python (quem importa o módulo privado ainda a constrói, mas só emite o já configurado).
+
+---
 
 ### P0.07b — revisão técnica consolidada (2026-10-17)
 

@@ -62,8 +62,7 @@ class TravelPaymentTests(IntegrationTestCase):
 
     def test_travel_charges_player_to_union_and_marks_journey(self):
         self.activate(player=0)
-        ledger.create_scenario("extra", {})
-        ledger.grant_scenario_allocation("extra", ledger.player_account(self.player.pk).pk, 100_000)
+        self.fund(ledger.player_account(self.player.pk), 100_000)
         dest = self.far()
         before = self.player_cents()
         r = self.go(dest)
@@ -89,8 +88,7 @@ class TravelPaymentTests(IntegrationTestCase):
     def test_failure_after_payment_rolls_back_money_too(self):
         from unittest import mock
         self.activate(player=0)
-        ledger.create_scenario("extra", {})
-        ledger.grant_scenario_allocation("extra", ledger.player_account(self.player.pk).pk, 100_000)
+        self.fund(ledger.player_account(self.player.pk), 100_000)
         with mock.patch.object(Journey.objects, "create", side_effect=RuntimeError):
             with self.assertRaises(RuntimeError):
                 self.go(self.far())
@@ -103,8 +101,7 @@ class TravelPaymentTests(IntegrationTestCase):
         a = registry.check_action(self.player.pk, "travel", dest.pk)
         self.assertEqual((a.available, a.code), (False, "INSUFFICIENT_FUNDS"))
         self.assertEqual(Entry.objects.filter(nature="travel_fee").count(), 0)         # consulta não move dinheiro
-        ledger.create_scenario("extra", {})
-        ledger.grant_scenario_allocation("extra", ledger.player_account(self.player.pk).pk, 100_000)
+        self.fund(ledger.player_account(self.player.pk), 100_000)
         b = registry.check_action(self.player.pk, "travel", dest.pk)
         self.assertEqual((b.available, b.code), (True, "OK"))
         self.assertEqual(self.player_cents(), 100_000)

@@ -305,7 +305,8 @@ class RouteTests(LedgerTestCase):
         self.assertEqual(Entry.objects.count(), 0)
 
     def test_grant_to_non_operational_account_refused(self):
-        ledger.create_scenario("g", {"x": 0})
+        ledger.create_scenario("g", {"player": 10})
+        ledger.activate_scenario("g", ["player"])
         sink = ledger.sink_account()
         self.assertEqual(ledger.grant_scenario_allocation("g", sink.pk, 10).code, "NATURE_ACCOUNT_MISMATCH")
         ret = ledger.open_retention("test", "c:1")

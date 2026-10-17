@@ -28,11 +28,11 @@ class ScenarioGrantTests(LedgerTestCase):
         self.assertEqual(ledger.grant_for_role(self.company(1).pk, "union").code, "SCENARIO_GRANT_UNSPECIFIED")
 
     def test_grant_is_only_source_and_idempotent_per_account(self):
-        ledger.create_scenario("s4", {"player": 700})
-        ledger.activate_scenario("s4", ["player"])
-        acc = self.company(1)
-        r1 = ledger.grant_for_role(acc.pk, "player")
-        r2 = ledger.grant_for_role(acc.pk, "player")
+        ledger.create_scenario("s4", {"union": 700})
+        ledger.activate_scenario("s4", ["union"])
+        acc = ledger.union_account()
+        r1 = ledger.grant_for_role(acc.pk, "union")
+        r2 = ledger.grant_for_role(acc.pk, "union")
         self.assertEqual((r1.detail["granted"], self.bal(acc)), (700, 700))
         self.assertTrue(r2.detail["already_posted"])
         self.assertEqual(self.bal(acc), 700)

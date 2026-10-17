@@ -16,6 +16,8 @@ from ledger.constants import AccountKind, Nature
 from ledger.services import HoldUse
 from ledger.models import Account, Entry, Hold, Obligation, Transaction
 
+from .base import fund_account, install_test_role
+
 
 def _retry(fn, attempts=60):
     for _ in range(attempts):
@@ -31,8 +33,8 @@ class ConcurrencyTests(TransactionTestCase):
         self.a = ledger.get_or_create_account(AccountKind.COMPANY, 1)
         self.b = ledger.get_or_create_account(AccountKind.COMPANY, 2)
         self.c = ledger.get_or_create_account(AccountKind.COMPANY, 3)
-        ledger.create_scenario("conc", {})
-        ledger.grant_scenario_allocation("conc", self.a.pk, 100)
+        install_test_role(self)
+        fund_account(self.a, 100)
 
     def _run(self, jobs):
         barrier = threading.Barrier(len(jobs))
@@ -114,9 +116,31 @@ class ConcurrencyTests(TransactionTestCase):
         self.assertEqual(Hold.objects.filter(key="hk").count(), 1)
         self.assertEqual(Obligation.objects.filter(key="ok").count(), 1)
 
+    def test_parallel_grants_to_the_same_account_emit_exactly_once(self):
+        union = ledger.union_account()
+        ledger.create_scenario("par", {"union": 7_000})
+        self.assertTrue(ledger.activate_scenario("par", ["union"]).ok)
+        job = lambda: ledger.grant_scenario_allocation("par", union.pk, 7_000, role="union")
+        results = self._run([job] * 6)
+        self.assertTrue(all(r is not None and r.ok for r in results), [(r.code, r.detail) for r in results if r])
+        self.assertEqual(len({r.detail["transaction_id"] for r in results}), 1)
+        self.assertEqual(sum(1 for r in results if not r.detail["already_posted"]), 1)
+        self.assertEqual(Entry.objects.filter(nature="scenario_grant", to_account=union).count(), 1)
+        self.assertEqual(ledger.balance_of(union.pk), 7_000)
+        # divergente em paralelo com a válida: só o valor configurado passa
+        other = ledger.get_or_create_account(AccountKind.MILITIA_BANK, 9)
+        ledger.set_grant_line("par", "militia_bank", 300)
+        results = self._run([lambda: ledger.grant_scenario_allocation("par", other.pk, 300, role="militia_bank"),
+                             lambda: ledger.grant_scenario_allocation("par", other.pk, 301, role="militia_bank"),
+                             lambda: ledger.grant_scenario_allocation("par", other.pk, 299, role="militia_bank")])
+        # as divergentes são recusadas por valor (se chegam antes) ou por conflito de chave (se a válida já gravou)
+        self.assertEqual(sum(1 for r in results if r.ok), 1, [r.code for r in results])
+        self.assertTrue(all(r.code in ("OK", "GRANT_AMOUNT_MISMATCH", "IDEMPOTENCY_CONFLICT") for r in results))
+        self.assertEqual(ledger.balance_of(other.pk), 300)
+        self.assertTrue(audit_ledger().ok, audit_ledger().findings)
+
     def test_opposite_direction_payments_do_not_deadlock_and_conserve(self):
-        ledger.create_scenario("conc2", {})
-        ledger.grant_scenario_allocation("conc2", self.b.pk, 100)
+        fund_account(self.b, 100)
         jobs = [lambda i=i: ledger.transfer(self.a.pk, self.b.pk, 10, Nature.SALE, key=f"ab{i}", reference_kind="t", reference_id=i)
                 for i in range(5)]
         jobs += [lambda i=i: ledger.transfer(self.b.pk, self.a.pk, 10, Nature.SALE, key=f"ba{i}", reference_kind="t", reference_id=i)

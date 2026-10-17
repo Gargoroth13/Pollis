@@ -26,6 +26,16 @@ OPERATIONAL_KINDS = frozenset({AccountKind.PLAYER, AccountKind.COMPANY, AccountK
                                AccountKind.MUNICIPALITY, AccountKind.MILITIA_BANK})
 SINGLETON_KINDS = frozenset({AccountKind.UNION, AccountKind.SINK, AccountKind.ISSUANCE})
 
+# Papéis de dotação (design/24 §24.11) e os tipos de conta que cada um pode receber. Lista FECHADA com o que o §24.11 nomeia
+# (jogador/Bot, União, Estados, Municípios, bancos de milícia); papel novo ou outro tipo de conta exige mudar o documento.
+GRANT_ROLE_KINDS = {
+    "player": frozenset({AccountKind.PLAYER}),
+    "union": frozenset({AccountKind.UNION}),
+    "state": frozenset({AccountKind.STATE}),
+    "municipality": frozenset({AccountKind.MUNICIPALITY}),
+    "militia_bank": frozenset({AccountKind.MILITIA_BANK}),
+}
+
 
 class Nature(str, enum.Enum):
     """Natureza FECHADA do lançamento (design/24 §24.8). Nova natureza exige mudar o documento."""
