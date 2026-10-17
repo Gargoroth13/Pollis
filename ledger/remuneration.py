@@ -24,7 +24,8 @@ from players.services import ActionResult
 
 from .constants import (COUNTS_IN_C_S, REMUNERATION_NATURES, Nature, Policy, RequestStatus)
 from .models import Account, Obligation, RemunerationCounter, RemunerationRequest
-from .money import amount_problem, competence_day_of, percent_of
+from .money import (amount_problem, canonical_rate, competence_day_of, percent_of, tax_rate_problem,
+                    tax_territory_problem)
 from . import obligations as obligations_mod
 from . import services as ledger
 
@@ -179,8 +180,10 @@ def submit_remuneration(*, key: str, player_id: int, payer_id: int, nature: Natu
         return _refuse("NATURE_INVALID", nature=str(nature))
     if nature not in REMUNERATION_NATURES:
         return _refuse("NATURE_INVALID", nature=nature.value)
-    if isinstance(tax_rate, float) or not Decimal(0) <= Decimal(tax_rate) <= Decimal(1):
-        return _refuse("TAX_RATE_INVALID", rate=str(tax_rate))
+    problem = tax_rate_problem(tax_rate) or tax_territory_problem(tax_territory)
+    if problem:
+        return _refuse(problem, rate=str(tax_rate), territory=tax_territory)
+    tax_rate = canonical_rate(tax_rate)
     if not isinstance(earned_at, int) or isinstance(earned_at, bool):
         return _refuse("EARNED_AT_INVALID")
     day = competence_day_of(earned_at) if competence_day is None else competence_day
@@ -194,7 +197,7 @@ def submit_remuneration(*, key: str, player_id: int, payer_id: int, nature: Natu
     if payer.pk == payee.pk:
         return _refuse("SAME_ACCOUNT", account=payer_id)
     h = _request_hash([player_id, payer_id, nature.value, due, earned_at, policy.value, reference_kind, reference_id,
-                       str(tax_rate), tax_territory, day])
+                       str(tax_rate), tax_territory, day])   # `tax_rate` já canônico (6 casas): 0.1 == "0.10"
     def _replay(existing: RemunerationRequest) -> ActionResult:
         if existing.payload_hash != h:
             return _refuse("IDEMPOTENCY_CONFLICT", key=key)
@@ -209,7 +212,7 @@ def submit_remuneration(*, key: str, player_id: int, payer_id: int, nature: Natu
                 r = RemunerationRequest.objects.create(
                     key=key, payload_hash=h, player_id=player_id, payer=payer, nature=nature.value, due=due,
                     competence_day=day, earned_at=earned_at, policy=policy.value, reference_kind=reference_kind,
-                    reference_id=reference_id, tax_rate=Decimal(tax_rate), tax_territory=tax_territory)
+                    reference_id=reference_id, tax_rate=tax_rate, tax_territory=tax_territory)
         except IntegrityError:
             winner = RemunerationRequest.objects.filter(key=key).first()
             return _replay(winner) if winner is not None else _refuse("IDEMPOTENCY_CONFLICT", key=key)

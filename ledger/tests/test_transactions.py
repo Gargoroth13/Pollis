@@ -237,6 +237,44 @@ class IdempotencyRaceTests(LedgerTestCase):
         self.assertEqual(Hold.objects.filter(key="hk").count(), 1)
 
 
+class CompetenceDayTests(LedgerTestCase):
+    """O dia de competência EFETIVO entra no payload canônico, mas o reenvio de uma requisição sem dia continua idempotente."""
+
+    def test_effective_day_is_stored_when_none_informed_and_entries_agree(self):
+        from ledger.money import competence_day_of
+        a, b = self.company(1), self.company(2)
+        self.fund(a, 100)
+        res = ledger.transfer(a.pk, b.pk, 10, Nature.SALE, key="k", reference_kind="t", reference_id=1)
+        tx = Transaction.objects.get(pk=res.detail["transaction_id"])
+        self.assertIsNone(tx.payload["request"]["competence_day"])
+        self.assertEqual(tx.payload["competence_day"], competence_day_of(self.clk.now()))
+        self.assertEqual({e.competence_day for e in tx.entries.all()}, {tx.payload["competence_day"]})
+
+    def test_replay_on_a_later_day_returns_the_original_and_keeps_its_day(self):
+        a, b = self.company(1), self.company(2)
+        self.fund(a, 100)
+        first = ledger.transfer(a.pk, b.pk, 10, Nature.SALE, key="k", reference_kind="t", reference_id=1)
+        day = Transaction.objects.get(pk=first.detail["transaction_id"]).payload["competence_day"]
+        self.clk.advance(days=3)
+        again = ledger.transfer(a.pk, b.pk, 10, Nature.SALE, key="k", reference_kind="t", reference_id=1)
+        self.assertTrue(again.ok and again.detail["already_posted"])
+        self.assertEqual(again.detail["transaction_id"], first.detail["transaction_id"])
+        self.assertEqual(Entry.objects.get(pk=again.detail["seqs"][0]).competence_day, day)
+
+    def test_explicit_day_is_part_of_the_request(self):
+        a, b = self.company(1), self.company(2)
+        self.fund(a, 100)
+        leg = [Leg(a.pk, b.pk, 10, Nature.SALE)]
+        r1 = post_transaction(leg, key="k", reference_kind="t", reference_id=1, competence_day=500)
+        self.assertTrue(r1.ok)
+        self.assertTrue(post_transaction(leg, key="k", reference_kind="t", reference_id=1, competence_day=500).detail["already_posted"])
+        self.assertEqual(post_transaction(leg, key="k", reference_kind="t", reference_id=1, competence_day=501).code,
+                         "IDEMPOTENCY_CONFLICT")
+        self.assertEqual(post_transaction(leg, key="k", reference_kind="t", reference_id=1).code, "IDEMPOTENCY_CONFLICT")
+        tx = Transaction.objects.get(key="k")
+        self.assertEqual((tx.payload["request"]["competence_day"], tx.payload["competence_day"]), (500, 500))
+
+
 class RouteTests(LedgerTestCase):
     def test_sink_only_receives(self):
         a = self.company(1)

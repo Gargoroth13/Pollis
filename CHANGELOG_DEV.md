@@ -26,10 +26,32 @@ Implementa `design/24` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev
 Provedor de `W`/`S`/`T` a partir de `skills`/`11` (P1.04/P1.12) e provedor do salário político (P1.11); valores de dotação do cenário (P1.18, configuração); política de caixa insuficiente por tipo (P1.04/P1.17/P1.09); ligação do tratamento (P0.04) a um prestador; resolvedor tributário militar (P1.17). Nenhuma delas bloqueia o registro.
 
 ### Testes
-171 testes no app (`ledger/tests/`; 148 na primeira entrega + 23 das correções abaixo): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 838 testes OK (após as correções); `check` e `makemigrations --check` limpos.
+193 testes no app (`ledger/tests/`; 148 na primeira entrega + 23 da primeira correção + 22 da revisão consolidada): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 860 testes OK em SQLite (1 pulado) e em PostgreSQL 16 (após a revisão consolidada); `check` e `makemigrations --check` limpos.
 
 ### Documentos alterados
 `24` (centavos nos serviços, chave da viagem, `P_liberada`, §24.19.1), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
+
+### P0.07b — revisão técnica consolidada (2026-10-17)
+
+Segunda rodada pedida pelo Game Director antes da auditoria externa final; nenhuma decisão de mecânica foi reaberta.
+1. **Obrigação pendente**: `open_obligation` compara também `tax_rate` e `tax_territory` na idempotência (mesma chave com qualquer um diferente = `IDEMPOTENCY_CONFLICT`). Para a comparação ser exata, a alíquota é validada e normalizada a 6 casas (`0.1`, `"0.10"` e `Decimal("0.100000")` são a mesma) e o território deve ser vazio ou `tipo:id`; o mesmo vale para `submit_remuneration` (antes uma alíquota com mais de 6 casas era arredondada calada pelo banco e um território malformado só falhava na quitação).
+2. **Dia de competência efetivo**: calculado antes do payload canônico, que agora tem `request` (o pedido; o hash identifica a requisição) e `competence_day` (efetivo, sempre presente). O dia derivado do relógio não entra no hash, para um reenvio depois da meia-noite continuar idempotente. A auditoria sempre exige que o dia efetivo do payload seja o de todos os lançamentos (`TRANSACTION_DAY_MISMATCH`); dia informado diferente do efetivo é achado.
+3. **Auditoria de `uses`**: soma por reserva dos consumos registrados nas transações comparada a `original_amount − amount` (`HOLD_CONSUMPTION_MISMATCH`); reserva inexistente (`HOLD_USE_UNKNOWN_HOLD`), de outra conta (`HOLD_USE_ACCOUNT_MISMATCH`) e `uses` malformado (`TRANSACTION_USES_INVALID`) são achados estruturados; alterar `uses` no banco e recalcular o hash continua sendo detectado. Novo invariante 17.
+4. **PostgreSQL real**: PostgreSQL 16.15 (cluster descartável local, UTF8, porta 54329) com `DATABASE_URL`; `POLIS_EXPECT_DB=postgresql` confirmado por teste que não foi pulado. Novos testes de concorrência: duas chaves consumindo a mesma reserva, reserva × pagamento disputando o saldo, três quitações concorrentes do mesmo devedor.
+
+**Evidências reais**
+- PostgreSQL 16.15: `manage.py test` completo → `Ran 860 tests ... OK` (0 pulados); `test_concurrency` repetido 15 vezes seguidas → 15 OK.
+- SQLite: `manage.py test` completo → `Ran 860 tests ... OK (skipped=1)` (o pulado é o teste que só roda com `POLIS_EXPECT_DB`); `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+- Sonda (descartada, não versionada) em PostgreSQL: 60 rodadas × 8 threads com a mesma chave e o mesmo conteúdo → todas OK com a mesma transação; das 420 requisições repetidas, 11 acharam o vencedor na checagem inicial e 409 na reconferência depois do travamento das contas; **nenhuma** chegou à violação de chave única. Ou seja, em PostgreSQL o travamento resolve a corrida antes da gravação; o caminho `IntegrityError → relê o vencedor` só é exercitado de forma determinística (simulação da checagem cega) e não foi observado numa corrida real.
+- Achado de ambiente (não do código): um cluster PostgreSQL SQL_ASCII recusa JSON com acentos (`\u00e7`); produção deve usar UTF8, como o cluster dos testes acima.
+
+**Pendências residuais**
+- Não há CI neste repositório: a execução em PostgreSQL foi manual e local (comandos acima); fica para a infraestrutura de testes.
+- Os serviços (não a auditoria) ainda levantam `ValueError` ao operar se acharem um tipo de conta inválido no banco; não alterado por estar fora do pedido.
+- Isolamento `READ COMMITTED` (padrão) assumido; níveis mais altos exigiriam tratar falhas de serialização.
+- Provedores de `W`/`S`/`T` e do salário político, valores de dotação e demais itens de P1.x seguem pendentes (ver entrada anterior).
+
+---
 
 ### P0.07b — correções antes da auditoria externa (2026-10-16)
 

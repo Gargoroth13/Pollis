@@ -32,6 +32,44 @@ class ObligationTests(LedgerTestCase):
         self.assertEqual(self.open(self.p1, 501, 10, "o1").code, "IDEMPOTENCY_CONFLICT")
         self.assertEqual(Obligation.objects.count(), 1)
 
+    def test_same_key_with_different_tax_rate_or_territory_conflicts(self):
+        base = dict(key="t", reference_kind="t", reference_id=1, competence_day=5)
+        first = obligations.open_obligation(self.payer.pk, self.p1.pk, 500, Nature.GOV_TRANSFER, tax_rate=Decimal("0.1"),
+                                            tax_territory="city:3", **base)
+        self.assertTrue(first.ok)
+        again = obligations.open_obligation(self.payer.pk, self.p1.pk, 500, Nature.GOV_TRANSFER, tax_rate=Decimal("0.1"),
+                                            tax_territory="city:3", **base)
+        self.assertTrue(again.ok and again.detail["already_posted"])
+        self.assertEqual(again.detail["obligation_id"], first.detail["obligation_id"])
+        # mesma alíquota escrita de outro jeito é a MESMA alíquota
+        for same in (Decimal("0.10"), "0.1", Decimal("0.100000")):
+            r = obligations.open_obligation(self.payer.pk, self.p1.pk, 500, Nature.GOV_TRANSFER, tax_rate=same,
+                                            tax_territory="city:3", **base)
+            self.assertTrue(r.ok and r.detail["already_posted"], same)
+        other_rate = obligations.open_obligation(self.payer.pk, self.p1.pk, 500, Nature.GOV_TRANSFER, tax_rate=Decimal("0.2"),
+                                                 tax_territory="city:3", **base)
+        self.assertEqual(other_rate.code, "IDEMPOTENCY_CONFLICT")
+        other_territory = obligations.open_obligation(self.payer.pk, self.p1.pk, 500, Nature.GOV_TRANSFER,
+                                                      tax_rate=Decimal("0.1"), tax_territory="city:4", **base)
+        self.assertEqual(other_territory.code, "IDEMPOTENCY_CONFLICT")
+        no_territory = obligations.open_obligation(self.payer.pk, self.p1.pk, 500, Nature.GOV_TRANSFER,
+                                                   tax_rate=Decimal("0.1"), tax_territory="", **base)
+        self.assertEqual(no_territory.code, "IDEMPOTENCY_CONFLICT")
+        no_tax = obligations.open_obligation(self.payer.pk, self.p1.pk, 500, Nature.GOV_TRANSFER, **base)
+        self.assertEqual(no_tax.code, "IDEMPOTENCY_CONFLICT")
+        ob = Obligation.objects.get()
+        self.assertEqual((ob.tax_rate, ob.tax_territory), (Decimal("0.1"), "city:3"))      # a original não mudou
+
+    def test_stored_tax_fields_must_be_exact_and_well_formed(self):
+        base = dict(key="t", reference_kind="t", reference_id=1)
+        for rate in (Decimal("0.1234567"), "abc", 0.1, True, None, Decimal("NaN"), Decimal("-0.1"), 2):
+            res = obligations.open_obligation(self.payer.pk, self.p1.pk, 5, Nature.GOV_TRANSFER, tax_rate=rate, **base)
+            self.assertEqual(res.code, "TAX_RATE_INVALID", rate)
+        for territory in ("city", "city:", ":3", "city:x", "ci ty:3", 7):
+            res = obligations.open_obligation(self.payer.pk, self.p1.pk, 5, Nature.GOV_TRANSFER, tax_territory=territory, **base)
+            self.assertEqual(res.code, "TAX_TERRITORY_INVALID", territory)
+        self.assertEqual(Obligation.objects.count(), 0)
+
     def test_open_validation(self):
         self.assertEqual(self.open(self.p1, 0, 10, "o").code, "AMOUNT_NOT_POSITIVE")
         self.assertEqual(self.open(self.p1, 1.5, 10, "o").code, "AMOUNT_NOT_IN_CENTAVOS")

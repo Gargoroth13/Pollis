@@ -5,7 +5,7 @@ Valores monetários: INTEIROS EM CENTAVOS (design/24 §24.4). Float é proibido.
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from typing import Optional
 
 from core.timeline import local_dt
@@ -53,3 +53,36 @@ def percent_of(amount: int, rate: Decimal) -> int:
 def competence_day_of(at: int) -> int:
     """Dia de jogo (calendário local do jogo) de um instante: ordinal da data. Só inteiros, ordenável."""
     return local_dt(at).date().toordinal()
+
+
+_RATE_QUANTUM = Decimal("0.000001")           # as alíquotas guardadas têm 6 casas (DecimalField(9, 6))
+
+
+def tax_rate_problem(rate) -> Optional[str]:
+    """`TAX_RATE_INVALID` se a alíquota não for número exato em [0, 1] com no máximo 6 casas (nada é arredondado calado)."""
+    if isinstance(rate, (float, bool)) or not isinstance(rate, (Decimal, int, str)):
+        return "TAX_RATE_INVALID"
+    try:
+        d = Decimal(rate)
+    except (InvalidOperation, ValueError):
+        return "TAX_RATE_INVALID"
+    if not d.is_finite() or not Decimal(0) <= d <= Decimal(1) or d != d.quantize(_RATE_QUANTUM):
+        return "TAX_RATE_INVALID"
+    return None
+
+
+def canonical_rate(rate) -> Decimal:
+    """Alíquota válida (ver `tax_rate_problem`) na forma guardada: 6 casas. `0.1`, `"0.10"` e `Decimal("0.100000")` são a mesma."""
+    return Decimal(rate).quantize(_RATE_QUANTUM)
+
+
+def tax_territory_problem(text) -> Optional[str]:
+    """`TAX_TERRITORY_INVALID` se o território opaco não for vazio nem `tipo:id` (`city:3`)."""
+    if text == "":
+        return None
+    if not isinstance(text, str):
+        return "TAX_TERRITORY_INVALID"
+    kind, sep, ident = text.partition(":")
+    if not sep or not kind.isalnum() or not ident.isdigit():
+        return "TAX_TERRITORY_INVALID"
+    return None

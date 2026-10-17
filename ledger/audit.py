@@ -146,6 +146,7 @@ def _emission(rep: AuditReport, ctx: Dict[str, Any]) -> None:
 
 def _transactions(rep: AuditReport, ctx: Dict[str, Any]) -> None:
     """7, 8, 16: cada transação confere (chave, hash, conteúdo canônico, instante, ator, referência, dia) com seus lançamentos."""
+    ctx["uses"] = []
     dup = Transaction.objects.values("key").annotate(n=Count("pk")).filter(n__gt=1).count()
     if dup:
         rep.add(8, "DUPLICATE_IDEMPOTENCY_KEYS", count=dup)
@@ -171,26 +172,42 @@ def _transactions(rep: AuditReport, ctx: Dict[str, Any]) -> None:
                                                                             first.competence_day) for e in entries):
                 rep.add(16, "TRANSACTION_ENTRIES_INCONSISTENT", transaction=tx.pk, key=tx.key)
             payload = tx.payload
-            if not isinstance(payload, dict):
+            request = payload.get("request") if isinstance(payload, dict) else None
+            effective_day = payload.get("competence_day") if isinstance(payload, dict) else None
+            if not isinstance(request, dict) or _as_int(effective_day) is None:
                 rep.add(16, "TRANSACTION_PAYLOAD_INVALID", transaction=tx.pk, key=tx.key)
                 continue
             try:
-                digest = payload_digest(payload)
+                digest = payload_digest(request)
             except (TypeError, ValueError):
                 rep.add(16, "TRANSACTION_PAYLOAD_INVALID", transaction=tx.pk, key=tx.key)
                 continue
             if digest != tx.payload_hash:
                 rep.add(16, "TRANSACTION_HASH_MISMATCH", transaction=tx.pk, key=tx.key)
             legs = [[e.from_account_id, e.to_account_id, e.amount, e.nature, e.category, e.operation] for e in entries]
-            if payload.get("legs") != legs:
+            if request.get("legs") != legs:
                 rep.add(16, "TRANSACTION_PAYLOAD_MISMATCH", transaction=tx.pk, key=tx.key, part="legs")
-            if payload.get("reference") != [first.reference_kind, first.reference_id]:
+            if request.get("reference") != [first.reference_kind, first.reference_id]:
                 rep.add(16, "TRANSACTION_PAYLOAD_MISMATCH", transaction=tx.pk, key=tx.key, part="reference")
-            day = payload.get("competence_day")
-            if day is not None and day != first.competence_day:
-                rep.add(16, "TRANSACTION_PAYLOAD_MISMATCH", transaction=tx.pk, key=tx.key, part="competence_day")
-            if payload.get("reverses") != first.reverses_id or any(e.reverses_id is not None for e in entries[1:]):
+            # o dia EFETIVO do payload é sempre o dia gravado em TODOS os lançamentos (mesmo sem dia informado na requisição)
+            if any(e.competence_day != effective_day for e in entries):
+                rep.add(16, "TRANSACTION_DAY_MISMATCH", transaction=tx.pk, key=tx.key, payload_day=effective_day,
+                        entry_days=sorted({e.competence_day for e in entries}))
+            requested_day = request.get("competence_day")
+            if requested_day is not None and requested_day != effective_day:
+                rep.add(16, "TRANSACTION_PAYLOAD_MISMATCH", transaction=tx.pk, key=tx.key, part="requested_day")
+            if request.get("reverses") != first.reverses_id or any(e.reverses_id is not None for e in entries[1:]):
                 rep.add(16, "TRANSACTION_PAYLOAD_MISMATCH", transaction=tx.pk, key=tx.key, part="reverses")
+            uses = request.get("uses")
+            valid = isinstance(uses, list) and all(
+                isinstance(u, list) and len(u) == 2 and _as_int(u[0]) is not None and _as_int(u[1]) is not None and u[1] > 0
+                for u in uses)
+            if not valid:
+                rep.add(16, "TRANSACTION_USES_INVALID", transaction=tx.pk, key=tx.key)
+                continue
+            for hold_id, amount in uses:
+                ctx["uses"].append({"transaction": tx.pk, "key": tx.key, "hold": hold_id, "amount": amount,
+                                    "from_accounts": {e.from_account_id for e in entries}})
 
     for tx in Transaction.objects.order_by("pk").iterator(chunk_size=_CHUNK):
         chunk.append(tx)
@@ -199,18 +216,36 @@ def _transactions(rep: AuditReport, ctx: Dict[str, Any]) -> None:
             chunk = []
     if chunk:
         check(chunk)
+    ctx["uses_complete"] = True
 
 
 def _holds_and_obligations(rep: AuditReport, ctx: Dict[str, Any]) -> None:
     """9: reservas ativas ≤ saldo bruto; obrigação nunca paga acima do devido; estados coerentes."""
     accounts = ctx["accounts"]
     held: Dict[int, int] = defaultdict(int)
+    holds: Dict[int, Hold] = {}
     for h in Hold.objects.all():
+        holds[h.pk] = h
         status = rep.enum(HoldStatus, h.status, "Hold", "status", h.pk)
         if status == HoldStatus.ACTIVE:
             held[h.account_id] += h.amount
         if h.amount > h.original_amount or h.amount < 0:
             rep.add(9, "HOLD_AMOUNT_INVALID", hold=h.pk)
+    if ctx.get("uses_complete"):
+        # o que as transações dizem ter consumido de cada reserva = o que a reserva diz ter perdido (original − restante)
+        consumed: Dict[int, int] = defaultdict(int)
+        for u in ctx["uses"]:
+            hold = holds.get(u["hold"])
+            if hold is None:
+                rep.add(9, "HOLD_USE_UNKNOWN_HOLD", transaction=u["transaction"], key=u["key"], hold=u["hold"])
+                continue
+            if hold.account_id not in u["from_accounts"]:
+                rep.add(9, "HOLD_USE_ACCOUNT_MISMATCH", transaction=u["transaction"], key=u["key"], hold=hold.pk)
+            consumed[hold.pk] += u["amount"]
+        for pk, h in holds.items():
+            if consumed.get(pk, 0) != h.original_amount - h.amount:
+                rep.add(9, "HOLD_CONSUMPTION_MISMATCH", hold=pk, in_transactions=consumed.get(pk, 0),
+                        in_hold=h.original_amount - h.amount)
     for pk, amount in held.items():
         account = accounts.get(pk)
         if account is None or amount > account.balance:

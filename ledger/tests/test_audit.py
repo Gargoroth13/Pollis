@@ -178,9 +178,10 @@ class AuditRobustnessTests(LedgerTestCase):
 
     def test_tampered_payload_content_is_caught_even_if_the_hash_is_recomputed(self):
         from ledger.services import payload_digest
-        payload = dict(self.sale_tx.payload)
-        payload["legs"] = [list(payload["legs"][0][:2]) + [payload["legs"][0][2] + 1] + list(payload["legs"][0][3:])]
-        h = payload_digest(payload)
+        payload = json.loads(json.dumps(self.sale_tx.payload))
+        leg = payload["request"]["legs"][0]
+        payload["request"]["legs"] = [leg[:2] + [leg[2] + 1] + leg[3:]]
+        h = payload_digest(payload["request"])
         self.sql("UPDATE ledger_transaction SET payload = %s, payload_hash = %s WHERE id = %s",
                  [json.dumps(payload), h, self.sale_tx.pk])
         codes = self.codes()
@@ -198,7 +199,7 @@ class AuditRobustnessTests(LedgerTestCase):
     def test_entry_reference_and_day_diverging_from_payload(self):
         self.sql("UPDATE ledger_entry SET reference_id = 'outra' WHERE nature = 'sale'")
         self.assertIn("TRANSACTION_PAYLOAD_MISMATCH", self.codes())
-        self.sql("UPDATE ledger_entry SET reference_id = %s WHERE nature = 'sale'", [self.sale_tx.payload["reference"][1]])
+        self.sql("UPDATE ledger_entry SET reference_id = %s WHERE nature = 'sale'", [self.sale_tx.payload["request"]["reference"][1]])
         self.sql("UPDATE ledger_entry SET category = 'x' WHERE nature = 'sale'")
         self.assertIn("TRANSACTION_PAYLOAD_MISMATCH", self.codes())
 
@@ -290,3 +291,135 @@ class AuditRobustnessTests(LedgerTestCase):
         self.assertEqual(m["emitted_total"], 1000)
 
     # (Entrada apontando para conta inexistente não é testada: a chave estrangeira do banco já a impede.)
+
+
+class AuditPayloadDayAndUsesTests(LedgerTestCase):
+    """Dia de competência efetivo e consumo de reservas (`uses`) do payload canônico conferem com o resto do registro."""
+    audit_at_end = False
+
+    def setUp(self):
+        super().setUp()
+        self.a, self.b = self.company(1), self.company(2)
+        self.fund(self.a, 1000)
+        self.hold_id = ledger.hold(self.a.pk, 300, key="h", reference_kind="t", reference_id=1).detail["hold_id"]
+        self.use_tx = Transaction.objects.get(pk=ledger.transfer(
+            self.a.pk, self.b.pk, 100, Nature.SALE, key="use1", reference_kind="t", reference_id=2,
+            uses=[ledger.HoldUse(self.hold_id, 100)]).detail["transaction_id"])
+        ledger.transfer(self.a.pk, self.b.pk, 50, Nature.SALE, key="use2", reference_kind="t", reference_id=3,
+                        uses=[ledger.HoldUse(self.hold_id, 50)])
+
+    def sql(self, statement, params=()):
+        with connection.cursor() as c:
+            c.execute(statement, params)
+
+    def codes(self):
+        rep = audit_ledger()
+        json.dumps(rep.to_dict(), default=str)
+        return {f["code"] for f in rep.findings}
+
+    def set_payload(self, tx, payload, recompute_hash=True):
+        from ledger.services import payload_digest
+        h = payload_digest(payload["request"]) if recompute_hash and isinstance(payload.get("request"), dict) else tx.payload_hash
+        self.sql("UPDATE ledger_transaction SET payload = %s, payload_hash = %s WHERE id = %s", [json.dumps(payload), h, tx.pk])
+
+    # --- dia de competência efetivo ---
+    def test_payload_stores_the_effective_day_even_when_none_was_informed(self):
+        from ledger.money import competence_day_of
+        self.assertIsNone(self.use_tx.payload["request"]["competence_day"])         # não informado pelo chamador
+        self.assertEqual(self.use_tx.payload["competence_day"], competence_day_of(self.use_tx.at))
+        self.assertEqual(Entry.objects.filter(transaction=self.use_tx).get().competence_day, self.use_tx.payload["competence_day"])
+        self.assertEqual(self.codes(), set())
+
+    def test_explicit_day_is_recorded_and_checked(self):
+        r = ledger.post_transaction([ledger.Leg(self.a.pk, self.b.pk, 5, Nature.SALE)], key="explicit", reference_kind="t",
+                                    reference_id=9, competence_day=123)
+        tx = Transaction.objects.get(pk=r.detail["transaction_id"])
+        self.assertEqual((tx.payload["request"]["competence_day"], tx.payload["competence_day"]), (123, 123))
+        self.assertEqual(self.codes(), set())
+
+    def test_tampered_effective_day_in_payload_is_detected_hash_untouched(self):
+        payload = json.loads(json.dumps(self.use_tx.payload))
+        payload["competence_day"] += 1
+        self.set_payload(self.use_tx, payload)          # o hash cobre só o `request`: continua válido
+        codes = self.codes()
+        self.assertIn("TRANSACTION_DAY_MISMATCH", codes)
+        self.assertNotIn("TRANSACTION_HASH_MISMATCH", codes)
+
+    def test_tampered_day_in_entries_is_detected(self):
+        self.sql("UPDATE ledger_entry SET competence_day = competence_day + 1 WHERE transaction_id = %s", [self.use_tx.pk])
+        self.assertIn("TRANSACTION_DAY_MISMATCH", self.codes())
+
+    def test_requested_day_must_agree_with_the_effective_day(self):
+        r = ledger.post_transaction([ledger.Leg(self.a.pk, self.b.pk, 5, Nature.SALE)], key="explicit", reference_kind="t",
+                                    reference_id=9, competence_day=123)
+        tx = Transaction.objects.get(pk=r.detail["transaction_id"])
+        payload = json.loads(json.dumps(tx.payload))
+        payload["request"]["competence_day"] = 124
+        self.set_payload(tx, payload)
+        self.assertIn("TRANSACTION_PAYLOAD_MISMATCH", self.codes())
+
+    def test_missing_or_non_integer_effective_day_is_a_structured_finding(self):
+        for bad in (None, "x", True, 1.5):
+            payload = json.loads(json.dumps(self.use_tx.payload))
+            payload["competence_day"] = bad
+            self.set_payload(self.use_tx, payload)
+            self.assertIn("TRANSACTION_PAYLOAD_INVALID", self.codes(), bad)
+        payload = json.loads(json.dumps(self.use_tx.payload))
+        del payload["competence_day"]
+        self.set_payload(self.use_tx, payload)
+        self.assertIn("TRANSACTION_PAYLOAD_INVALID", self.codes())
+
+    # --- consumo de reservas ---
+    def test_clean_consumption_matches_the_hold(self):
+        h = Hold.objects.get(pk=self.hold_id)
+        self.assertEqual((h.original_amount, h.amount, h.status), (300, 150, "active"))
+        self.assertEqual(self.codes(), set())
+
+    def test_uses_altered_in_the_database_with_recomputed_hash_is_detected(self):
+        payload = json.loads(json.dumps(self.use_tx.payload))
+        payload["request"]["uses"] = [[self.hold_id, 90]]            # a transação diz ter consumido 90, a reserva perdeu 100
+        self.set_payload(self.use_tx, payload, recompute_hash=True)
+        codes = self.codes()
+        self.assertIn("HOLD_CONSUMPTION_MISMATCH", codes)
+        self.assertNotIn("TRANSACTION_HASH_MISMATCH", codes)         # o hash foi recalculado: só a conferência cruzada pega
+        f = next(f for f in audit_ledger().findings if f["code"] == "HOLD_CONSUMPTION_MISMATCH")
+        self.assertEqual((f["hold"], f["in_transactions"], f["in_hold"]), (self.hold_id, 140, 150))
+
+    def test_removing_uses_from_a_transaction_is_detected(self):
+        payload = json.loads(json.dumps(self.use_tx.payload))
+        payload["request"]["uses"] = []
+        self.set_payload(self.use_tx, payload)
+        self.assertIn("HOLD_CONSUMPTION_MISMATCH", self.codes())
+
+    def test_hold_changed_directly_is_detected(self):
+        Hold.objects.filter(pk=self.hold_id).update(amount=250)
+        self.assertIn("HOLD_CONSUMPTION_MISMATCH", self.codes())
+
+    def test_use_pointing_to_unknown_hold_or_other_accounts_hold(self):
+        payload = json.loads(json.dumps(self.use_tx.payload))
+        payload["request"]["uses"] = [[99999, 100]]
+        self.set_payload(self.use_tx, payload)
+        codes = self.codes()
+        self.assertIn("HOLD_USE_UNKNOWN_HOLD", codes)
+        self.fund(self.b, 10)
+        other = ledger.hold(self.b.pk, 1, key="hb", reference_kind="t", reference_id=7)
+        payload["request"]["uses"] = [[other.detail["hold_id"], 100]]
+        self.set_payload(self.use_tx, payload)
+        self.assertIn("HOLD_USE_ACCOUNT_MISMATCH", self.codes())
+
+    def test_invalid_uses_shapes_are_findings_not_exceptions(self):
+        shapes = ["x", [1], [[1]], [[1, 2, 3]], [["a", 5]], [[self.hold_id, -5]], [[self.hold_id, 0]], [[True, 5]], None,
+                  [[self.hold_id, 1.5]], {"a": 1}]
+        for bad in shapes:
+            payload = json.loads(json.dumps(self.use_tx.payload))
+            payload["request"]["uses"] = bad
+            self.set_payload(self.use_tx, payload)
+            rep = audit_ledger()                                       # não pode levantar
+            self.assertIn("TRANSACTION_USES_INVALID", {f["code"] for f in rep.findings}, bad)
+            self.assertNotIn("AUDIT_SECTION_FAILED", {f["code"] for f in rep.findings}, bad)
+
+    def test_released_hold_keeps_the_consumption_consistent(self):
+        ledger.release_hold(self.hold_id)
+        self.assertEqual(self.codes(), set())
+        h = Hold.objects.get(pk=self.hold_id)
+        self.assertEqual((h.status, h.original_amount - h.amount), ("released", 150))

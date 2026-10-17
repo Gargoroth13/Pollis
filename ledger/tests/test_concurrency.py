@@ -3,6 +3,7 @@ Concorrência (design/24 §24.5.3). Em PostgreSQL as transações disputam o sal
 em ordem crescente de id). Em SQLite (desenvolvimento) `select_for_update` não faz nada e o próprio banco serializa as
 escritas; o teste verifica a PROPRIEDADE (nunca saldo negativo, um só vencedor, conservação), que vale nos dois.
 """
+import os
 import threading
 import time
 
@@ -132,3 +133,45 @@ class ConcurrencyTests(TransactionTestCase):
         results = self._run([hold("h1"), hold("h2")])
         self.assertEqual(sorted(r.code for r in results), ["INSUFFICIENT_AVAILABLE", "OK"])
         self.assertEqual(ledger.reserved_of(self.a.pk), 70)
+
+    def test_two_different_keys_consuming_the_same_hold_only_one_succeeds(self):
+        h = ledger.hold(self.a.pk, 50, key="h", reference_kind="t", reference_id=1).detail["hold_id"]
+
+        def use(key):
+            return lambda: ledger.transfer(self.a.pk, self.b.pk, 40, Nature.SALE, key=key, reference_kind="t",
+                                           reference_id=key, uses=[HoldUse(h, 40)])
+        results = self._run([use("u1"), use("u2")])
+        self.assertEqual(sorted(r.code for r in results), ["HOLD_INSUFFICIENT", "OK"])
+        hold = Hold.objects.get(pk=h)
+        self.assertEqual((hold.amount, hold.status), (10, "active"))
+        self.assertEqual((ledger.balance_of(self.a.pk), ledger.balance_of(self.b.pk)), (60, 40))
+        self.assertTrue(audit_ledger().ok, audit_ledger().findings)
+
+    def test_hold_and_payment_fighting_for_the_same_balance_never_oversubscribe(self):
+        jobs = [lambda: ledger.hold(self.a.pk, 70, key="h", reference_kind="t", reference_id=1),
+                lambda: ledger.transfer(self.a.pk, self.b.pk, 60, Nature.SALE, key="p", reference_kind="t", reference_id=1)]
+        results = self._run(jobs)
+        self.assertEqual(sum(1 for r in results if r.ok), 1, [(r.code, r.detail.get("account")) for r in results])
+        self.assertGreaterEqual(ledger.available_of(self.a.pk), 0)               # nunca reservado + gasto > saldo
+        self.assertTrue(audit_ledger().ok, audit_ledger().findings)
+
+    def test_two_settlements_of_the_same_debtor_never_pay_more_than_owed(self):
+        from ledger import obligations
+        obligations.open_obligation(self.a.pk, self.b.pk, 80, Nature.GOV_TRANSFER, key="o", reference_kind="t",
+                                    reference_id=1, competence_day=1)
+        jobs = [lambda i=i: obligations.settle_obligations(self.a.pk, batch_key=f"s{i}") for i in range(3)]
+        results = self._run(jobs)
+        self.assertTrue(all(r.ok for r in results), [(r.code, r.detail) for r in results])
+        ob = Obligation.objects.get()
+        self.assertEqual((ob.amount_paid, ob.status), (80, "paid"))
+        self.assertEqual((ledger.balance_of(self.a.pk), ledger.balance_of(self.b.pk)), (20, 80))
+        self.assertTrue(audit_ledger().ok, audit_ledger().findings)
+
+
+class DatabaseUnderTestTests(TransactionTestCase):
+    def test_runs_on_the_expected_database(self):
+        """`POLIS_EXPECT_DB=postgresql` só passa se a suíte estiver de fato rodando em PostgreSQL (evita declarar cobertura falsa)."""
+        expected = os.environ.get("POLIS_EXPECT_DB")
+        if not expected:
+            self.skipTest("POLIS_EXPECT_DB não definido")
+        self.assertEqual(connection.vendor, expected)

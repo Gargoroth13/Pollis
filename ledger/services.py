@@ -231,16 +231,24 @@ class HoldUse:
     amount: int
 
 
-def canonical_payload(legs: Sequence[Leg], reference: Tuple[str, str], competence_day: Optional[int],
-                      uses: Sequence[HoldUse], reverses: Optional[int]) -> Dict[str, Any]:
-    """Conteúdo que identifica a requisição para a idempotência (e que a auditoria confere contra os lançamentos)."""
-    return {"legs": [[l.from_id, l.to_id, l.amount, Nature(l.nature).value, l.category, l.operation] for l in legs],
-            "reference": list(reference), "competence_day": competence_day,
-            "uses": [[u.hold_id, u.amount] for u in uses], "reverses": reverses}
+def canonical_payload(legs: Sequence[Leg], reference: Tuple[str, str], requested_day: Optional[int], uses: Sequence[HoldUse],
+                      reverses: Optional[int], effective_day: int) -> Dict[str, Any]:
+    """
+    Conteúdo canônico da transação (a auditoria confere contra os lançamentos):
+      `request`          o que o chamador PEDIU (pernas, referência, dia informado ou None, reservas usadas, estorno): é o que
+                         identifica a requisição para a idempotência (`payload_hash = digest(request)`); não contém o dia
+                         derivado do relógio, para um reenvio depois da meia-noite ainda devolver a transação original;
+      `competence_day`   o dia de competência EFETIVO gravado nos lançamentos (sempre presente, mesmo sem dia informado).
+    """
+    return {"request": {"legs": [[l.from_id, l.to_id, l.amount, Nature(l.nature).value, l.category, l.operation] for l in legs],
+                        "reference": list(reference), "competence_day": requested_day,
+                        "uses": [[u.hold_id, u.amount] for u in uses], "reverses": reverses},
+            "competence_day": effective_day}
 
 
-def payload_digest(payload: Dict[str, Any]) -> str:
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+def payload_digest(request: Dict[str, Any]) -> str:
+    """sha256 do bloco `request` do payload canônico."""
+    return hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
 
 
 class _KeyRace(Exception):
@@ -299,10 +307,10 @@ def post_transaction(legs: Sequence[Leg], *, key: str, reference_kind: str, refe
         problem = amount_problem(u.amount)
         if problem:
             return _refuse(problem, amount=u.amount)
-    payload = canonical_payload(legs, (reference_kind, reference_id), competence_day, uses, reverses)
-    payload_hash = payload_digest(payload)
     at = game_clock.now() if at is None else at
-    day = competence_day_of(at) if competence_day is None else competence_day
+    day = competence_day_of(at) if competence_day is None else competence_day      # dia EFETIVO, antes do payload canônico
+    payload = canonical_payload(legs, (reference_kind, reference_id), competence_day, uses, reverses, day)
+    payload_hash = payload_digest(payload["request"])
     try:
         with transaction.atomic():
             existing = _existing_transaction(key)

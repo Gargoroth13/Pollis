@@ -17,7 +17,8 @@ from players.services import ActionResult
 
 from .constants import REMUNERATION_NATURES, AccountKind, Nature, ObligationStatus
 from .models import Account, Obligation, Transaction
-from .money import amount_problem, competence_day_of, percent_of
+from .money import (amount_problem, canonical_rate, competence_day_of, percent_of, tax_rate_problem,
+                    tax_territory_problem)
 from . import services as ledger
 
 
@@ -41,8 +42,10 @@ def open_obligation(debtor_id: int, creditor_id: int, amount: int, nature: Natur
         return _refuse("NATURE_INVALID", nature=str(nature))
     if debtor_id == creditor_id:
         return _refuse("SAME_ACCOUNT", account=debtor_id)
-    if isinstance(tax_rate, float) or not Decimal(0) <= Decimal(tax_rate) <= Decimal(1):
-        return _refuse("TAX_RATE_INVALID", rate=str(tax_rate))
+    problem = tax_rate_problem(tax_rate) or tax_territory_problem(tax_territory)
+    if problem:
+        return _refuse(problem, rate=str(tax_rate), territory=tax_territory)
+    tax_rate = canonical_rate(tax_rate)
     at = game_clock.now() if at is None else at
     day = competence_day_of(at) if competence_day is None else competence_day
     with transaction.atomic():
@@ -56,9 +59,11 @@ def open_obligation(debtor_id: int, creditor_id: int, amount: int, nature: Natur
             if AccountKind(accounts[i].kind) in (AccountKind.SINK, AccountKind.ISSUANCE):
                 return _refuse("NATURE_ACCOUNT_MISMATCH", account=i)
         def _replay(existing: Obligation) -> ActionResult:
+            # todos os campos que definem a dívida, inclusive o imposto retido (alíquota e território), entram na comparação
             same = (existing.debtor_id, existing.creditor_id, existing.amount_due, existing.nature, existing.competence_day,
-                    existing.reference_kind, existing.reference_id) == (
-                debtor_id, creditor_id, amount, nature.value, day, reference_kind, reference_id)
+                    existing.reference_kind, existing.reference_id, canonical_rate(existing.tax_rate),
+                    existing.tax_territory) == (
+                debtor_id, creditor_id, amount, nature.value, day, reference_kind, reference_id, tax_rate, tax_territory)
             return ActionResult(True, "OK", {"obligation_id": existing.pk, "already_posted": True}) if same \
                 else _refuse("IDEMPOTENCY_CONFLICT", key=key)
 
@@ -70,7 +75,7 @@ def open_obligation(debtor_id: int, creditor_id: int, amount: int, nature: Natur
                 ob = Obligation.objects.create(
                     key=key, debtor_id=debtor_id, creditor_id=creditor_id, amount_due=amount, nature=nature.value,
                     competence_day=day, reference_kind=reference_kind, reference_id=reference_id,
-                    tax_rate=Decimal(tax_rate), tax_territory=tax_territory, created_at=at)
+                    tax_rate=tax_rate, tax_territory=tax_territory, created_at=at)
         except IntegrityError:
             winner = Obligation.objects.filter(key=key).first()
             return _replay(winner) if winner is not None else _refuse("IDEMPOTENCY_CONFLICT", key=key)
