@@ -15,6 +15,7 @@ class TravelTestCase(PlayerTestCase):
 
     def setUp(self):
         super().setUp()
+        self._reset_travel_extensions()      # o app `ledger` registra o handler em `ready()`; estes testes partem sem ele
         self.addCleanup(self._reset_travel_extensions)
 
     @staticmethod

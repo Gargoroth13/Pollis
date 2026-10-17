@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "geography",  # Estado → Cidade → Bairro → Lote, zoneamento e recursos (design/08)
     "travel",  # localização do jogador e viagem básica (design/04 §20-21)
     "catalog",  # catálogo central de Produtos, Receitas e usos (design/22)
+    "ledger",  # registro monetário: contas, lançamentos, reservas, obrigações, remuneração (design/24)
 ]
 
 MIDDLEWARE = [

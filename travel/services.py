@@ -145,27 +145,43 @@ def unregister_travel_modifier(name: str) -> None:
     _modifier_providers.pop(name, None)
 
 
-# Ponto de integração com o sistema de DINHEIRO (inexistente hoje). `fn(player, amount, journey_context) -> bool`: True se
-# debitou, False se saldo insuficiente. Sem handler, o custo é calculado e registrado (Journey.cost) mas NÃO cobrado.
+# Ponto de integração com o sistema de DINHEIRO (registro monetário, design/24). `fn(player, amount, journey_context) -> bool`:
+# True se debitou, False se saldo insuficiente. Opcionais: `active()` (o sistema de dinheiro está em uso? sem ele a viagem se
+# comporta como antes: custo calculado e registrado, não cobrado) e `check_funds(player, amount) -> None | dict` (consulta SEM
+# cobrar, para o Action Registry informar INSUFFICIENT_FUNDS antes de executar).
 PaymentHandler = Callable[[Player, Decimal, Dict], bool]
 _payment_handler: Optional[Tuple[str, PaymentHandler]] = None
+_payment_active: Optional[Callable[[], bool]] = None
+_payment_check: Optional[Callable[[Player, Decimal], Optional[Dict]]] = None
 
 
-def register_payment_handler(name: str, fn: PaymentHandler) -> None:
-    global _payment_handler
+def register_payment_handler(name: str, fn: PaymentHandler, *, active: Optional[Callable[[], bool]] = None,
+                             check_funds: Optional[Callable[[Player, Decimal], Optional[Dict]]] = None) -> None:
+    global _payment_handler, _payment_active, _payment_check
     if _payment_handler is not None:
         raise ValueError(f"Já existe um handler de pagamento de viagem: {_payment_handler[0]}")
     _payment_handler = (name, fn)
+    _payment_active = active
+    _payment_check = check_funds
 
 
 def has_payment_handler() -> bool:
-    return _payment_handler is not None
+    """Há handler E o sistema de dinheiro está ativo (sem `active`, basta o handler)."""
+    return _payment_handler is not None and (_payment_active is None or bool(_payment_active()))
 
 
 def unregister_payment_handler(name: str) -> None:
-    global _payment_handler
+    global _payment_handler, _payment_active, _payment_check
     if _payment_handler is not None and _payment_handler[0] == name:
-        _payment_handler = None
+        _payment_handler = _payment_active = _payment_check = None
+
+
+def funds_refusal(player: Player, amount: Decimal) -> Optional[ActionResult]:
+    """INSUFFICIENT_FUNDS (com o detalhamento do sistema de dinheiro) se a cobrança não caberia; None se cabe ou não se aplica."""
+    if amount == 0 or not has_payment_handler() or _payment_check is None:
+        return None
+    detail = _payment_check(player, amount)
+    return None if detail is None else ActionResult(False, "INSUFFICIENT_FUNDS", {"cost": amount, **detail})
 
 
 # --- partir e consultar -------------------------------------------------------
@@ -238,7 +254,7 @@ def start_travel(player_id: int, destination_lot_id: int) -> ActionResult:
         payment = "NO_PAYMENT_SYSTEM"
         if quote.amount == 0:
             payment = "NOT_REQUIRED"
-        elif _payment_handler is not None:
+        elif has_payment_handler():
             if not _payment_handler[1](player, quote.amount, {"origin": origin, "destination": destination, "at": now}):
                 return ActionResult(False, "INSUFFICIENT_FUNDS", {"cost": quote.amount})
             charged, payment = True, "CHARGED"

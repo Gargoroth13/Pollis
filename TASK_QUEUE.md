@@ -51,12 +51,12 @@ Critérios:
 
 ---
 
-## [ ] P0.07 — Registro monetário (ledger)
+## [x] P0.07 — Registro monetário (ledger)  *(P0.07a aprovada; P0.07b implementada em 2026-10-16, aguarda merge)*
 
 Pré-requisito transversal: não existe sistema de dinheiro em nenhum documento nem na fila. Posição: depois de P0.01 e P0.02, antes de P1.02. Duas fases:
 
 - **P0.07a — Documento de design** — **aprovado em 2026-10-15** como `design/24-Registro-Monetario-FINAL-BOT-TEST.md` (PR #10); teto de déficit decidido (`24` §24.16, implementação na P1.09/P1.12);
-- **P0.07b — Implementação** (liberada pela aprovação do P0.07a em 2026-10-15; em andamento na branch `dev/p0.07b-ledger`, empilhada sobre o PR #10).
+- **P0.07b — Implementação** — **implementada em 2026-10-16** na branch `dev/p0.07b-ledger` (app `ledger`; PR empilhado sobre o #10; aguarda auditoria externa e aprovação do GD para merge). Decisões técnicas em `24` §24.19.1 e `CHANGELOG_DEV.md`.
 
 **Decisões do Game Director já aprovadas (2026-10-14):**
 - **Origem do dinheiro:** dotação inicial explícita e auditável por conta (humana ou Bot) conforme parâmetro do cenário; lançamento de emissão com natureza, origem, destino e referência ao cenário. Como Bots são criados continuamente até a população-alvo, é uma fonte de emissão durante a formação da população, não uma emissão única. Emissão total e contas contempladas aparecem nas métricas financeiras. Zero é válido se escolhido explicitamente; valor ausente faz o cenário recusar a inicialização e registrar a pendência. Sem emissão periódica discricionária pela União; despesas, títulos e transferências não criam dinheiro.
