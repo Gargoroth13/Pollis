@@ -244,6 +244,12 @@ class LedgerScenario(models.Model):
     active = models.BooleanField(default=False)
     created_at = models.BigIntegerField(default=0)
 
+    class Meta:
+        constraints = [
+            # no máximo um cenário ativo, garantido pelo banco (defesa em profundidade do protocolo de travamento)
+            models.UniqueConstraint(fields=["active"], condition=Q(active=True), name="ledger_single_active_scenario"),
+        ]
+
 
 class ScenarioGrantLine(models.Model):
     """Dotação inicial EXPLÍCITA por papel (`player`, `union`, `state`, `municipality`, `militia_bank`...). NULL = não especificada."""

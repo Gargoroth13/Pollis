@@ -301,7 +301,8 @@ def _grant_permitted(permit: Optional[_GrantPermit], legs: Sequence[Leg], key: s
 
 def _check_grant(permit: _GrantPermit, leg: Leg, locked: Dict[int, Account]) -> None:
     """Revalida a dotação contra a configuração explícita do cenário (dentro da transação, contas já travadas)."""
-    sc = LedgerScenario.objects.select_for_update().filter(name=permit.scenario).first()
+    scenario_rows = _lock_scenarios(permit.scenario)     # mesmo protocolo de `set_grant_line` e `activate_scenario`
+    sc = scenario_rows[0] if scenario_rows else None
     if sc is None:
         _fail("SCENARIO_NOT_FOUND", scenario=permit.scenario)
     if not sc.active:
@@ -710,19 +711,37 @@ def create_scenario(name: str, lines: Dict[str, Optional[int]]) -> LedgerScenari
     return sc
 
 
+# Protocolo de travamento da configuração de cenários (um só, para toda a configuração e a emissão):
+#   1. emissão (`_check_grant`): contas em ordem crescente de id, DEPOIS a linha do cenário emissor (FOR UPDATE);
+#   2. `set_grant_line`: a linha do cenário alterado (FOR UPDATE), depois relê linha e dotações já emitidas;
+#   3. `activate_scenario`: TODAS as linhas de cenário em ordem crescente de pk (FOR UPDATE), depois relê tudo.
+# Quem trava cenários trava em ordem de pk e nenhum deles espera por conta enquanto segura cenário (só a emissão segura contas,
+# e ela pede UM cenário): não há ciclo, logo não há deadlock. Cada passo relê o que importa DEPOIS de adquirir o bloqueio
+# (em READ COMMITTED a leitura anterior ao bloqueio pode estar velha). Em SQLite o banco serializa as escritas.
+def _lock_scenarios(name: Optional[str] = None) -> List[LedgerScenario]:
+    qs = LedgerScenario.objects.select_for_update().order_by("pk")
+    return list(qs if name is None else qs.filter(name=name))
+
+
 def set_grant_line(scenario: str, role: str, amount: Optional[int]) -> ScenarioGrantLine:
     """Linha de dotação do papel. Papel fora de `GRANT_ROLE_KINDS` é recusado; depois que a linha já gerou dotações, o valor
-    não muda (a auditoria compara cada dotação com a linha: alterar a linha reescreveria o que foi emitido)."""
+    não muda (a auditoria compara cada dotação com a linha: alterar a linha reescreveria o que foi emitido).
+    Tudo (cenário, linha, dotações existentes, gravação) numa transação sob o MESMO bloqueio de cenário da emissão: uma
+    dotação em andamento termina antes, e a alteração relê as dotações depois de adquirir o bloqueio."""
     if amount is not None and (not isinstance(amount, int) or isinstance(amount, bool) or amount < 0 or amount > MAX_AMOUNT):
         raise ValueError(f"dotação inválida: {amount!r}")
     if role not in GRANT_ROLE_KINDS:
         raise ValueError(f"papel de dotação desconhecido: {role!r} (conhecidos: {sorted(GRANT_ROLE_KINDS)})")
-    sc = LedgerScenario.objects.get(name=scenario)
-    current = ScenarioGrantLine.objects.filter(scenario=sc, role=role).first()
-    if current is not None and current.amount != amount and _line_has_grants(scenario, role):
-        raise LedgerRefusal(_refuse("GRANT_LINE_LOCKED", scenario=scenario, role=role, configured=current.amount))
-    line, _ = ScenarioGrantLine.objects.update_or_create(scenario=sc, role=role, defaults={"amount": amount})
-    return line
+    with transaction.atomic():
+        locked = _lock_scenarios(scenario)
+        if not locked:
+            raise LedgerScenario.DoesNotExist(f"cenário inexistente: {scenario!r}")
+        sc = locked[0]
+        current = ScenarioGrantLine.objects.filter(scenario=sc, role=role).first()          # relido após o bloqueio
+        if current is not None and current.amount != amount and _line_has_grants(scenario, role):
+            raise LedgerRefusal(_refuse("GRANT_LINE_LOCKED", scenario=scenario, role=role, configured=current.amount))
+        line, _ = ScenarioGrantLine.objects.update_or_create(scenario=sc, role=role, defaults={"amount": amount})
+        return line
 
 
 def _line_has_grants(scenario: str, role: str) -> bool:
@@ -733,13 +752,15 @@ def _line_has_grants(scenario: str, role: str) -> bool:
 def activate_scenario(name: str, required_roles: Iterable[str]) -> ActionResult:
     """
     Ativa o cenário se TODA dotação exigida está explícita (0 é válido). Valor ausente → recusa `SCENARIO_GRANT_UNSPECIFIED`
-    e lista as pendências (nenhum valor é inventado). Só um cenário fica ativo.
+    e lista as pendências (nenhum valor é inventado). Só um cenário fica ativo: trava TODOS os cenários em ordem de pk (não só o
+    que será ativado), de modo que ativações simultâneas se serializam e nenhuma compete com uma emissão em andamento (a
+    emissão segura o cenário emissor até confirmar); a restrição única parcial do banco é a defesa em profundidade.
     """
     with transaction.atomic():
-        sc = LedgerScenario.objects.select_for_update().filter(name=name).first()
+        sc = next((r for r in _lock_scenarios() if r.name == name), None)
         if sc is None:
             return _refuse("SCENARIO_NOT_FOUND", scenario=name)
-        have = {l.role: l.amount for l in sc.lines.all()}
+        have = {l.role: l.amount for l in ScenarioGrantLine.objects.filter(scenario=sc)}      # relido após o bloqueio
         missing = sorted(r for r in set(required_roles) if have.get(r) is None)
         if missing:
             return _refuse("SCENARIO_GRANT_UNSPECIFIED", scenario=name, missing=missing)

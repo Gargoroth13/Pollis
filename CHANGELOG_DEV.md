@@ -26,10 +26,29 @@ Implementa `design/24` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev
 Provedor de `W`/`S`/`T` a partir de `skills`/`11` (P1.04/P1.12) e provedor do salário político (P1.11); valores de dotação do cenário (P1.18, configuração); política de caixa insuficiente por tipo (P1.04/P1.17/P1.09); ligação do tratamento (P0.04) a um prestador; resolvedor tributário militar (P1.17). Nenhuma delas bloqueia o registro.
 
 ### Testes
-223 testes no app (`ledger/tests/`; 148 na primeira entrega + 23 da primeira correção + 22 da revisão consolidada + 30 da correção da emissão): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 890 testes OK em SQLite (1 pulado) e em PostgreSQL 16 (após a correção da emissão); `check` e `makemigrations --check` limpos.
+232 testes no app (`ledger/tests/`; 148 na primeira entrega + 23 da primeira correção + 22 da revisão consolidada + 30 da correção da emissão + 9 da serialização da configuração): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 899 testes OK em PostgreSQL 16 (0 pulados) e em SQLite (5 pulados: o teste do banco esperado e os 4 de ordem estrita, só PostgreSQL), após a serialização da configuração; `check` e `makemigrations --check` limpos.
 
 ### Documentos alterados
 `24` (centavos nos serviços, chave da viagem, `P_liberada`, §24.19.1), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
+
+### P0.07b — serialização da configuração de dotações com a emissão (2026-10-17)
+
+O Game Director aprovou as três interpretações da correção anterior (mapa fechado de cinco papéis, empresas fora; cenário **ativo** para emissão nova, replay idempotente permitido depois da desativação; linha com dotações é imutável). Última questão técnica da revisão: `_check_grant()` travava o cenário, mas `set_grant_line()` não participava do protocolo, e `activate_scenario()` travava só o cenário ativado. Corrigido sem alterar nenhuma decisão de design.
+1. **`set_grant_line()`** roda numa transação atômica: trava o cenário (`FOR UPDATE`, o mesmo bloqueio da emissão), **relê** a linha e as dotações já emitidas depois de adquirir o bloqueio e então grava; `GRANT_LINE_LOCKED` mantido. Antes, validar uma dotação e alterar a linha antes do commit podia emitir um valor diferente da linha final.
+2. **`activate_scenario()`** trava **todos** os cenários em ordem crescente de pk (`_lock_scenarios`), relê as linhas e só então desativa os outros e ativa o escolhido. Antes, duas ativações simultâneas travavam cada uma o seu cenário e depois tentavam atualizar o outro: deadlock em PostgreSQL. Agora elas se serializam, e uma emissão em andamento (que segura o cenário emissor até confirmar) termina antes da ativação.
+3. **Protocolo único e sem ciclo** (documentado no código e no `design/24` §24.11): emissão = contas em ordem de id e depois um cenário; `set_grant_line` = um cenário; `activate_scenario` = todos os cenários em ordem de pk. Ninguém espera por conta segurando cenário.
+4. **Defesa em profundidade**: restrição única parcial `ledger_single_active_scenario` (no máximo um cenário com `active = true`), migração `0002_single_active_scenario`.
+5. **Testes** (`ledger/tests/test_scenario_concurrency.py`, 9): *propriedades* em SQLite e PostgreSQL (alteração de linha × emissão nunca emite valor que contradiga a linha final; 6 ativações simultâneas × 4 rodadas sem deadlock e com exatamente um ativo; ativação × emissão; o banco recusa dois ativos; alteração falha mantém a configuração) e *ordem estrita* só em PostgreSQL (4 testes: uma thread segura o bloqueio no meio da operação e a outra tem de esperar e terminar depois: alteração de linha × emissão, ativação × emissão, emissão × ativação, ativação × ativação). Verificam valor emitido, configuração final, no máximo um ativo e `audit_ledger().ok`.
+6. **Os testes detectam a corrida**: rodados contra o código anterior à correção (em PostgreSQL), 5 dos 9 falham (alteração de linha sem bloqueio; ativações simultâneas com deadlock; emissão que não espera a ativação; restrição de banco); contra o código novo, os 9 passam. Os dois testes de propriedade de emissão × linha/ativação passam nos dois códigos, porque a janela da corrida real é minúscula: quem prova a ordem são os testes de ordem estrita.
+
+**Evidências reais**
+- PostgreSQL 16.15 (cluster local descartável, UTF8, `POLIS_EXPECT_DB=postgresql`): suíte completa → `Ran 899 tests ... OK` (0 pulados, os 4 testes de ordem estrita rodaram); `test_scenario_concurrency` + `test_concurrency` repetidos 15 vezes → 15 OK.
+- SQLite: suíte completa → `Ran 899 tests ... OK (skipped=5)` (os pulados: o teste do banco esperado e os 4 de ordem estrita, que exigem PostgreSQL); as mesmas duas suítes de concorrência repetidas 15 vezes → 15 OK; `ledger`: 232 testes.
+- `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+
+**Pendências residuais**: as das entradas abaixo (sem CI em PostgreSQL; uma única instância local com `fsync` desligado; `ValueError` dos serviços com tipo de conta inválido; provedores P1.x; permissão de emissão protegida por revalidação e não por inacessibilidade em Python). Novas: a cobertura de ordem estrita é só em PostgreSQL 16 com `READ COMMITTED` (padrão); `grant_for_role` lê o cenário ativo e a linha antes de pedir a emissão sem bloquear, e a revalidação em `_check_grant` recusa se a configuração mudou nesse intervalo (recusa, nunca valor errado).
+
+---
 
 ### P0.07b — bloqueio P0 da emissão (2026-10-17)
 
