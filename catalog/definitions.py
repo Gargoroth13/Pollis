@@ -1,25 +1,27 @@
 """
 Dados do catálogo, transcritos do `design/22-Receitas-Produção.md`.
 
-REGRAS DESTA TRANSCRIÇÃO (decisão do Game Director, 2026-10-11):
-  - só entra o que o `22` ATUAL declara: nenhum produto, receita, uso, quantidade ou atributo foi inventado;
+REGRAS DESTA TRANSCRIÇÃO (decisão do Game Director, 2026-10-11, atualizada em 2026-10-14):
+  - estrutura (produtos, receitas, níveis qualitativos, estrelas dos produtos industriais, categorias, tags e canais
+    comerciais) vem do `22`; nenhuma estrutura foi inventada;
+  - NÚMEROS que o `22` não dá vêm SÓ de `provisional.py` (tabela auditável `[PROV]`, GD 2026-10-14, Q3), nunca daqui;
   - o `22` NÃO é um catálogo completo nem definitivo: as lacunas estão em `KNOWN_GAPS` e no `CHANGELOG_DEV.md`;
   - o identificador (`key`) é estável e independe do nome de apresentação: o nome pode ser renomeado, a `key` não;
   - nomes duplicados/inconsistentes que são claramente a MESMA entidade foram normalizados; as variantes como aparecem
     no `22` ficam em `source_names` (rastreabilidade com o design) e um teste confere esta transcrição contra o arquivo;
-  - valores que o `22` não fornece (quantidade de insumo, rendimento, Nutrição numérica, intensidade de QoL, estrela das
-    Matrizes) ficam `None` = NÃO ESPECIFICADO, que é diferente de zero.
+  - um valor que nem o `22` nem a tabela provisória fornecem fica `None` = NÃO ESPECIFICADO, que é diferente de zero.
 
 As chaves das matérias-primas que são recursos espaciais da Geografia (08 §15) são os próprios valores de
 `geography.constants.Resource`.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Optional, Tuple
 
-from .constants import NutritionLevel, QolEffect, Sector
+from . import provisional as prov
+from .constants import Category, Channel, NutritionLevel, QolEffect, Sector
 
 S = Sector
 
@@ -50,6 +52,15 @@ class ProductDef:
     food: Optional[FoodDef] = None
     source_section: str = ""
     source_names: Tuple[str, ...] = ()
+    # Classificação (GD 2026-10-14, Q6): UMA categoria principal; tags separadas; canais declarados (Q8).
+    category: Optional[Category] = None
+    is_consumable: bool = False
+    is_permanent: bool = False
+    is_military: bool = False
+    channels: Tuple[Channel, ...] = ()
+    # Números provisórios [PROV] (provisional.py): preço-base de referência e rendimento da matéria-prima.
+    base_price: Optional[Decimal] = None
+    raw_yield: Optional[Decimal] = None
 
 
 @dataclass(frozen=True)
@@ -152,7 +163,9 @@ _MADE = (
     _made("pen", "Caneta", S.INDUSTRIAL_CONSUMER, 1, ("steel", "chemicals"), _CONS),
     _made("shoes", "Calçados", S.INDUSTRIAL_CONSUMER, 1, ("leather",), _CONS, "Calçado", "Calçados"),
     _made("uniform", "Uniforme", S.INDUSTRIAL_CONSUMER, 3, ("clothes", "shoes"), _CONS),
-    _made("bread", "Pão", S.INDUSTRIAL_CONSUMER, 1, ("flour",), _CONS),
+    # Pão (Q5): consumível; o 22 não dava níveis, então o perfil é provisório (provisional.BREAD_*).
+    _made("bread", "Pão", S.INDUSTRIAL_CONSUMER, 1, ("flour",), _CONS,
+          food=FoodDef(prov.BREAD_NUTRITION_LEVEL, prov.BREAD_QOL_EFFECT)),
     _made("chocolate", "Chocolate", S.INDUSTRIAL_CONSUMER, 4, ("cocoa_butter", "sugar", "milk"), _CONS,
           food=FoodDef(_N.LOW, _Q.SMALL_BUFF)),
     _made("pasta", "Macarrão", S.INDUSTRIAL_CONSUMER, 3, ("cheese", "flour", "eggs"), _CONS,
@@ -175,63 +188,100 @@ _MADE = (
     _made("cellphone", "Celular", S.INDUSTRIAL_TECHNOLOGY, 3, ("electronic_components", "plastic", "battery"), _TECH),
     _made("computer", "Computador", S.INDUSTRIAL_TECHNOLOGY, 4,
           ("electronic_components", "plastic", "steel", "chemicals"), _TECH),
-    # Milícia (estrela: "Não existe")
+    # Milícia (estrela: "Não existe"). Nomes aprovados (GD 2026-10-14, Q4): "Improvisado" para a milícia; os produtos do
+    # Exército são entidades DISTINTAS, com identidade (key) própria.
     _made("improvised_weapons", "Armas Improvisadas", S.MILITIA, None, ("steel", "wood", "plastic"), _MIL),
     _made("improvised_armor", "Armaduras Improvisadas", S.MILITIA, None, ("steel", "plastic"), _MIL),
-    # O 22 chama o produto da milícia de "Kit Médico" e o do Exército de "Kits médicos": são entidades DISTINTAS
-    # (origem diferente). O nome de apresentação ganhou um qualificador para não colidirem.
-    _made("militia_medical_kit", "Kit médico (milícia)", S.MILITIA, None, ("wool", "hospital_supplies"), _MIL,
-          "Kit Médico"),
+    _made("militia_medical_kit", "Kit Médico Improvisado", S.MILITIA, None, ("wool", "hospital_supplies"), _MIL),
+    # Produtos militares do Exército (Q4): Industrial, estrela mínima provisória, mesmos insumos das versões improvisadas.
+    _made("military_weapons", "Armas Militares", S.MILITARY_PROCUREMENT, prov.ARMY_MIN_STARS,
+          ("steel", "wood", "plastic"), _ARMY),
+    _made("military_armor", "Armaduras Militares", S.MILITARY_PROCUREMENT, prov.ARMY_MIN_STARS,
+          ("steel", "plastic"), _ARMY),
+    _made("military_medical_kits", "Kits de Primeiros Socorros do Exército", S.MILITARY_PROCUREMENT,
+          prov.ARMY_MIN_STARS, ("wool", "hospital_supplies"), _ARMY),
 )
 
-_PROCURED = (
-    ProductDef(key="military_weapons", name="Armas militares", sector=S.MILITARY_PROCUREMENT, source_section=_ARMY,
-               source_names=("Armas militares",)),
-    ProductDef(key="military_armor", name="Armaduras militares", sector=S.MILITARY_PROCUREMENT, source_section=_ARMY,
-               source_names=("Armaduras militares",)),
-    ProductDef(key="military_medical_kits", name="Kits médicos militares", sector=S.MILITARY_PROCUREMENT,
-               source_section=_ARMY, source_names=("Kits médicos",)),
-)
+# --- classificação declarada (GD 2026-10-14, Q6 e Q8) -------------------------------------------------------------------
+_FOODS = {"chocolate", "pasta", "hamburger", "juice", "ice_cream", "sun_dried_meat", "soda", "bread"}
+_EQUIPMENT = {"ppe", "school_supplies", "hospital_supplies", "pen", "paper", "clothes", "shoes", "uniform"}
+_DURABLES = {"furniture", "car", "cellphone", "computer"}
+_MILITARY = {"improvised_weapons", "improvised_armor", "militia_medical_kit",
+             "military_weapons", "military_armor", "military_medical_kits"}
+_CONSUMABLE_MILITARY = {"militia_medical_kit", "military_medical_kits"}        # 19.26: kits são consumidos ao serem usados
+# Varejo vende bens finais aos jogadores. Ficam de fora os insumos e os materiais de uso institucional/operacional
+# (EPIs, materiais escolares e hospitalares, uniforme: 02 §10 está fora da primeira implementação).
+_RETAIL = _FOODS | _DURABLES | {"clothes", "shoes", "pen", "paper"}
+_ARMY_SUPPLIED = {"military_weapons", "military_armor", "military_medical_kits"}
+# Requisição Especial da milícia (19.11): insumos diretos das receitas improvisadas.
+_REQUISITION = {"steel", "wood", "plastic", "wool", "hospital_supplies"}
 
-PRODUCTS: Tuple[ProductDef, ...] = _RAW + _MADE + _PROCURED
+
+def _category(p: ProductDef) -> Category:
+    if p.key in _MILITARY:
+        return Category.MILITARY
+    if p.key in _FOODS:
+        return Category.FOOD
+    if p.key in _EQUIPMENT:
+        return Category.EQUIPMENT
+    if p.key in _DURABLES:
+        return Category.DURABLE
+    return Category.MATERIAL
+
+
+def _channels(p: ProductDef, category: Category) -> Tuple[Channel, ...]:
+    ch = []
+    if category is not Category.MILITARY:
+        ch.append(Channel.INTER_COMPANY)
+    if p.key in _RETAIL:
+        ch.append(Channel.RETAIL_SALE)
+    if p.key in _ARMY_SUPPLIED:
+        ch.append(Channel.ARMY_PROCUREMENT)
+    if p.key in _REQUISITION:
+        ch.append(Channel.SPECIAL_REQUISITION)
+    return tuple(ch)
+
+
+def _finalize(structural: Tuple[ProductDef, ...]) -> Tuple[ProductDef, ...]:
+    """Aplica a classificação declarada e os números `[PROV]` (provisional.py) sobre a estrutura transcrita do 22."""
+    recipes = {}
+    for p in structural:
+        if p.inputs is not None:
+            recipes[p.key] = (tuple((i.key, prov.RECIPE_INPUT_QUANTITY) for i in p.inputs), prov.RECIPE_YIELD, p.min_stars)
+    raw = [p.key for p in structural if p.inputs is None]
+    prices = prov.compute_base_prices(recipes, raw)
+    out = []
+    for p in structural:
+        category = _category(p)
+        changes = dict(
+            category=category,
+            is_consumable=p.food is not None or p.key in _CONSUMABLE_MILITARY,
+            is_permanent=category is Category.DURABLE,
+            is_military=category is Category.MILITARY,
+            channels=_channels(p, category),
+            base_price=prices[p.key])
+        if p.inputs is None:     # matéria-prima (Matriz)
+            changes.update(min_stars=prov.MATRIZ_MIN_STARS, raw_yield=prov.MATRIZ_YIELD)
+        else:
+            changes.update(yield_quantity=prov.RECIPE_YIELD,
+                           inputs=tuple(InputDef(i.key, prov.RECIPE_INPUT_QUANTITY) for i in p.inputs))
+        if p.food is not None:
+            changes["food"] = FoodDef(p.food.nutrition_level, p.food.qol_effect,
+                                      prov.nutrition_amount(p.food.nutrition_level),
+                                      prov.qol_intensity(p.food.qol_effect))
+        out.append(replace(p, **changes))
+    return tuple(out)
+
+
+PRODUCTS: Tuple[ProductDef, ...] = _finalize(_RAW + _MADE)
 
 
 KNOWN_GAPS: Tuple[Gap, ...] = (
-    Gap("GAP_FINISHINGS_UNDEFINED",
-        "'Acabamentos' é insumo da receita da Construtora (02 §2.5: Materiais de Construção + Acabamentos → Imóvel), "
-        "mas não existe no 22.",
-        ("02 §2.5",), ("P1.04", "P1.07")),
     Gap("GAP_OPERATIONAL_MATERIALS_UNDEFINED",
         "Materiais operacionais e 'consumo por funcionário' (02 §10: cada produto operacional tem regra de consumo no "
-        "catálogo) não estão no 22: não há lista de produtos operacionais nem consumo.",
+        "catálogo) não estão no 22. Limitação conhecida e aprovada (GD 2026-10-14, Q10): a primeira implementação de "
+        "Empresas funciona sem esse custo recorrente e não cobra insumos operacionais ocultos.",
         ("02 §10", "02 §20"), ("P1.04",)),
-    Gap("GAP_MATRIZ_STARS_UNDEFINED",
-        "O 22 dá a estrela mínima dos produtos industriais, mas não a das Matrizes (matérias-primas): a escolha de "
-        "produção da Matriz exige 'requisitos de estrelas' (02 §5.2).",
-        ("02 §5.2", "02 §14"), ("P1.04",)),
-    Gap("GAP_PRODUCTION_QUANTITIES_UNDEFINED",
-        "Sem quantidade por insumo, rendimento da receita, nem regra de quantidade produzida por trabalho/funcionário.",
-        ("02 §5", "22"), ("P1.04", "P1.05")),
-    Gap("GAP_FOOD_VALUES_UNDEFINED",
-        "O 22 só dá níveis qualitativos de Nutrição e tipo de efeito de QoL: faltam o ganho de Nutrição e a intensidade "
-        "numéricos (04 §15 delega ao catálogo), necessários também para o auto-consumo (04 §16: 'menor ganho').",
-        ("04 §15", "04 §16", "05 §6"), ("P1.02",)),
-    Gap("GAP_FOOD_PROFILE_BREAD_UNDECLARED",
-        "Pão está em 'Bens de consumo' com Nutrição '—' e QoL '—', embora seja ingrediente do Hambúrguer: confirmar se "
-        "Pão (e demais alimentos intermediários) é consumível.",
-        ("22 §2.3",), ("P1.02",)),
-    Gap("GAP_COMMERCIAL_USES_UNDECLARED",
-        "Usos e consumidores comerciais ausentes: o 22 só declara uso como insumo de receita e consumo de alimento. "
-        "A permissão de compra/venda (02 §4) vem de usos declarados e NÃO é inferida.",
-        ("02 §4", "02 §20"), ("P1.04", "P1.05")),
-    Gap("GAP_INVENTORY_CATEGORIES_UNDEFINED",
-        "O 05 diz que as categorias de inventário vêm do catálogo (05 §3) e lista 'categorias definitivas de itens' e "
-        "'itens permanentes e consumíveis' como questões em aberto (05 §22); o 22 só define setor de produção.",
-        ("05 §3", "05 §22"), ("P1.02",)),
-    Gap("GAP_BASE_PRICE_UNDEFINED",
-        "O 17 §20 cita o `preco_base` do catálogo, e o 05 §12 pede 'valor de referência' do item (taxa do correio): o 22 "
-        "não tem preço base nem valor de referência.",
-        ("17 §20", "05 §12"), ("P1.02", "P1.05")),
     Gap("GAP_VEHICLE_RELATION_UNDEFINED",
         "'Carro' é produto de Bens de consumo (5★), mas veículos foram adiados de propósito (04 §21; 05 §9): não há "
         "relação entre o produto Carro e o veículo ativo/viagem.",

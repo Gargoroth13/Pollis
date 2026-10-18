@@ -4,8 +4,8 @@ from decimal import Decimal
 
 from django.test import SimpleTestCase
 
-from catalog.constants import NutritionLevel, QolEffect, Sector
-from catalog.definitions import PRODUCTS, FoodDef, InputDef, ProductDef
+from catalog.constants import Category, Channel, NutritionLevel, QolEffect, Sector
+from catalog.definitions import KNOWN_GAPS, PRODUCTS, FoodDef, InputDef, ProductDef
 from catalog.validation import find_cycles, validate
 
 D = Decimal
@@ -22,6 +22,8 @@ def add(*extra):
 
 
 def made(key, inputs, sector=Sector.INDUSTRIAL_PRODUCTION, **kw):
+    kw.setdefault("category", Category.MATERIAL)
+    kw.setdefault("channels", (Channel.INTER_COMPANY,))
     return ProductDef(key=key, name=key, sector=sector, min_stars=kw.pop("min_stars", 1),
                       inputs=tuple(InputDef(i) for i in inputs), **kw)
 
@@ -44,13 +46,13 @@ class ErrorCodesTests(SimpleTestCase):
     def test_duplicate_input(self):
         self.assertIn("DUPLICATE_INPUT", validate(mod("steel", inputs=(InputDef("iron"), InputDef("iron")))).codes)
 
-    def test_raw_with_recipe_and_procured_with_recipe(self):
+    def test_raw_with_recipe(self):
         self.assertIn("RAW_WITH_RECIPE", validate(mod("iron", inputs=(InputDef("coal"),))).codes)
-        self.assertIn("PROCURED_WITH_RECIPE", validate(mod("military_armor", inputs=(InputDef("steel"),))).codes)
 
-    def test_produced_without_recipe(self):
+    def test_produced_without_recipe_including_the_army_products(self):
         self.assertIn("PRODUCED_WITHOUT_RECIPE", validate(mod("steel", inputs=None)).codes)
         self.assertIn("PRODUCED_WITHOUT_RECIPE", validate(mod("steel", inputs=())).codes)
+        self.assertIn("PRODUCED_WITHOUT_RECIPE", validate(mod("military_armor", inputs=None)).codes)
 
     def test_invalid_quantity_rejects_zero_negative_and_float_but_accepts_unspecified(self):
         for bad in (D(0), D(-1), 1.5, 1):
@@ -70,9 +72,66 @@ class ErrorCodesTests(SimpleTestCase):
         for good in (1, 3, 5):
             self.assertTrue(validate(mod("steel", min_stars=good)).ok)
 
-    def test_stars_are_not_applicable_to_militia_or_procurement(self):
+    def test_stars_are_not_applicable_to_militia_but_apply_to_the_army_products(self):
         self.assertIn("STARS_NOT_APPLICABLE", validate(mod("improvised_armor", min_stars=2)).codes)
-        self.assertIn("STARS_NOT_APPLICABLE", validate(mod("military_armor", min_stars=2)).codes)
+        self.assertTrue(validate(mod("military_armor", min_stars=3)).ok)
+        self.assertIn("INVALID_STARS", validate(mod("military_armor", min_stars=6)).codes)
+
+    def test_invalid_raw_yield_and_base_price(self):
+        for bad in (D(0), D(-1), 1.0):
+            self.assertIn("INVALID_RAW_YIELD", validate(mod("iron", raw_yield=bad)).codes, repr(bad))
+        self.assertIn("INVALID_RAW_YIELD", validate(mod("steel", raw_yield=D(1))).codes)      # só matéria-prima tem
+        for bad in (D(-1), 2.5):
+            self.assertIn("INVALID_BASE_PRICE", validate(mod("steel", base_price=bad)).codes, repr(bad))
+        self.assertTrue(validate(mod("steel", base_price=D(0))).ok)        # zero é valor especificado
+
+
+class ClassificationErrorsTests(SimpleTestCase):
+    """Q6/Q8: uma categoria, tags coerentes, canais declarados coerentes com a estrutura."""
+
+    def codes(self, key, **changes):
+        return validate(mod(key, **changes)).codes
+
+    def test_category_missing_and_invalid(self):
+        self.assertIn("CATEGORY_MISSING", self.codes("steel", category=None))
+        self.assertIn("CATEGORY_INVALID", self.codes("steel", category="material"))
+
+    def test_the_military_category_follows_the_military_sectors(self):
+        self.assertIn("CATEGORY_SECTOR_MISMATCH", self.codes("steel", category=Category.MILITARY, is_military=True))
+        self.assertIn("CATEGORY_SECTOR_MISMATCH", self.codes("military_armor", category=Category.EQUIPMENT, is_military=False))
+        self.assertIn("MILITARY_TAG_MISMATCH", self.codes("military_armor", is_military=False))
+
+    def test_a_food_must_be_classified_as_a_consumable_food_and_vice_versa(self):
+        self.assertIn("FOOD_NOT_CLASSIFIED_AS_FOOD", self.codes("soda", category=Category.MATERIAL))
+        self.assertIn("FOOD_NOT_CLASSIFIED_AS_FOOD", self.codes("soda", is_consumable=False))
+        self.assertIn("FOOD_WITHOUT_PROFILE", self.codes("steel", category=Category.FOOD))
+
+    def test_consumable_and_permanent_are_exclusive(self):
+        self.assertIn("CONSUMABLE_AND_PERMANENT", self.codes("car", is_consumable=True))
+
+    def test_channels_must_be_unique_declared_values(self):
+        self.assertIn("CHANNEL_INVALID", self.codes("steel", channels=(Channel.INTER_COMPANY, Channel.INTER_COMPANY)))
+        self.assertIn("CHANNEL_INVALID", self.codes("steel", channels=("inter_company",)))
+
+    def test_varejo_sells_final_goods_only(self):
+        self.assertIn("RETAIL_CHANNEL_NOT_FINAL_GOOD", self.codes("steel", channels=(Channel.INTER_COMPANY, Channel.RETAIL_SALE)))
+        self.assertTrue(validate(mod("car", channels=(Channel.INTER_COMPANY, Channel.RETAIL_SALE))).ok)
+
+    def test_military_products_are_not_traded_between_companies_or_sold_by_varejo(self):
+        self.assertIn("MILITARY_IN_INTER_COMPANY_TRADE",
+                      self.codes("military_armor", channels=(Channel.ARMY_PROCUREMENT, Channel.INTER_COMPANY)))
+        self.assertIn("ARMY_PRODUCT_IN_RETAIL",
+                      self.codes("military_armor", channels=(Channel.ARMY_PROCUREMENT, Channel.RETAIL_SALE)))
+        self.assertIn("RETAIL_CHANNEL_NOT_FINAL_GOOD",
+                      self.codes("military_armor", channels=(Channel.ARMY_PROCUREMENT, Channel.RETAIL_SALE)))
+
+    def test_the_army_channel_belongs_to_the_army_products_only(self):
+        self.assertIn("ARMY_CHANNEL_NOT_ARMY_PRODUCT", self.codes("steel", channels=(Channel.INTER_COMPANY, Channel.ARMY_PROCUREMENT)))
+        self.assertIn("ARMY_CHANNEL_NOT_ARMY_PRODUCT", self.codes("improvised_armor", channels=(Channel.ARMY_PROCUREMENT,)))
+
+    def test_special_requisition_only_covers_inputs_of_the_militia_recipes(self):
+        self.assertIn("REQUISITION_NOT_A_MILITIA_INPUT", self.codes("cement", channels=(Channel.INTER_COMPANY, Channel.SPECIAL_REQUISITION)))
+        self.assertTrue(validate(mod("steel", channels=(Channel.INTER_COMPANY, Channel.SPECIAL_REQUISITION))).ok)
 
     def test_food_values_zero_is_specified_but_negative_is_invalid(self):
         food = FoodDef(NutritionLevel.NONE, QolEffect.NO_EFFECT, D(0), D(0))
@@ -123,37 +182,46 @@ class CycleTests(SimpleTestCase):
 
 
 class PendingVsErrorTests(SimpleTestCase):
-    def test_design_pending_never_makes_the_catalog_fail(self):
+    def test_the_real_catalog_has_only_the_known_gaps_as_pending(self):
+        """Com os valores [PROV] e a classificação aprovados, não resta pendência por produto: só as lacunas conhecidas."""
         r = validate(PRODUCTS)
         self.assertTrue(r.ok)
-        self.assertGreater(len(r.pending), 100)
+        self.assertEqual(r.pending_codes, sorted(g.code for g in KNOWN_GAPS))
+        self.assertEqual(len(r.pending), len(KNOWN_GAPS))
 
-    def test_the_five_raw_materials_without_declared_use(self):
-        self.assertEqual(validate(PRODUCTS).subjects("RAW_MATERIAL_WITHOUT_USE"),
-                         ["diamond", "latex", "natural_oil", "resin", "silver"])
-
-    def test_products_without_declared_use(self):
-        subjects = validate(PRODUCTS).subjects("PRODUCT_WITHOUT_DECLARED_USE")
-        for key in ("fertilizer", "fuel", "ppe", "school_supplies", "uniform", "car", "cellphone", "computer",
-                    "ground_coffee", "butter", "construction_materials", "military_weapons"):
-            self.assertIn(key, subjects)
-        for key in ("steel", "bread", "juice", "chocolate"):   # insumo de receita ou alimento: TEM uso declarado
-            self.assertNotIn(key, subjects)
-
-    def test_a_food_has_a_declared_use_even_without_being_an_input(self):
-        self.assertNotIn("chocolate", validate(PRODUCTS).subjects("PRODUCT_WITHOUT_DECLARED_USE"))
-
-    def test_unspecified_values_are_pending_per_product(self):
+    def test_every_product_has_a_declared_use_in_the_real_catalog(self):
         r = validate(PRODUCTS)
-        self.assertEqual(len(r.subjects("RECIPE_QUANTITIES_UNSPECIFIED")), 41)
-        self.assertEqual(len(r.subjects("RECIPE_YIELD_UNSPECIFIED")), 41)
+        self.assertEqual(r.subjects("RAW_MATERIAL_WITHOUT_USE"), [])
+        self.assertEqual(r.subjects("PRODUCT_WITHOUT_DECLARED_USE"), [])
+
+    def test_a_product_with_no_recipe_consumer_food_profile_or_channel_has_no_use(self):
+        r = validate(mod("diamond", channels=()))
+        self.assertEqual(r.subjects("RAW_MATERIAL_WITHOUT_USE"), ["diamond"])
+        r = validate(mod("fertilizer", channels=()))
+        self.assertEqual(r.subjects("PRODUCT_WITHOUT_DECLARED_USE"), ["fertilizer"])
+
+    def test_design_pending_never_makes_the_catalog_fail(self):
+        broken = [replace(p, base_price=None, min_stars=None if p.inputs is None else p.min_stars,
+                          raw_yield=None, yield_quantity=None,
+                          inputs=None if p.inputs is None else tuple(InputDef(i.key) for i in p.inputs),
+                          food=None if p.food is None else FoodDef(p.food.nutrition_level, p.food.qol_effect))
+                  for p in PRODUCTS]
+        r = validate(broken)
+        self.assertTrue(r.ok)
+        self.assertEqual(len(r.subjects("RECIPE_QUANTITIES_UNSPECIFIED")), 44)
+        self.assertEqual(len(r.subjects("RECIPE_YIELD_UNSPECIFIED")), 44)
         self.assertEqual(len(r.subjects("MIN_STARS_UNSPECIFIED")), 29)
-        self.assertEqual(len(r.subjects("FOOD_NUTRITION_UNSPECIFIED")), 7)
-        self.assertEqual(len(r.subjects("FOOD_QOL_INTENSITY_UNSPECIFIED")), 7)
+        self.assertEqual(len(r.subjects("RAW_YIELD_UNSPECIFIED")), 29)
+        self.assertEqual(len(r.subjects("BASE_PRICE_UNSPECIFIED")), 73)
+        self.assertEqual(len(r.subjects("FOOD_NUTRITION_UNSPECIFIED")), 8)
+        self.assertEqual(len(r.subjects("FOOD_QOL_INTENSITY_UNSPECIFIED")), 8)
 
     def test_specifying_a_value_removes_only_its_own_pending(self):
         steel = BY_KEY["steel"]
-        full = mod("steel", inputs=tuple(InputDef(i.key, D("1")) for i in steel.inputs), yield_quantity=D("1"))
+        unspecified = [replace(p, yield_quantity=None, inputs=tuple(InputDef(i.key) for i in p.inputs)) if p.inputs else p
+                       for p in PRODUCTS]
+        full = [replace(p, yield_quantity=D("1"), inputs=tuple(InputDef(i.key, D("1")) for i in steel.inputs))
+                if p.key == "steel" else p for p in unspecified]
         r = validate(full)
         self.assertNotIn("steel", r.subjects("RECIPE_QUANTITIES_UNSPECIFIED"))
         self.assertNotIn("steel", r.subjects("RECIPE_YIELD_UNSPECIFIED"))
@@ -168,8 +236,10 @@ class PendingVsErrorTests(SimpleTestCase):
         r = validate(mod("soda", food=food))
         self.assertNotIn("soda", r.subjects("FOOD_NUTRITION_UNSPECIFIED"))
         self.assertNotIn("soda", r.subjects("FOOD_QOL_INTENSITY_UNSPECIFIED"))
+        self.assertNotIn("iron", validate(mod("iron", base_price=D(0))).subjects("BASE_PRICE_UNSPECIFIED"))
 
     def test_a_pending_does_not_grant_a_use(self):
-        """Declarar a pendência não cria uso: o produto continua sem consumidor."""
-        r = validate(PRODUCTS)
+        """Declarar a pendência não cria uso: o produto sem canal continua sem uso declarado."""
+        r = validate(mod("fertilizer", channels=(), base_price=None))
         self.assertIn("fertilizer", r.subjects("PRODUCT_WITHOUT_DECLARED_USE"))
+        self.assertIn("fertilizer", r.subjects("BASE_PRICE_UNSPECIFIED"))

@@ -2,10 +2,11 @@
 Consultas e verificações sobre o catálogo gravado. TUDO é derivado das receitas e do perfil de alimento: não existe lista
 paralela de "quem compra o quê" (02 §4, §20).
 
-Regras de honestidade (decisão do Game Director, 2026-10-11):
-  - valor NÃO ESPECIFICADO é `None`, nunca zero; nenhuma função converte `None` em 0;
-  - uso NÃO declarado não concede permissão: `uses_of` devolve só o que o catálogo declara, e o que não está nele não
-    existe para fins de compra/venda;
+Regras de honestidade (decisão do Game Director, 2026-10-11; atualizada em 2026-10-14):
+  - valor NÃO ESPECIFICADO é `None`, nunca zero; nenhuma função converte `None` em 0. Valores `[PROV]` (provisional.py)
+    são valores especificados, mas provisórios: continuam auditáveis na tabela provisória;
+  - uso NÃO declarado não concede permissão: `uses_of` devolve só o que o catálogo declara (receitas, perfil de alimento e
+    canais comerciais declarados), e o que não está nele não existe para fins de compra/venda;
   - quem precisa de um número que o design ainda não deu RECUSA com `UNSPECIFIED_DESIGN_VALUE` (e diz quais faltam), em
     vez de seguir em silêncio. Recusas são códigos (ActionResult), como no resto do projeto.
 """
@@ -17,7 +18,8 @@ from typing import FrozenSet, List, Optional, Tuple
 
 from players.services import ActionResult
 
-from .constants import NO_STAR_SECTORS, NutritionLevel, QolEffect, Sector, UseKind
+from .constants import (ARMY_PRODUCER_SECTOR, NO_STAR_SECTORS, RAW_SECTORS, Category, Channel, NutritionLevel, QolEffect, Sector,
+                        UseKind)
 from .models import Product
 
 
@@ -44,6 +46,7 @@ class ProductUse:
     kind: UseKind
     target_key: Optional[str] = None       # RECIPE_INPUT: o produto cuja receita consome este
     quantity: Optional[Decimal] = None     # RECIPE_INPUT: quantidade por receita (None = não especificada)
+    channel: Optional[Channel] = None      # COMMERCIAL_CHANNEL: o canal declarado
 
 
 @dataclass(frozen=True)
@@ -87,10 +90,31 @@ def food_of(key: str) -> Optional[FoodView]:
                     food.qol_intensity)
 
 
+def category_of(key: str) -> Optional[Category]:
+    """Categoria principal DECLARADA do produto (None se o produto não existe ou não foi classificado)."""
+    value = Product.objects.filter(key=key).values_list("category", flat=True).first()
+    return Category(value) if value else None
+
+
+def channels_of(key: str) -> Tuple[Channel, ...]:
+    """Canais comerciais DECLARADOS no catálogo. Vazio = nenhum canal declarado = nenhuma permissão por inferência."""
+    value = Product.objects.filter(key=key).values_list("commercial_channels", flat=True).first()
+    return tuple(Channel(c) for c in (value or ()))
+
+
+def has_channel(key: str, channel: Channel) -> bool:
+    return channel in channels_of(key)
+
+
+def base_price_of(key: str) -> Optional[Decimal]:
+    """Preço-base de REFERÊNCIA (`[PROV]`, não é preço de mercado; 17 §20). None = não especificado."""
+    return Product.objects.filter(key=key).values_list("base_price", flat=True).first()
+
+
 def uses_of(key: str) -> List[ProductUse]:
     """
-    Usos DECLARADOS do produto, derivados: insumo de receitas (ordenado pela chave do produto-alvo) e consumo como alimento.
-    Lista vazia = nenhum uso declarado = NENHUMA permissão de compra/venda por inferência.
+    Usos DECLARADOS do produto: insumo de receitas (derivado, ordenado pela chave do produto-alvo), consumo como alimento
+    (derivado) e canais comerciais declarados. Lista vazia = nenhum uso declarado = NENHUMA permissão por inferência.
     """
     from .models import RecipeInput
     uses = [ProductUse(UseKind.RECIPE_INPUT, ri.recipe.product.key, ri.quantity)
@@ -98,7 +122,25 @@ def uses_of(key: str) -> List[ProductUse]:
     uses.sort(key=lambda u: u.target_key)
     if food_of(key) is not None:
         uses.append(ProductUse(UseKind.PLAYER_CONSUMPTION))
+    uses.extend(ProductUse(UseKind.COMMERCIAL_CHANNEL, channel=c) for c in channels_of(key))
+    if Product.objects.filter(key=key, is_military=True).exists():
+        uses.append(ProductUse(UseKind.MILITARY_ACTION))
     return uses
+
+
+def producer_sector_of(key: str) -> Optional[Sector]:
+    """
+    Setor da EMPRESA que produz o produto (GD 2026-10-15): matéria-prima e produtos industriais → o próprio setor;
+    produtos militares do Exército → Industrial / Produção (`ARMY_PRODUCER_SECTOR`); milícia → None (quem produz é a
+    milícia, não uma empresa); produto desconhecido → None.
+    """
+    value = Product.objects.filter(key=key).values_list("sector", flat=True).first()
+    if value is None:
+        return None
+    sector = Sector(value)
+    if sector == Sector.MILITARY_PROCUREMENT:
+        return ARMY_PRODUCER_SECTOR
+    return None if sector == Sector.MILITIA else sector
 
 
 def has_declared_use(key: str) -> bool:
@@ -130,19 +172,20 @@ def raw_materials_of(key: str) -> FrozenSet[str]:
 def check_production_ready(key: str) -> ActionResult:
     """
     O catálogo tem tudo que a PRODUÇÃO precisa para este produto? Recusa com código se não:
-      UNKNOWN_PRODUCT; NOT_PRODUCIBLE (compra do governo, sem receita); UNSPECIFIED_DESIGN_VALUE (detalhe: `missing`).
-    Hoje nenhum produto passa: quantidades, rendimento e estrelas das Matrizes não existem no 22. É o comportamento
-    correto (P1.04 não pode produzir com dado indefinido) e muda sozinho quando o design especificar os valores.
+      UNKNOWN_PRODUCT; UNSPECIFIED_DESIGN_VALUE (detalhe: `missing`).
+    Desde a P0.02 os valores `[PROV]` (provisional.py) completam receitas, estrelas e rendimento: todo produto do catálogo
+    passa. A recusa continua valendo para qualquer valor que volte a ficar não especificado. (Os produtos militares do
+    Exército deixaram de ser "não produzíveis": são produzidos por empresas Industriais, GD 2026-10-14, Q4.)
     """
     p = Product.objects.filter(key=key).select_related("recipe").first()
     if p is None:
         return ActionResult(False, "UNKNOWN_PRODUCT", {"key": key})
-    if p.sector == Sector.MILITARY_PROCUREMENT.value:
-        return ActionResult(False, "NOT_PRODUCIBLE", {"key": key})
     missing: List[str] = []
     sector = Sector(p.sector)
     if p.min_stars is None and sector not in NO_STAR_SECTORS:
         missing.append("min_stars")
+    if sector in RAW_SECTORS and p.raw_yield is None:
+        missing.append("raw_yield")
     recipe = recipe_of(key)
     if recipe is not None:
         if recipe.yield_quantity is None:

@@ -28,7 +28,7 @@ Critérios:
 
 ---
 
-## [ ] P0.02 — Auditoria do catálogo `22 — Receitas-Produção`
+## [x] P0.02 — Auditoria do catálogo `22 — Receitas-Produção`  *(concluída em 2026-10-15; PR sobre o #8; resultado em `CHANGELOG_DEV.md`)*
 
 **Objetivo:** garantir que Produto, usos permitidos e Receitas estejam consistentes com Empresas, Inventário, Mercado e Militar.
 
@@ -225,6 +225,8 @@ Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos 
 > **Herdado do P1.03:** Trabalho sem emprego continua permitido hoje (P0.04). Empresas deve acrescentar emprego/contexto de atividade via provedor de bloqueio e `ActivityContext`, usando o Action Registry existente (sem caminho paralelo). Decisão do GD (2026-10-12) em `CHANGELOG_DEV.md`.
 
 > **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FINISHINGS_UNDEFINED`, `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. A produção deve consultar `catalog.services.check_production_ready` e **recusar** enquanto houver `UNSPECIFIED_DESIGN_VALUE`. Ver `CHANGELOG_DEV.md` (2026-10-11).
+
+**Decisão do GD (2026-10-15):** os produtos militares do Exército são produzidos por empresas **Industrial / Produção** (usar `catalog.services.producer_sector_of`); permanecem distintos dos produtos improvisados da milícia.
 
 Implementar `02` utilizando `22` como fonte de produtos/receitas.
 
