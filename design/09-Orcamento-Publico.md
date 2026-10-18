@@ -891,7 +891,7 @@ O imposto sobre lucro está fora do primeiro Bot Test. A linha de §6 permanece 
 A categoria "Segurança/Defesa local" de §5 não possui mecânica no primeiro Bot Test. O Exército é federal (45.8).
 
 45.3. Pisos orçamentários municipais
-Os pisos legais de 11 — Leis Paramétricas incidem sobre as receitas recebidas pelo Município no período de 30 dias (arrecadação própria + transferências efetivamente recebidas), verificados na confirmação da distribuição do orçamento, com explicação por Explained (20). A mesma base vale para Educação (piso constitucional de 5%), Saúde e Infraestrutura (mínimos legais de 11). Nesta fase os pisos se aplicam apenas ao orçamento municipal; União e Estados não possuem pisos setoriais no primeiro Bot Test. O teto de déficit permanece sem proposta até a arquitetura monetária (P0.07a).
+Os pisos legais de 11 — Leis Paramétricas incidem sobre as receitas recebidas pelo Município no período de 30 dias (arrecadação própria + transferências efetivamente recebidas), verificados na confirmação da distribuição do orçamento, com explicação por Explained (20). A mesma base vale para Educação (piso constitucional de 5%), Saúde e Infraestrutura (mínimos legais de 11). Nesta fase os pisos se aplicam apenas ao orçamento municipal; União e Estados não possuem pisos setoriais no primeiro Bot Test. O teto de déficit está definido em `24` §24.16 (decisão do GD, 2026-10-15).
 
 45.4. Salários políticos como despesa obrigatória
 Salários de Presidente e Deputados são pagos pela União; Governador pelo Estado; Prefeito pelo Município. Acumulam diariamente. Sem caixa, o valor devido vira obrigação pendente, sem saldo negativo e sem criação de dinheiro. O substituto acumula a partir da posse. Depende do registro monetário (P0.07).
@@ -930,3 +930,5 @@ Destino das cobranças:
 O sumidouro é uma conta contábil identificada e indisponível para gastos normais. Seu saldo faz parte da conservação contábil, mas é excluído do dinheiro em circulação. Lançamentos não são apagados.
 
 Saldos iniciais de caixas de governo também são configurados por cenário.
+
+A arquitetura do registro monetário (contas, lançamentos, reservas, obrigações pendentes, contadores salariais, retenções, dotações e relação com a dívida pública) está em `24 — Registro Monetário` (FINAL — BOT TEST, P0.07a), que também traz a definição do teto de déficit público (§24.16, decidida pelo Game Director em 2026-10-15).

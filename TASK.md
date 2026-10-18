@@ -50,6 +50,10 @@ O projeto já possui o núcleo de design amplamente consolidado. A prioridade ag
 
 - `22 — Receitas-Produção`
 
+## Registro monetário
+
+- `24 — Registro Monetário` *(FINAL — BOT TEST; aprovado pelo Game Director em 2026-10-15; implementação na P0.07b)*
+
 O catálogo de `22` deve ser tratado como fonte central de Produtos e Receitas e revisado quanto à consistência antes de depender dele em larga escala.
 
 ---
@@ -180,7 +184,8 @@ Não implementar ainda os sistemas FUTURO apenas por conveniência.
 | 5a. Catálogo de Produtos e Receitas | **feito** (P1.01) e **atualizado na P0.02** (2026-10-15, PR sobre o #8): 73 produtos, 44 receitas (inclui Exército), 8 alimentos (inclui Pão); categoria única + tags + canais comerciais declarados; valores `[PROV]` em tabela auditável (`catalog/provisional.py`, `manage.py list_provisional`); `22` §3/§4 geradas e conferidas por teste; lacunas restantes: `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_VEHICLE_RELATION_UNDEFINED` (produtor do Exército = Industrial/Produção, decidido pelo GD em 2026-10-15) (`CHANGELOG_DEV.md`, 2026-10-15) |
 | 6. Action Registry | **feito** (P1.03): ações `work`, `study`, `leisure`, `travel` com descritor do `21 §20`, consulta (`check_action`, `available_actions`) e execução (`execute_action`) sobre as mesmas validações dos serviços; sem Masking (P1.19). Decisões e pendências em `CHANGELOG_DEV.md` (2026-10-12) |
 | 0. P0.01 consolidação documental | **concluída no PR #8** (2026-10-14, aguarda auditoria e merge): decisões aprovadas documentadas; `06`/`11`/`19` seguem em REVIEW só por dependências de execução; P0.07 (registro monetário) criado na fila; próximos: P0.02, P0.07a, P0.07b |
-| 0b. P0.02 catálogo `22` | **concluída no PR da P0.02** (2026-10-15, aguarda merge do #8 e do próprio PR): próximo P0.07a (design do registro monetário), depois P0.07b |
+| 0b. P0.02 catálogo `22` | **concluída no PR #9** (2026-10-15, aguarda merge do #8 e do próprio PR) |
+| 0c. P0.07a registro monetário | **aprovada** (2026-10-15, PR #10): `24` FINAL — BOT TEST; teto de déficit decidido (implementação P1.09/P1.12); P0.07b em implementação em branch empilhada |
 | 5b, 7–9 | não iniciados
 
 O código anterior ao design atual foi removido por decisão do Game Director (2026-09-30); `design/` é a única base.
