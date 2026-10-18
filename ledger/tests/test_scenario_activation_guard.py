@@ -3,11 +3,18 @@ Estado do cenário (`LedgerScenario.active`) pelo ORM (design/24 §24.11): ativa
 as dotações exigidas; o ORM (instância, queryset, lote, criação) recusa a transição para ativo e nunca cria cenário ativo.
 Desativar é livre, mas passa pelo protocolo de bloqueio (todos os cenários primeiro). Concorrência: `test_scenario_concurrency.py`.
 """
+import ast
+import pathlib
+from contextlib import contextmanager
+from unittest import mock
+
+from django.db import connection
 from django.db.models import Case, Value, When
 
+from ledger import models as ledger_models
 from ledger import services as ledger
 from ledger.models import (GrantLineLockedError, LedgerImmutableError, LedgerScenario, ScenarioActivationForbiddenError,
-                           ScenarioGrantLine, activation_permit)
+                           ScenarioGrantLine, _activation_permit)
 
 from .base import LedgerTestCase
 
@@ -79,7 +86,7 @@ class OrmCannotActivateAScenario(ScenarioActivationGuardCase):
         self.assertEqual((sc.active, self.active()), (False, []))
 
     def test_the_activation_permit_belongs_to_one_scenario_and_ends_with_its_block(self):
-        with activation_permit(self.ok.pk):
+        with _activation_permit(self.ok.pk):
             LedgerScenario.objects.filter(pk=self.ok.pk).update(active=True)       # o autorizado, nesse bloco
             self.assertForbidden(lambda: LedgerScenario.objects.filter(pk=self.ok2.pk).update(active=True), ["ok"])
             self.assertForbidden(lambda: LedgerScenario.objects.all().update(active=True), ["ok"])
@@ -185,3 +192,64 @@ class ExplicitPkWriteOnAGrantLineIsStillGuarded(ScenarioActivationGuardCase):
         self.assertEqual(list(ScenarioGrantLine.objects.filter(pk=line.pk).values_list("scenario__name", "amount")),
                          [("ok", 100)])
 
+
+class TheActivationPermitIsAnInternalMechanismNotApi(ScenarioActivationGuardCase):
+    """
+    Fronteira de confiança: a API pública para ativar um cenário é `activate_scenario()`, que valida as dotações exigidas sob os
+    bloqueios globais. `_activation_permit` é mecanismo INTERNO desse fluxo (privado, sem validação própria). A recusa do ORM
+    evita a ativação acidental pelos caminhos comuns; ela NÃO é uma defesa contra código Python que use o mecanismo interno de
+    propósito, e por isso o fluxo é garantido por convenção + este teste: um só ponto de uso, dentro de `activate_scenario`.
+    """
+
+    PACKAGE = pathlib.Path(ledger.__file__).resolve().parent
+
+    def test_the_permit_is_private_and_not_exposed_by_the_public_modules(self):
+        self.assertFalse(hasattr(ledger_models, "activation_permit"))
+        self.assertFalse(hasattr(ledger, "activation_permit"))
+        self.assertTrue(callable(ledger_models._activation_permit))
+
+    def test_the_only_production_use_is_inside_activate_scenario(self):
+        users = []
+        for path in sorted(self.PACKAGE.rglob("*.py")):
+            if "tests" in path.parts or "migrations" in path.parts:
+                continue
+            if "_activation_permit" in path.read_text():
+                users.append(path.name)
+        self.assertEqual(users, ["models.py", "services.py"])          # definição e único consumidor
+        tree = ast.parse((self.PACKAGE / "services.py").read_text())
+        activate = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "activate_scenario")
+        inside = {id(n) for n in ast.walk(activate)}
+        uses = [n for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id == "_activation_permit"]
+        self.assertEqual(len(uses), 1)
+        self.assertIn(id(uses[0]), inside, "o mecanismo interno só pode ser usado dentro de activate_scenario")
+
+    @contextmanager
+    def spy_on_the_permit(self):
+        calls = []
+        real = ledger._activation_permit
+
+        @contextmanager
+        def spy(pk):
+            have = dict(ScenarioGrantLine.objects.filter(scenario_id=pk).values_list("role", "amount"))
+            calls.append({"pk": pk, "lines": have, "in_atomic_block": connection.in_atomic_block})
+            with real(pk):
+                yield
+        with mock.patch.object(ledger, "_activation_permit", spy):
+            yield calls
+
+    def test_the_service_validates_the_required_grants_before_it_grants_the_permit(self):
+        with self.spy_on_the_permit() as calls:
+            refused = ledger.activate_scenario("incompleto", ["union"])
+            self.assertEqual((refused.ok, refused.code), (False, "SCENARIO_GRANT_UNSPECIFIED"))
+            self.assertEqual(calls, [], "sem dotação exigida explícita a permissão nem chega a ser concedida")
+            self.assertEqual(ledger.activate_scenario("nao-existe", ["union"]).code, "SCENARIO_NOT_FOUND")
+            self.assertEqual(calls, [])
+            self.assertTrue(ledger.activate_scenario("ok", ["union"]).ok)
+        self.assertEqual(calls, [{"pk": self.ok.pk, "lines": {"union": 100}, "in_atomic_block": True}])
+        self.assertEqual(self.active(), ["ok"])
+
+    def test_the_service_keeps_validating_every_required_role(self):
+        with self.spy_on_the_permit() as calls:
+            res = ledger.activate_scenario("ok", ["union", "militia_bank"])        # militia_bank não está na linha de "ok"
+            self.assertEqual((res.ok, res.code, res.detail["missing"]), (False, "SCENARIO_GRANT_UNSPECIFIED", ["militia_bank"]))
+        self.assertEqual((calls, self.active()), ([], []))

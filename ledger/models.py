@@ -267,8 +267,9 @@ class GrantLineLockedError(LedgerImmutableError):
 #     pede outro cenário nem outro bloqueio depois. Uma mutação espera a emissão em andamento (que segura o cenário até
 #     confirmar) e depois relê o histórico, que já contém a dotação.
 #   * ESTADO `active` do cenário: ativar só por `services.activate_scenario` (valida as dotações exigidas e concede
-#     `activation_permit(pk)` para aquele cenário, naquele bloco); qualquer outra transição para ativo pelo ORM é recusada
-#     (`ScenarioActivationForbiddenError`). Desativar é livre, mas roda sob o mesmo protocolo (todos os cenários primeiro).
+#     `_activation_permit(pk)`, mecanismo interno e privado, para aquele cenário, naquele bloco); as transições para ativo
+#     pelos caminhos comuns do ORM são recusadas (`ScenarioActivationForbiddenError`). A recusa evita o acidente; não é defesa
+#     contra Python que use o mecanismo interno de propósito. Desativar é livre, mas roda sob o mesmo protocolo (todos os cenários primeiro).
 #   * Referência a um cenário que NÃO está no conjunto travado (criado depois da instrução de bloqueio) é recusada com
 #     `ScenarioSetChangedError` (repita a operação): travá-lo agora seria uma aquisição fora da ordem.
 #   * Não compor, numa mesma transação externa, uma emissão (que segura um cenário) e uma mutação (que pede todos).
@@ -299,10 +300,13 @@ _SCENARIO_VERIFIED = contextvars.ContextVar("ledger_scenario_verified", default=
 
 
 @contextlib.contextmanager
-def activation_permit(pk):
-    """Permissão INTERNA, concedida só por `services.activate_scenario` depois de travar tudo e validar as dotações exigidas: dentro
-    do bloco, e só para o cenário `pk`, o ORM aceita a transição para ativo. Como a `_GrantPermit`, a proteção é a revalidação,
-    não a inacessibilidade em Python."""
+def _activation_permit(pk):
+    """MECANISMO INTERNO (privado; não é API do app): só `services.activate_scenario` o usa, e somente depois de travar todos os
+    cenários e validar as dotações exigidas. Dentro do bloco, e só para o cenário `pk`, o ORM aceita a transição para ativo.
+    NÃO revalida nada: a validação das dotações é do serviço, não daqui. Isto NÃO é uma defesa contra código Python que
+    chame o mecanismo interno de propósito; o que ele evita é a ativação acidental pelos caminhos comuns do ORM (`save`,
+    `update`, `bulk_*`, `create`). Por isso nenhum outro módulo o importa (teste de fronteira em
+    `test_scenario_activation_guard.py`)."""
     token = _ACTIVATION.set(pk)
     try:
         yield
@@ -375,7 +379,7 @@ def _check_scenario_renames(renames):
 
 def _check_scenario_activation(changes):
     """`changes`: `(pk, ativo_antes, ativo_depois)`; `ativo_antes` None = inserção; `ativo_depois` pode ser `_UNKNOWN` (expressão).
-    Uma linha que passa de não-ativa para possivelmente ativa só é aceita para o cenário autorizado por `activation_permit`.
+    Uma linha que passa de não-ativa para possivelmente ativa só é aceita para o cenário autorizado por `_activation_permit` (interno; a validação das dotações é do serviço).
     Desativar, ou manter o que já é ativo, é livre (mas já roda sob o protocolo de bloqueio)."""
     permitted = _ACTIVATION.get()
     for pk, before, after in changes:

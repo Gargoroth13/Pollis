@@ -26,7 +26,7 @@ from players.services import ActionResult
 from .constants import (GRANT_ROLE_KINDS, MAX_AMOUNT, OPERATIONAL_KINDS, REMUNERATION_NATURES, RETENTION_IN_NATURES,
                         RETENTION_OUT_NATURES, SINGLETON_KINDS, SINK_NATURES, TAX_NATURES, AccountKind, HoldStatus,
                         Nature, ObligationStatus)
-from .models import (Account, Entry, Hold, LedgerScenario, Obligation, ScenarioGrantLine, Transaction, activation_permit,
+from .models import (Account, Entry, Hold, LedgerScenario, Obligation, ScenarioGrantLine, Transaction, _activation_permit,
                      grant_history, lock_scenarios)
 from .money import amount_problem, competence_day_of, is_centavos, percent_of
 
@@ -755,6 +755,8 @@ def activate_scenario(name: str, required_roles: Iterable[str]) -> ActionResult:
     e lista as pendências (nenhum valor é inventado). Só um cenário fica ativo: trava TODOS os cenários em ordem de pk (não só o
     que será ativado), de modo que ativações simultâneas se serializam e nenhuma compete com uma emissão em andamento (a
     emissão segura o cenário emissor até confirmar); a restrição única parcial do banco é a defesa em profundidade.
+    É o ÚNICO ponto que usa o mecanismo interno `_activation_permit`, e só depois de travar todos os cenários e validar as
+    dotações exigidas; a permissão não valida nada por conta própria.
     """
     with transaction.atomic():
         sc = next((r for r in _lock_scenarios() if r.name == name), None)
@@ -765,7 +767,7 @@ def activate_scenario(name: str, required_roles: Iterable[str]) -> ActionResult:
         if missing:
             return _refuse("SCENARIO_GRANT_UNSPECIFIED", scenario=name, missing=missing)
         LedgerScenario.objects.exclude(pk=sc.pk).update(active=False)
-        with activation_permit(sc.pk):            # único caminho que ativa: dotações exigidas já validadas, tudo travado
+        with _activation_permit(sc.pk):           # uso interno: só aqui, depois de travar tudo e validar as dotações exigidas
             LedgerScenario.objects.filter(pk=sc.pk).update(active=True)
         return ActionResult(True, "OK", {"scenario": name, "roles": sorted(set(required_roles))})
 
