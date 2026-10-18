@@ -22,7 +22,8 @@ from ledger import models as ledger_models
 from ledger import services as ledger
 from ledger.audit import audit_ledger
 from ledger.constants import AccountKind
-from ledger.models import Entry, GrantLineLockedError, LedgerScenario, ScenarioGrantLine
+from ledger.models import (Entry, GrantLineLockedError, LedgerScenario, ScenarioActivationForbiddenError,
+                           ScenarioGrantLine)
 
 HOLD = 1.2          # quanto tempo a thread "lenta" segura o bloqueio nos testes de ordem estrita (segundos)
 ON_PG = connection.vendor == "postgresql"
@@ -79,8 +80,8 @@ def run_together(*fns):
     jobs = [Job(fn, barrier).start() for fn in fns]
     for j in jobs:
         j.join()
-    for j in jobs:      # a recusa da guarda de imutabilidade da linha é um desfecho válido da corrida
-        assert j.error is None or isinstance(j.error, GrantLineLockedError), repr(j.error)
+    for j in jobs:      # a recusa das guardas do ORM (linha imutável, ativação fora do serviço) é um desfecho válido da corrida
+        assert j.error is None or isinstance(j.error, (GrantLineLockedError, ScenarioActivationForbiddenError)), repr(j.error)
     return jobs
 
 
@@ -206,13 +207,43 @@ class ScenarioPropertyTests(ScenarioConcurrencyBase):
             self.assertLedgerClean()
         self.assertEqual(sum(outcomes.values()), 6, outcomes)
 
+    def test_orm_activation_attempts_deactivations_and_service_activations_end_consistent(self):
+        """Ativações pelo serviço × tentativas de ativar pelo ORM (recusadas) × desativações pelo ORM: sem deadlock; só um cenário
+        validado pode terminar ativo (o incompleto C nunca), no máximo um ativo e auditoria limpa."""
+        for r in range(4):
+            a, b, c = f"pa{r}", f"pb{r}", f"pc{r}"
+            ledger.create_scenario(a, {"union": 1})
+            ledger.create_scenario(b, {"union": 2})
+            ledger.create_scenario(c, {"union": None})                  # dotação exigida ausente: não pode ficar ativo
+            pk = {n: LedgerScenario.objects.get(name=n).pk for n in (a, b, c)}
+
+            def save_c():
+                sc = LedgerScenario.objects.get(pk=pk[c])
+                sc.active = True
+                sc.save()
+
+            jobs = run_together(
+                lambda: ledger.activate_scenario(a, ["union"]),
+                lambda: ledger.activate_scenario(b, ["union"]),
+                lambda: LedgerScenario.objects.filter(pk=pk[c]).update(active=True),
+                save_c,
+                lambda: LedgerScenario.objects.filter(pk__in=[pk[a], pk[b]]).update(active=False),
+                lambda: LedgerScenario.objects.bulk_update([LedgerScenario(pk=pk[a], name=a, active=False)], ["active"]))
+            act_a, act_b, orm_c, save_c_job = jobs[:4]
+            self.assertTrue(act_a.result.ok and act_b.result.ok, (act_a.result, act_b.result))
+            for job in (orm_c, save_c_job):
+                self.assertIsInstance(job.error, ScenarioActivationForbiddenError)
+            self.assertIn(self.active_names(), ([], [a], [b]))
+            self.assertFalse(LedgerScenario.objects.get(pk=pk[c]).active)
+            self.assertLedgerClean()
+
     def test_database_refuses_two_active_scenarios_even_around_the_service(self):
         from django.db import IntegrityError, transaction
         ledger.create_scenario("um", {"union": 1})
         ledger.create_scenario("dois", {"union": 1})
         self.assertTrue(ledger.activate_scenario("um", ["union"]).ok)
-        with self.assertRaises(IntegrityError), transaction.atomic():
-            LedgerScenario.objects.filter(name="dois").update(active=True)
+        with self.assertRaises(IntegrityError), transaction.atomic(), connection.cursor() as cur:      # SQL direto: contorna o ORM
+            cur.execute("UPDATE ledger_ledgerscenario SET active = %s WHERE name = %s", [True, "dois"])
         self.assertEqual(self.active_names(), ["um"])
 
     def test_set_grant_line_on_unknown_scenario_and_failed_change_leave_the_configuration_intact(self):
@@ -460,3 +491,84 @@ class PostgresLockOrderWithMovingLineTests(ScenarioConcurrencyBase):
         self.assertEqual(ScenarioGrantLine.objects.count(), 0)          # X moveu e Y apagou a linha que X deixou em D1
         ledger.set_grant_line("D3", "militia_bank", 500)                # recriar uma linha ainda sem dotação é livre
         self.assertImmutableAfterEmission("D3")
+
+
+@unittest.skipUnless(ON_PG, "intercalamento determinístico por bloqueios de linha: só tem efeito em PostgreSQL")
+class PostgresActivationStateOrderTests(ScenarioConcurrencyBase):
+    """
+    Mutações do estado `active` pelo ORM seguem o protocolo: tudo travado em ordem, como primeiro passo, e só depois a decisão.
+    Uma thread é pausada segurando os bloqueios; as demais (ativação pelo serviço, ativação PROIBIDA pelo ORM por `update` e por
+    `save`, desativação pelo ORM) esperam, terminam depois dela e ninguém trava em deadlock.
+    """
+
+    def setUp(self):
+        ledger.create_scenario("E1", {"union": 1})
+        ledger.create_scenario("E2", {"union": 2})
+        ledger.create_scenario("E3", {"union": None})               # nunca pode ficar ativo
+        self.pks = {n: LedgerScenario.objects.get(name=n).pk for n in ("E1", "E2", "E3")}
+        self.assertTrue(ledger.activate_scenario("E1", ["union"]).ok)
+
+    def run_paused(self, paused, others):
+        """Pausa `paused` (nome da thread) logo depois de ela travar os cenários; `others` = {nome: fn} entram e esperam."""
+        gate = _Gate()
+        real = ledger_models.lock_scenarios
+
+        def hooked(ids=None, names=None):
+            rows = real(ids, names)
+            if threading.current_thread().name == paused[0] and not gate.used:
+                gate.used = True
+                gate.entered.set()
+                if not gate.go.wait(30):
+                    raise AssertionError("pausa não liberada")
+            return rows
+
+        with mock.patch.object(ledger_models, "lock_scenarios", hooked), mock.patch.object(ledger, "lock_scenarios", hooked):
+            first = Job(paused[1], name=paused[0]).start()
+            self.assertTrue(gate.entered.wait(15), "a primeira thread não chegou a travar")
+            rest = [Job(fn, name=name).start() for name, fn in others.items()]
+            time.sleep(1.0)
+            for job in rest:
+                self.assertIsNone(job.ended, f"{job.thread.name} deveria estar esperando os bloqueios")
+            gate.go.set()
+            for job in [first, *rest]:
+                job.join()
+        return first, {j.thread.name: j for j in rest}
+
+    def assertFinal(self, first, rest, refused, expect_active):
+        for job in (first, *rest.values()):
+            if job.thread.name in refused:
+                self.assertIsInstance(job.error, ScenarioActivationForbiddenError, (job.thread.name, job.error))
+            else:
+                self.assertIsNone(job.error, (job.thread.name, job.error))
+        self.assertEqual(self.active_names(), expect_active)
+        self.assertFalse(LedgerScenario.objects.get(pk=self.pks["E3"]).active)
+        self.assertLedgerClean()
+
+    def forbidden_calls(self):
+        e3 = self.pks["E3"]
+
+        def by_save():
+            sc = LedgerScenario.objects.get(pk=e3)
+            sc.active = True
+            sc.save()
+        return {"Y": lambda: LedgerScenario.objects.filter(pk=e3).update(active=True), "Z": by_save}
+
+    def test_orm_deactivation_holding_the_locks_makes_service_activation_and_forbidden_activations_wait(self):
+        e1 = self.pks["E1"]
+        first, rest = self.run_paused(
+            ("X", lambda: LedgerScenario.objects.filter(pk=e1).update(active=False)),
+            {**self.forbidden_calls(), "A": lambda: ledger.activate_scenario("E2", ["union"])})
+        self.assertTrue(rest["A"].result.ok)
+        for name in ("Y", "Z", "A"):                                 # todas terminam depois de quem segurava os bloqueios
+            self.assertGreaterEqual(rest[name].ended, first.ended)
+        self.assertFinal(first, rest, refused={"Y", "Z"}, expect_active=["E2"])
+
+    def test_service_activation_holding_the_locks_makes_orm_deactivation_and_forbidden_activations_wait(self):
+        e1 = self.pks["E1"]
+        first, rest = self.run_paused(
+            ("A", lambda: ledger.activate_scenario("E2", ["union"])),
+            {**self.forbidden_calls(), "X": lambda: LedgerScenario.objects.filter(pk=e1).update(active=False)})
+        self.assertTrue(first.result.ok)
+        for name in ("X", "Y", "Z"):
+            self.assertGreaterEqual(rest[name].ended, first.ended)
+        self.assertFinal(first, rest, refused={"Y", "Z"}, expect_active=["E2"])

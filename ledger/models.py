@@ -4,6 +4,7 @@ Modelos do registro monetário (design/24). Todo valor é INTEIRO EM CENTAVOS.
 `Account.balance` é CACHE de desempenho; a verdade é a soma dos `Entry` (R9; `audit.py` reconstrói e compara).
 `Entry` é IMUTÁVEL: nenhuma API de escrita a altera ou apaga (erro se corrige com `REVERSAL`).
 """
+import contextlib
 import contextvars
 
 from django.db import models, transaction
@@ -265,6 +266,9 @@ class GrantLineLockedError(LedgerImmutableError):
 #   * EMISSÃO (`services._check_grant`): contas em ordem crescente de id e, por último, UM só cenário (o emissor); ela nunca
 #     pede outro cenário nem outro bloqueio depois. Uma mutação espera a emissão em andamento (que segura o cenário até
 #     confirmar) e depois relê o histórico, que já contém a dotação.
+#   * ESTADO `active` do cenário: ativar só por `services.activate_scenario` (valida as dotações exigidas e concede
+#     `activation_permit(pk)` para aquele cenário, naquele bloco); qualquer outra transição para ativo pelo ORM é recusada
+#     (`ScenarioActivationForbiddenError`). Desativar é livre, mas roda sob o mesmo protocolo (todos os cenários primeiro).
 #   * Referência a um cenário que NÃO está no conjunto travado (criado depois da instrução de bloqueio) é recusada com
 #     `ScenarioSetChangedError` (repita a operação): travá-lo agora seria uma aquisição fora da ordem.
 #   * Não compor, numa mesma transação externa, uma emissão (que segura um cenário) e uma mutação (que pede todos).
@@ -277,6 +281,33 @@ class ScenarioSetChangedError(LedgerImmutableError):
     """Código `SCENARIO_SET_CHANGED`: a operação referencia um cenário criado depois de ela travar todos; repita a operação."""
 
     code = "SCENARIO_SET_CHANGED"
+
+
+class ScenarioActivationForbiddenError(LedgerImmutableError):
+    """Código `SCENARIO_ACTIVATION_FORBIDDEN`: um cenário só passa a ativo por `services.activate_scenario` (que valida as dotações
+    exigidas); o ORM não ativa nem cria cenário ativo por conta própria."""
+
+    code = "SCENARIO_ACTIVATION_FORBIDDEN"
+
+    def __init__(self, message, **detail):
+        super().__init__(f"SCENARIO_ACTIVATION_FORBIDDEN: {message}")
+        self.detail = detail
+
+
+_ACTIVATION = contextvars.ContextVar("ledger_scenario_activation", default=None)   # pk do cenário cuja ativação foi validada
+_SCENARIO_VERIFIED = contextvars.ContextVar("ledger_scenario_verified", default=False)
+
+
+@contextlib.contextmanager
+def activation_permit(pk):
+    """Permissão INTERNA, concedida só por `services.activate_scenario` depois de travar tudo e validar as dotações exigidas: dentro
+    do bloco, e só para o cenário `pk`, o ORM aceita a transição para ativo. Como a `_GrantPermit`, a proteção é a revalidação,
+    não a inacessibilidade em Python."""
+    token = _ACTIVATION.set(pk)
+    try:
+        yield
+    finally:
+        _ACTIVATION.reset(token)
 
 
 def lock_scenarios(ids=None, names=None):
@@ -340,6 +371,19 @@ def _check_scenario_renames(renames):
     for _, old, new in renames:
         if old != new and grant_history(old).exists():
             raise GrantLineLockedError("o cenário já tem dotações; o nome não muda", scenario=old)
+
+
+def _check_scenario_activation(changes):
+    """`changes`: `(pk, ativo_antes, ativo_depois)`; `ativo_antes` None = inserção; `ativo_depois` pode ser `_UNKNOWN` (expressão).
+    Uma linha que passa de não-ativa para possivelmente ativa só é aceita para o cenário autorizado por `activation_permit`.
+    Desativar, ou manter o que já é ativo, é livre (mas já roda sob o protocolo de bloqueio)."""
+    permitted = _ACTIVATION.get()
+    for pk, before, after in changes:
+        if before is True or after is False:
+            continue
+        if pk is None or pk != permitted:
+            raise ScenarioActivationForbiddenError(
+                "um cenário só é ativado por activate_scenario(), que valida as dotações exigidas", scenario_pk=pk)
 
 
 def _check_scenario_deletion(name):
@@ -415,13 +459,48 @@ class _GrantLineQuerySet(models.QuerySet):
 
 class _ScenarioQuerySet(models.QuerySet):
     def update(self, **kwargs):
-        if "name" not in kwargs:
+        if _SCENARIO_VERIFIED.get() or not set(kwargs) & {"name", "active"}:
             return super().update(**kwargs)
-        new_name = _constant(kwargs["name"])
+        with transaction.atomic(using=self.db):
+            lock_all_scenarios()                                  # 1º passo; as linhas são lidas DEPOIS
+            rows = list(self.values_list("pk", "name", "active"))
+            if "name" in kwargs:
+                _check_scenario_renames([(pk, name, _constant(kwargs["name"])) for pk, name, _ in rows])
+            if "active" in kwargs:
+                _check_scenario_activation([(pk, active, _constant(kwargs["active"])) for pk, _, active in rows])
+            return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        objs = list(objs)
+        if not set(fields) & {"name", "active"}:
+            return super().bulk_update(objs, fields, batch_size)
         with transaction.atomic(using=self.db):
             lock_all_scenarios()
-            _check_scenario_renames([(pk, name, new_name) for pk, name in self.values_list("pk", "name")])
-            return super().update(**kwargs)
+            stored = {r[0]: r[1:] for r in self.model.objects.filter(pk__in=[o.pk for o in objs])
+                      .values_list("pk", "name", "active")}      # lido DEPOIS do bloqueio
+            renames, activations = [], []
+            for o in objs:
+                old = stored.get(o.pk)
+                if old is None:
+                    continue
+                if "name" in fields:
+                    renames.append((o.pk, old[0], _constant(o.name)))
+                if "active" in fields:
+                    activations.append((o.pk, old[1], _constant(o.active)))
+            _check_scenario_renames(renames)
+            _check_scenario_activation(activations)
+            token = _SCENARIO_VERIFIED.set(True)                 # já verificado: o `update()` interno não repete
+            try:
+                return super().bulk_update(objs, fields, batch_size)
+            finally:
+                _SCENARIO_VERIFIED.reset(token)
+
+    def bulk_create(self, objs, *args, update_conflicts=False, **kwargs):
+        if update_conflicts:
+            raise LedgerImmutableError("cenários não aceitam upsert em lote")
+        objs = list(objs)
+        _check_scenario_activation([(None, None, _constant(o.active)) for o in objs])   # insere-se inativo; ativar é do serviço
+        return super().bulk_create(objs, *args, update_conflicts=False, **kwargs)
 
     def delete(self):
         with transaction.atomic(using=self.db):
@@ -450,12 +529,22 @@ class LedgerScenario(models.Model):
             return super().delete(*args, **kwargs)
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None and len(args) >= 3:
+            update_fields = args[2]
+        chosen = None if update_fields is None else set(update_fields)
         with transaction.atomic(using=kwargs.get("using")):
-            if self.pk is not None and not self._state.adding:
-                lock_all_scenarios()                                 # 1º passo; o nome guardado é lido DEPOIS
-                stored = LedgerScenario.objects.filter(pk=self.pk).values_list("name", flat=True).first()
-                if stored is not None:
-                    _check_scenario_renames([(self.pk, stored, self.name)])
+            stored = None
+            if self.pk is not None:                                  # pode ser UPDATE mesmo com `_state.adding` (pk explícito)
+                lock_all_scenarios()                                 # 1º passo; o estado guardado é lido DEPOIS
+                stored = LedgerScenario.objects.filter(pk=self.pk).values_list("name", "active").first()
+            if stored is None:
+                _check_scenario_activation([(None, None, self.active)])      # inserção: nasce inativo
+            else:
+                if chosen is None or "name" in chosen:
+                    _check_scenario_renames([(self.pk, stored[0], self.name)])
+                _check_scenario_activation(
+                    [(self.pk, stored[1], self.active if chosen is None or "active" in chosen else stored[1])])
             return super().save(*args, **kwargs)
 
     class Meta:
@@ -476,7 +565,7 @@ class ScenarioGrantLine(models.Model):
     objects = _GrantLineQuerySet.as_manager()
 
     def _stored(self):
-        if self.pk is None or self._state.adding:
+        if self.pk is None:                  # com pk explícito o Django faz UPDATE mesmo com `_state.adding`: lê o guardado
             return None
         return ScenarioGrantLine.objects.filter(pk=self.pk).values_list("scenario_id", "role", "amount").first()
 

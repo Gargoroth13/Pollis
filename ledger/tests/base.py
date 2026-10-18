@@ -29,14 +29,17 @@ def install_test_role(testcase):
 def fund_account(account, amount):
     """Dinheiro entra só por dotação de cenário (única fonte de emissão): cenário ativo, linha explícita, valor exato."""
     name = f"t{next(_scenario_seq)}"
-    previously_active = list(LedgerScenario.objects.filter(active=True).values_list("pk", flat=True))
+    # o cenário ativo de antes (se havia) volta pelo caminho oficial, com as dotações que ele mesmo já tinha explícitas
+    previous = [(sc.name, sorted(l.role for l in sc.lines.all() if l.amount is not None))
+                for sc in LedgerScenario.objects.filter(active=True)]
     ledger.create_scenario(name, {TEST_ROLE: amount})
     assert ledger.activate_scenario(name, [TEST_ROLE]).ok
     try:
         res = ledger.grant_scenario_allocation(name, account.pk, amount, role=TEST_ROLE)
-    finally:       # o cenário ativo de antes (se havia) volta como estava
+    finally:
         LedgerScenario.objects.filter(name=name).update(active=False)
-        LedgerScenario.objects.filter(pk__in=previously_active).update(active=True)
+        for prev_name, prev_roles in previous:
+            assert ledger.activate_scenario(prev_name, prev_roles).ok
     assert res.ok, res
     return res
 
