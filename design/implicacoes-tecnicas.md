@@ -1,3 +1,5 @@
+> **OBSOLETO (P0.01, 2026-10-14).** Este arquivo é histórico e não é fonte de verdade (`CLAUDE.md` §1). O código anterior foi removido pelo Game Director (2026-09-30); o estado atual está em `TASK.md` e `CHANGELOG_DEV.md`.
+
 ## 22. Implicações técnicas — o que precisa ser refeito no código
 
 Pra você ter clareza do tamanho do refactor antes da gente decidir por

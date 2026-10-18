@@ -1,3 +1,5 @@
+> **OBSOLETO (P0.01, 2026-10-14).** Este arquivo é histórico e não é fonte de verdade (`CLAUDE.md` §1). O índice abaixo refere arquivos que não existem mais; use a listagem real de `design/` e os status em `TASK.md`.
+
 # Polis — Documento de Design
 
 Documento fragmentado por tema (evita reescrever um arquivo gigante

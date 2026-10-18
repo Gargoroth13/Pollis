@@ -143,6 +143,8 @@ Uma proposta é aprovada quando recebe **maioria absoluta da Câmara**.
 
 Maioria absoluta significa mais da metade de todas as cadeiras consideradas para aquela votação, e não mais da metade apenas dos Deputados que votaram.
 
+As cadeiras consideradas são as **cadeiras efetivamente ocupadas** no momento do congelamento (07.7). Cadeira vaga não entra no quórum nem na maioria; o quórum é calculado sobre as cadeiras ocupadas (`06 — Política` 06.6 e 06.24).
+
 Exemplo com 5 cadeiras:
 
 - 3 votos favoráveis → aprovada;
@@ -267,6 +269,12 @@ A segunda proposta somente pode ser criada depois que a primeira tiver terminado
 
 Isso impede que diferentes propostas para o mesmo parâmetro sejam usadas simultaneamente para manipular o calendário legislativo.
 
+### Grupos de parâmetros acoplados
+
+Quando a validade de um parâmetro depende de outro, os parâmetros formam um **grupo acoplado** e a regra acima vale para o grupo inteiro: enquanto houver proposta ativa ou em trânsito sobre qualquer parâmetro do grupo, não pode ser criada outra proposta sobre qualquer parâmetro do mesmo grupo. A pertinência a um grupo é explícita e determinística (catálogo em `11 — Leis Paramétricas`, 11.1.0.1).
+
+Grupo atual: `{salário mínimo, teto salarial, multiplicadores salariais de Presidente, Governador, Prefeito e Deputado}` (e os multiplicadores militares, se passarem a ser lei).
+
 ---
 
 ## 07.18. Mudança do Presidente durante o processo
@@ -295,6 +303,13 @@ Se houver uma proposta aguardando decisão presidencial no momento da deposiçã
 O novo Presidente recebe a proposta novamente caso a Câmara a aprove.
 
 A deposição também não revoga automaticamente leis que já estejam em vigor.
+
+Interregno (aprovado pelo Game Director):
+
+- propostas aguardando sanção, veto ou derrubada de veto retornam a uma votação completa da nova Câmara;
+- votações em andamento são suspensas enquanto não houver Câmara e reiniciadas com três dias completos quando a nova Câmara estiver constituída;
+- leis já sancionadas que aguardam apenas a data de vigência seguem o calendário normal;
+- prazos legislativos ficam suspensos enquanto não houver Câmara.
 
 ---
 
@@ -382,6 +397,15 @@ Podem incluir, quando aplicável:
 - alteração estimada de preços;
 - alteração estimada de produção;
 - outros indicadores derivados disponíveis no sistema.
+
+### Validações exibidas no preview
+
+O preview também apresenta as **validações de coerência** da proposta, com o resultado e o motivo, por exemplo:
+
+- teto salarial não pode ser menor que o salário mínimo;
+- teto salarial não pode ser menor que o maior salário político vigente;
+- piso orçamentário não pode estar abaixo do mínimo constitucional;
+- limites de mínimo e máximo do catálogo.
 
 Estimativas devem ser identificadas explicitamente como **estimativas**. Elas não representam garantia de que o comportamento futuro dos jogadores será igual ao histórico utilizado no cálculo.
 

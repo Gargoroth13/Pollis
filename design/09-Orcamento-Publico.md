@@ -84,7 +84,7 @@ Exemplos:
 Educação;
 Saúde;
 Infraestrutura;
-Segurança/Defesa local, quando aplicável;
+Segurança/Defesa local (sem mecânica própria no primeiro Bot Test; ver §45);
 Administração;
 programas sociais;
 outros projetos públicos.
@@ -102,7 +102,7 @@ Exemplos de bases tributárias:
 Tipo	Base
 Imposto sobre vendas	Transações do Mercado e transações empresariais
 Imposto de renda	Salários pagos
-Imposto sobre lucro	Lucro das empresas
+Imposto sobre lucro	Lucro das empresas (fora do primeiro Bot Test; ver §45)
 Outros impostos	Conforme leis futuras
 
 As alíquotas pertencem ao sistema de Leis Paramétricas.
@@ -233,12 +233,13 @@ Militar
 
 Inclui as despesas previstas pelo sistema militar, como:
 
-pessoal;
+pessoal (soldos);
 equipamentos;
-manutenção;
+manutenção recorrente;
 operações;
-infraestrutura;
 demais custos definidos pelo 19 — Militar.
+
+A construção física de quartéis é classificada como Infraestrutura (projetos e obras públicas). Salários, operação e manutenção recorrente permanecem em Militar. Não há contagem dupla entre categorias (ver §45).
 
 O orçamento deve permitir que o sistema militar solicite e consuma recursos sem precisar criar um mecanismo financeiro separado.
 
@@ -878,3 +879,54 @@ Pode divulgar grandes decisões e eventos fiscais.
 44. Status final
 
 FINAL — BOT TEST
+
+45. Adendos aprovados na consolidação P0.01 (2026-10-13)
+
+Os itens abaixo foram aprovados pelo Game Director e não alteram a estrutura FINAL deste documento. Itens que dependem do registro monetário (P0.07) estão marcados.
+
+45.1. Imposto sobre lucro
+O imposto sobre lucro está fora do primeiro Bot Test. A linha de §6 permanece apenas como base futura.
+
+45.2. Segurança/Defesa local
+A categoria "Segurança/Defesa local" de §5 não possui mecânica no primeiro Bot Test. O Exército é federal (45.8).
+
+45.3. Pisos orçamentários municipais
+Os pisos legais de 11 — Leis Paramétricas incidem sobre as receitas recebidas pelo Município no período de 30 dias (arrecadação própria + transferências efetivamente recebidas), verificados na confirmação da distribuição do orçamento, com explicação por Explained (20). A mesma base vale para Educação (piso constitucional de 5%), Saúde e Infraestrutura (mínimos legais de 11). Nesta fase os pisos se aplicam apenas ao orçamento municipal; União e Estados não possuem pisos setoriais no primeiro Bot Test. O teto de déficit permanece sem proposta até a arquitetura monetária (P0.07a).
+
+45.4. Salários políticos como despesa obrigatória
+Salários de Presidente e Deputados são pagos pela União; Governador pelo Estado; Prefeito pelo Município. Acumulam diariamente. Sem caixa, o valor devido vira obrigação pendente, sem saldo negativo e sem criação de dinheiro. O substituto acumula a partir da posse. Depende do registro monetário (P0.07).
+
+45.5. Atribuição territorial da arrecadação
+Para rastreabilidade (não para criar caixa local), a arrecadação é atribuída a um território:
+- imposto sobre vendas: cidade do estabelecimento vendedor;
+- imposto sobre salários: cidade da empresa pagadora (empregadora);
+- IPTU: cidade do imóvel;
+- outros impostos: somente quando a atribuição for definida.
+A arrecadação continua centralizada no caixa federal; a localização é um atributo de rastreio.
+
+45.6. Retenção durante ação de milícia (19 — Militar)
+Durante uma ação de milícia sobre uma região, o imposto efetivamente arrecadado e vinculado à região fica em uma conta de retenção do registro monetário, e não no caixa federal disponível. Vitória da milícia: o retido vai ao banco da milícia. Repressão, derrota ou falha: o retido é liberado ao caixa federal. A mesma receita nunca está nos dois lugares. Os 30 dias anteriores não são retirados retroativamente. Depende de P0.07.
+
+45.7. Dívida pública e criação de dinheiro
+A emissão de títulos (§19–20) não cria dinheiro: o comprador do título paga com dinheiro existente. A tarefa de dívida pública (P1.09) deve declarar a origem dos recursos e não pode criar dinheiro por emissão. Antes da implementação (P0.07b), a P0.07a deve explicar a relação entre registro monetário, títulos e dívida pública.
+
+45.8. Orçamento militar federal
+O Exército é federal; o orçamento é controlado pelo Presidente. O Governador pode sugerir, mas não existe orçamento militar estadual independente. Compras do Exército seguem 18 — Contratos (fluxo B de 19 — Militar). O número de militares é limitado pela capacidade orçamentária. O soldo é W × multiplicador de patente, com multiplicadores provisórios fixos do sistema (não leis) definidos em 11 — Leis Paramétricas, 11.1.0, e sujeito aos limites S e T. Não há estoque institucional com limite de capacidade no primeiro Bot Test; compras do Exército só são fornecidas com estoque efetivamente disponível ou dotação explícita de cenário, e a reserva de estoque impede prometer o mesmo item a mais de um contrato.
+
+45.9. Registro monetário
+O registro monetário é pré-requisito transversal (P0.07).
+
+Origem do dinheiro (aprovado): cada conta nova, humana ou Bot, recebe uma dotação inicial configurada no cenário. Essa dotação é um lançamento explícito de emissão monetária, com natureza, origem, destino e referência ao cenário. Como Bots são criados continuamente até atingir a população-alvo, as dotações são uma fonte explícita de emissão durante a formação da população, e não uma emissão única no início do mundo. O valor é configurável por cenário; zero é válido se escolhido explicitamente; se ausente, o cenário que dele depende recusa a inicialização e registra a pendência. Não existe emissão periódica discricionária pela União. Despesas públicas, títulos de dívida e transferências não criam dinheiro por si mesmos.
+
+Destino das cobranças:
+- viagem: caixa federal;
+- taxa de correio: caixa federal;
+- fundação de empresa: caixa federal;
+- leilão de lote público: caixa do Município do lote;
+- fundação e melhorias da milícia: sumidouro explícito;
+- custos de campanhas temporárias: caixa federal como pagador, com destino final ao sumidouro explícito;
+- tratamento: conta do hospital ou do prestador definido em 04 — Dia a Dia.
+
+O sumidouro é uma conta contábil identificada e indisponível para gastos normais. Seu saldo faz parte da conservação contábil, mas é excluído do dinheiro em circulação. Lançamentos não são apagados.
+
+Saldos iniciais de caixas de governo também são configurados por cenário.

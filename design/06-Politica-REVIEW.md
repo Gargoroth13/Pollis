@@ -2,6 +2,8 @@
 
 **Status: REVIEW**
 
+> **Consolidação P0.01 (2026-10-14).** Este documento recebeu as decisões aprovadas do Game Director registradas em `CHANGELOG_DEV.md` (seção "P0.01 — consolidação documental"). Permanece em **REVIEW** apenas por dependências de execução listadas em **06.36** (registro monetário P0.07a, implementação de Empresas P1.04 e cenário R-BT-01); não há decisão de design de política em aberto neste documento.
+
 ## 06.0. Objetivo do sistema
 
 O sistema político é a principal estrutura institucional do Polis para transformar decisões e interesses dos jogadores em decisões de governo.
@@ -72,7 +74,26 @@ Para se candidatar a Presidente, o jogador deve:
 - residir no país;
 - não estar concorrendo simultaneamente a outro cargo político.
 
-Os requisitos de experiência política, diploma, Carisma e tempo mínimo de conta podem ser alterados por leis paramétricas quando esses parâmetros forem disponibilizados para alteração.
+Os requisitos de experiência política, diploma, Carisma e tempo mínimo de conta podem ser alterados por leis paramétricas, conforme `11 — Leis Paramétricas`. O Carisma mínimo é um **parâmetro único**, igual para todos os cargos (valor padrão em `11`).
+
+### Significado de "ter exercido o cargo"
+
+Para os requisitos de experiência (Governador exige Prefeito; Presidente exige Governador), **exercer o cargo** significa:
+
+> **posse efetiva + conclusão de um mandato estatutário completo**.
+
+Renúncia, perda por inatividade/AFK, deposição e serviço apenas parcial como substituto **não geram crédito ordinário** de experiência.
+
+O cenário de teste pode conceder **crédito explícito de serviço anterior** a contas designadas. Essa concessão é excepcional, registrada e auditável; não é uma regra geral do jogo.
+
+### Dois contadores distintos
+
+O sistema mantém dois contadores separados por jogador e cargo:
+
+| Contador | Usado para | Regra |
+|---|---|---|
+| **Mandatos consecutivos** | limite de mandatos consecutivos (06.9) | conta todo mandato iniciado com posse, inclusive o mandato obtido por deposição (D7) |
+| **Mandatos concluídos** | experiência para outros cargos (esta seção) | conta somente mandatos estatutários completos; o mandato obtido por deposição **não** gera crédito de experiência |
 
 ---
 
@@ -128,6 +149,15 @@ Ao final do período de votação, o candidato com mais votos vence.
 
 Caso exista apenas um candidato ao final do período de candidatura, ele é eleito automaticamente e a votação não precisa ser realizada.
 
+### Ausência de candidatos e sem titular
+
+- Se não houver nenhum candidato, o **titular atual permanece no cargo** e uma **nova janela eleitoral de 7 dias** começa **imediatamente**, sem intervalo adicional.
+- Se o cargo **nunca teve titular** (ou está vago sem substituto), ele permanece **vago**; não existe ocupante automático nem NPC.
+- Transferências orçamentárias que não puderem ser distribuídas por falta de ocupante permanecem **no nível superior** de governo.
+- O quórum legislativo é calculado sobre as **cadeiras efetivamente ocupadas** (ver `07 — Leis`).
+
+> **Risco R-BT-01.** O cenário inicial do Bot Test não pode deixar territórios politicamente inoperantes. A solução é prover contas reais de bots com residências, **sem NPCs e sem exceções de elegibilidade**.
+
 ---
 
 # 06.7. Direito de voto
@@ -166,6 +196,14 @@ Para Prefeito, Governador e Deputado, o candidato com maior número de votos ven
 
 Não existe segundo turno para esses cargos.
 
+### Desempate por sorteio auditável
+
+Empates em Prefeito, Governador e na **última vaga da Câmara** são resolvidos por **sorteio entre os empatados**. O sorteio:
+
+- usa uma **semente registrada** (seed);
+- é **reproduzível e auditável**: semente, lista de empatados e resultado ficam no histórico da eleição;
+- é um mecanismo de apuração, não um cargo de decisão discricionária.
+
 ## Empate para Presidente
 
 Somente a eleição presidencial possui uma regra especial de desempate.
@@ -176,20 +214,22 @@ O segundo turno possui a mesma estrutura básica de votação, utilizando os mes
 
 Caso ocorra novo empate, a votação entre os candidatos empatados é repetida até que exista um vencedor.
 
+O sorteio com semente registrada **não** se aplica à eleição presidencial: ela mantém o segundo turno entre os empatados, descrito acima. O sorteio vale para Prefeito, Governador e para o empate que afete a última cadeira da Câmara.
+
 ---
 
 # 06.9. Reeleição
 
-Um jogador pode ser reeleito para o mesmo cargo no máximo uma vez consecutivamente.
+O parâmetro é o **limite de mandatos consecutivos** no mesmo cargo.
 
-Assim, o padrão inicial permite até dois mandatos consecutivos no mesmo cargo:
+- valor padrão: **2** (primeiro mandato + uma reeleição);
+- mínimo: **1** (nenhuma reeleição); máximo: **10**;
+- alterável por lei paramétrica (`11 — Leis Paramétricas`);
+- aplica-se aos cargos executivos e aos Deputados.
 
-1. primeiro mandato;
-2. uma reeleição.
+O contador de mandatos consecutivos conta todo mandato iniciado com posse, inclusive o mandato obtido por deposição por milícia (06.25). Não confundir com o contador de **mandatos concluídos**, usado para experiência (06.3).
 
-O limite de reeleição é um parâmetro que pode ser alterado por lei paramétrica.
-
-A regra aplica-se aos cargos executivos e aos Deputados.
+**Mudanças de lei e mandatos em curso.** Alterações de duração de mandato, requisitos de elegibilidade e limite de mandatos consecutivos afetam **somente eleições cuja janela de inscrição se abre após a vigência da mudança**. Não há retroatividade. Salários e parâmetros fiscais passam a valer no tick efetivo previsto pelo processo legislativo (`07 — Leis`).
 
 A eleição para outro cargo não constitui reeleição. Por exemplo, um Prefeito que posteriormente concorre a Governador está iniciando outro cargo, desde que cumpra os requisitos exigidos.
 
@@ -213,7 +253,9 @@ Mandato de 6 meses.
 
 Mandato de 6 meses.
 
-O encerramento normal do mandato abre o período eleitoral correspondente.
+Os mandatos acima são os valores padrão; a duração de cada mandato é parametrizável por lei (faixa em `11`).
+
+O encerramento normal do mandato abre o período eleitoral correspondente. **Cada cargo possui ciclo eleitoral independente**, inclusive a Câmara (06.19); não existe um "ciclo comum" entre cargos.
 
 A perda de um cargo durante o mandato não transforma automaticamente a sucessão em uma nova eleição. O procedimento depende da forma pela qual o cargo foi perdido, conforme a seção de sucessão.
 
@@ -236,6 +278,24 @@ Cada cargo possui seu próprio multiplicador.
 Os multiplicadores são parâmetros políticos e podem ser alterados pelo sistema de leis paramétricas.
 
 Como o salário mínimo também é uma lei federal paramétrica, mudanças no salário mínimo afetam simultaneamente a remuneração dos cargos políticos e os pisos salariais aplicáveis ao restante da economia.
+
+### Quem paga e como acumula
+
+| Cargo | Pagador |
+|---|---|
+| Presidente | União |
+| Deputado | União |
+| Governador | Estado |
+| Prefeito | Município |
+
+- O salário **acumula diariamente**.
+- Se o pagador não tiver caixa, o valor devido vira **obrigação pendente**: não há saldo negativo e não há criação de dinheiro.
+- O substituto passa a acumular **a partir da sua posse**.
+- Depende do registro monetário (P0.07, `TASK_QUEUE.md`).
+
+### Relação com o teto salarial
+
+O salário político **não** entra no limite pessoal de recebimento diário `S` (1.5 × skill), mas **está sujeito ao teto salarial legal `T`**. Uma lei que defina `T` é inválida se `T` for menor que o maior salário político vigente (regra de coerência, não um limite automático adicional). Detalhes em `11 — Leis Paramétricas` §11.1.
 
 Isso cria um trade-off político real: um governante pode defender aumento do salário mínimo, beneficiando trabalhadores e aumentando sua própria remuneração, mas também elevando os custos de empresas e podendo gerar efeitos econômicos negativos.
 
@@ -337,9 +397,9 @@ Entre suas responsabilidades estão:
 
 O Governador distribui os recursos recebidos pelo Estado entre os municípios sob sua administração, conforme as regras orçamentárias.
 
-### Orçamento militar estadual
+### Sugestões sobre defesa
 
-O Governador define a distribuição do orçamento militar destinado à estrutura militar do Estado, respeitando as regras gerais do orçamento público e os parâmetros aplicáveis.
+O Exército é **federal** e seu orçamento é controlado pelo Presidente (`19 — Militar`). O Governador **pode sugerir** ao Presidente, mas **não possui orçamento militar estadual independente**.
 
 ### Administração estadual
 
@@ -434,7 +494,7 @@ Não existem deputados estaduais ou municipais na primeira versão.
 
 Os Deputados são eleitos diretamente pelos jogadores residentes no país.
 
-A eleição ocorre no mesmo ciclo eleitoral dos cargos executivos nacionais e subnacionais.
+A eleição da Câmara possui **ciclo eleitoral próprio**, independente dos ciclos dos cargos executivos (06.10).
 
 Cada jogador possui um voto.
 
@@ -444,7 +504,11 @@ Não existe uma eleição proporcional complexa por Estado ou outro mecanismo in
 
 O mandato de cada Deputado é de 6 meses.
 
-Os Deputados seguem a regra geral de uma reeleição consecutiva.
+Os Deputados seguem a regra geral do limite de mandatos consecutivos (06.9).
+
+### Indicação de substituto por Deputado
+
+Cada Deputado indica o seu **próprio substituto** (06.24). O número de cadeiras ocupadas, e não o número nominal, é a base de quórum (`07 — Leis`).
 
 ---
 
@@ -526,6 +590,23 @@ Além disso, o ocupante de cargo político não pode atuar como funcionário de 
 
 A propriedade da empresa não é automaticamente transferida nem encerrada ao assumir o cargo. A empresa continua pertencendo ao jogador, mas não pode utilizar o cargo político para obter contratos públicos.
 
+### Quatro conceitos distintos
+
+Este documento distingue, sem confundir:
+
+1. **emprego** (contrato de trabalho com empresa);
+2. **cargo político**;
+3. **liderança de milícia** (`19 — Militar`);
+4. **propriedade de empresa**.
+
+Regras:
+
+- Assumir cargo político **encerra o contrato de emprego** do jogador (o político não pode ser funcionário de outra empresa).
+- **Propriedade** da empresa é preservada, com restrição a contratos públicos. Propriedade não se confunde com o salário de "Dono" nem com lucros; **não existe sistema de dividendos** inventado por este documento.
+- O **Dono** pode receber o salário associado ao cargo Dono, pago pela conta da empresa e sujeito aos limites salariais `S` e `T` (`11 — Leis Paramétricas`, 11.1.0). **Não há retirada de lucro, dividendos ou distribuição passiva de resultados** no primeiro Bot Test. Propriedade não equivale a receber dinheiro, e o salário do Dono não é um mecanismo de saque arbitrário. Preservar a propriedade não cria exceção às regras de emprego, conflito de interesses ou contratos públicos. A implementação pertence a `02 — Empresas` (P1.04).
+- A restrição de **contrato público** aplica-se a contratos de fornecimento de bens, serviços ou obras ao governo (`18 — Contratos`). Um **leilão de lote público não é** contrato de fornecimento para este fim: uma empresa de político pode participar do leilão de lote, seguindo as mesmas regras públicas de participação e sem tratamento preferencial.
+- A regra de preservação da propriedade **não** é estendida a militares (`19 — Militar` mantém suas restrições próprias).
+
 A fiscalização dessa regra depende de transparência e registros públicos de contratos.
 
 ---
@@ -537,6 +618,16 @@ Ao assumir um cargo político, o jogador deve indicar previamente um **substitut
 O substituto deve possuir todas as qualificações necessárias para ocupar o cargo naquele momento.
 
 A indicação não transfere o cargo imediatamente. O substituto somente assume caso o titular perca o cargo por um motivo que utilize o sistema de sucessão normal.
+
+### Regras de indicação e vacância
+
+1. **Cada titular indica o seu substituto**, inclusive cada Deputado.
+2. A indicação é **alterável**, com **histórico auditável** de alterações.
+3. Se o substituto estiver **inelegível ou indisponível** no momento da sucessão, realiza-se **eleição extraordinária**.
+4. O cargo permanece **vago até a posse do sucessor**; não há interino automático e **prazos administrativos ficam suspensos** durante a vacância.
+5. **Assumir outro cargo político vaga o anterior** (a regra de um cargo por jogador, 06.2, permanece).
+
+As ações, validações e telas correspondentes (indicar/alterar substituto, consultar vacâncias) ficam **registradas como pendentes** em `TASK_QUEUE.md`; não há implementação nesta consolidação.
 
 ### Perda normal do cargo
 
@@ -560,7 +651,23 @@ Nesse caso, o substituto previamente indicado pelo Presidente deposto **não ass
 
 O líder da milícia vencedora assume a Presidência.
 
-O novo Presidente inicia um **novo mandato completo de 6 meses**, como se tivesse acabado de iniciar um mandato eleitoral.
+A posse por deposição é **exceção explícita aos requisitos de candidatura** (06.3): o líder não precisa cumprir tempo de conta, Carisma, experiência ou diploma.
+
+O novo Presidente inicia um **novo mandato completo de 6 meses** (valor padrão), como se tivesse acabado de iniciar um mandato eleitoral. Esse mandato **conta para o limite de mandatos consecutivos** (06.9), mas **não gera crédito de experiência** (06.3).
+
+Consequências para o líder que assume:
+
+- o **emprego contratado é encerrado** (06.23);
+- a **propriedade de empresas é preservada**, com restrição a contratos públicos;
+- o **cargo político anterior, se houver, é vago** (06.24);
+- a **liderança da milícia é transferida** conforme `19 — Militar`.
+
+**Interregno após a deposição:**
+
+- propostas aguardando sanção, veto ou derrubada de veto retornam a uma votação completa da nova Câmara;
+- votações em andamento são suspensas enquanto não houver Câmara e reiniciadas com três dias completos quando a nova Câmara estiver constituída;
+- leis já sancionadas que aguardam apenas a data de vigência seguem o calendário normal;
+- prazos legislativos ficam suspensos enquanto não houver Câmara.
 
 A deposição presidencial não remove automaticamente Governadores ou Prefeitos.
 
@@ -570,13 +677,15 @@ O mandato da Câmara dos Deputados é encerrado e uma nova eleição para a Câm
 
 As garantias constitucionais permanecem válidas após a deposição. Uma mudança de governo não apaga as restrições constitucionais existentes.
 
-As consequências específicas sobre o Exército, STF futuro ou outras instituições são tratadas nos documentos correspondentes.
+As consequências específicas sobre o Exército ou outras instituições são tratadas nos documentos correspondentes. Qualquer mecanismo judicial futuro poderá ser usado quando existir; este documento não o pressupõe.
 
 ---
 
 # 06.26. Sucessão após o substituto
 
 Se o substituto assumir e também perder o cargo antes do final do mandato, é realizada uma eleição extraordinária para aquele cargo.
+
+A eleição extraordinária também é realizada quando o substituto indicado estiver **inelegível ou indisponível** no momento da sucessão (06.24). O cargo fica vago até a posse e os prazos administrativos ficam suspensos.
 
 A eleição extraordinária utiliza os mesmos critérios territoriais e de elegibilidade do cargo correspondente.
 
@@ -634,6 +743,8 @@ Os valores de:
 - prazo de obrigações administrativas;
 
 são parâmetros do sistema e podem ser calibrados durante o Bot Test.
+
+Indicadores de AFK e de vacância aparecem na interface (ver `SITEMAP-REVIEW.md`).
 
 ---
 
@@ -702,6 +813,10 @@ Fornece os diplomas necessários para candidaturas presidenciais.
 
 Define Energia, que é consumida pelas ações administrativas dos políticos.
 
+### `02 — Empresas`
+
+Define o papel do Dono e a relação entre propriedade, salário e lucros (pendente para P1.04).
+
 ### `07 — Leis`
 
 Define o sistema legislativo detalhado e as regras das leis.
@@ -716,11 +831,23 @@ Define a infraestrutura física onde funcionam instituições e projetos públic
 
 ### `11 — Leis Paramétricas`
 
-Define os parâmetros políticos ajustáveis por lei, como salário mínimo, multiplicadores de remuneração, requisitos de candidatura e limite de reeleição quando esses parâmetros forem disponibilizados.
+Define os parâmetros políticos ajustáveis por lei, como salário mínimo, multiplicadores de remuneração, requisitos de candidatura, duração de mandato e limite de mandatos consecutivos.
+
+### `12 — Histórico do Mundo`
+
+Registra posses, mandatos, deposições, sorteios de desempate e histórico de indicação de substitutos.
+
+### `14 — Rankings`
+
+Rankings políticos usam o histórico de mandatos.
 
 ### `17 — Transparência de Mercado`
 
 Fornece mecanismos de consulta e auditoria dos registros públicos relevantes.
+
+### `18 — Contratos`
+
+Define contrato público para a restrição de conflito de interesses (06.23).
 
 ### `19 — Militar`
 
@@ -820,12 +947,12 @@ Verificar que decisões políticas de distribuição e execução alteram corret
 
 Os seguintes valores devem permanecer parametrizados para permitir ajuste após Bot Test:
 
-- Carisma mínimo por cargo;
+- Carisma mínimo (parâmetro único);
 - tempo mínimo de conta;
 - exigências adicionais de candidatura;
-- duração dos mandatos, caso futuramente parametrizada;
+- duração dos mandatos (parâmetro legal, faixa em `11`);
 - duração das janelas eleitorais, caso futuramente parametrizada;
-- número máximo de reeleições;
+- limite de mandatos consecutivos (1–10, padrão 2);
 - multiplicador salarial de cada cargo;
 - custo de Energia das ações administrativas;
 - ganho diário de Inteligência por cargo;
@@ -852,3 +979,17 @@ Esses parâmetros não devem exigir alteração estrutural do sistema quando for
 8. **Contestação:** eleições são o mecanismo normal de mudança; deposição é uma ferramenta extraordinária do sistema de Milícias.
 9. **Economia:** remuneração e decisões políticas permanecem conectadas à economia e ao orçamento público.
 10. **Parâmetros ajustáveis:** números de balanceamento devem ser ajustáveis sem redesenhar a estrutura do sistema.
+
+---
+
+# 06.36. Dependências de execução (motivo do status REVIEW)
+
+As decisões de política deste documento foram aprovadas pelo Game Director. Ficam registradas apenas dependências de execução:
+
+| Item | Dependência | Onde |
+|---|---|---|
+| Salários políticos | pagamento, acúmulo diário e obrigação pendente dependem do registro monetário | P0.07a/P0.07b |
+| Campanhas | reserva financeira e destino ao sumidouro dependem do registro monetário; categorias de subsídio dependem do catálogo | P0.07, P0.02 |
+| Dono | implementação do salário do cargo Dono | P1.04 |
+| R-BT-01 | o cenário inicial não pode deixar territórios inoperantes: contas reais de bots com residências, sem NPC e sem exceção de elegibilidade | P1.18 (cenário) |
+| Teto de déficit | parâmetro de `11` ainda sem proposta | após P0.07a |
