@@ -28,7 +28,11 @@ def payment_status(amount) -> str:
 
 def _check(player, now, bal, target) -> Optional[ActionResult]:
     origin = PlayerLocation.objects.select_related("lot").get(player=player).lot
-    return services.travel_refusal(player, origin, target)[1]
+    destination, refusal = services.travel_refusal(player, origin, target)
+    if refusal is not None or destination is None:
+        return refusal
+    # Mesma fonte do custo de `start_travel`; só CONSULTA o saldo (nada é cobrado aqui).
+    return services.funds_refusal(player, services.quote_travel(origin, destination, now, player).amount)
 
 
 def _execute(player_id: int, target: Any) -> ActionResult:

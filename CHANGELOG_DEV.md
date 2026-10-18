@@ -4,6 +4,172 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-16 — P0.07b — registro monetário implementado (app `ledger`)
+
+Implementa `design/24` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p0.07b-ledger`, empilhada sobre o PR #10 (que sobre #9 → #8). **Não mergeada; aguarda auditoria externa e aprovação do Game Director.**
+
+### O que foi entregue
+- **Contas e lançamentos** (`ledger/models.py`, `services.py`): contas por tipo; lançamentos imutáveis (modelo, queryset e restrições de banco), em centavos inteiros, com natureza fechada, referência obrigatória, saldos antes/depois e `Explained`; transações atômicas e idempotentes por `key` (mesmo conteúdo devolve o original, conteúdo diferente = `IDEMPOTENCY_CONFLICT`); contas travadas em ordem de id; `MAX_AMOUNT = 10^15` `[PROV]`; estorno técnico que espelha e aponta o original (nunca de emissão, remuneração ou sumidouro). Saldo não-negativo (exceto `ISSUANCE`) também é restrição do banco.
+- **Saldo bruto / reservado / disponível**; reservas (`hold`/`release_hold`, consumo por `HoldUse` na mesma transação); `quote`/`can_afford` sem mover dinheiro.
+- **Retenções genéricas** (`open_retention`/`retain`/`release_retention`, destino escolhido por quem chama) e **interface de roteamento tributário** (`register_tax_resolver`/`route_tax`/`post_taxed_payment`; padrão União; ambiguidade = `TAX_ROUTE_AMBIGUOUS`; compra da União com imposto à União não gera lançamento para ela mesma). Nenhum módulo militar importado (P1.17 conecta).
+- **Sumidouro** só recebe; **dotações de cenário** como única fonte de emissão (`SCENARIO_GRANT`, zero explícito vale, ausente recusa com `SCENARIO_GRANT_UNSPECIFIED`, idempotente por conta).
+- **Obrigações pendentes** (`ledger/obligations.py`): fora do caixa, quitação por competência e id, parcial permitida, imposto recolhido em parcelas que fecham o total, cancelamento com motivo.
+- **Remuneração** (`ledger/remuneration.py`): `submit_remuneration` → `liquidate_remuneration` (lote em ordem estável pela chave intrínseca) e `pay_remuneration_now`; contadores `C_S`/`C_T`/`C_P`; reserva política derivada sem dupla subtração (`P_liberada`); `W > S`, `T` binding, soldo excedente descartado sem obrigação; políticas `PENDING`/`REFUSE`; imposto de renda sobre o bruto; `Explained` completo por pedido; `preview_remuneration` para feedback. Limites (`W`,`S`,`T`) e salário político devido vêm de **provedores** registrados pelos sistemas donos; sem provedor a liquidação recusa.
+- **Viagem**: handler de pagamento (`PLAYER → UNION`, `TRAVEL_FEE`) que só cobra com cenário monetário ativo; `check_action` informa `INSUFFICIENT_FUNDS` sem cobrar. Em `travel.services`, `register_payment_handler` ganhou `active=` e `check_funds=` opcionais (comportamento anterior preservado).
+- **Jogador**: conta criada com o jogador (hook) e dotação do cenário ativo.
+- **Auditoria** (`audit_ledger`, exit code ≠ 0) reconstrói saldos a partir do log e confere os invariantes 1–13 e contadores; **métricas** (`ledger_metrics`).
+
+### Decisões técnicas registradas (não alteram mecânica; ver `24` §24.19.1)
+`PENDING` sem caixa vira obrigação do bruto inteiro; `REFUSE` não toca contadores; roteamento tributário ambíguo desfaz o lote; chave da viagem é composta (`travel:<jogador>:<instante>:<origem>:<destino>`) porque o pagamento ocorre antes de a `Journey` existir; `P_liberada` substitui a marcação "dia liquidado" (mesmo efeito, aceita dois pedidos políticos no mesmo dia); operações do registro recebem só inteiros em centavos (`from_reais` converte e recusa o que não for exato).
+
+### Pendências conhecidas (tarefas seguintes)
+Provedor de `W`/`S`/`T` a partir de `skills`/`11` (P1.04/P1.12) e provedor do salário político (P1.11); valores de dotação do cenário (P1.18, configuração); política de caixa insuficiente por tipo (P1.04/P1.17/P1.09); ligação do tratamento (P0.04) a um prestador; resolvedor tributário militar (P1.17). Nenhuma delas bloqueia o registro.
+
+### Testes
+250 testes no app (`ledger/tests/`; 148 na primeira entrega + 23 da primeira correção + 22 da revisão consolidada + 30 da correção da emissão + 9 da serialização da configuração + 18 da imutabilidade da linha de dotação): transações, propriedade com sequência aleatória (conservação a cada passo), rotas, imutabilidade, estorno, idempotência, atomicidade, reservas, retenções, roteamento, dotações, obrigações, remuneração (inclui 20 permutações de chegada com resultado idêntico), integração com viagem e jogador, auditoria (adulteração direta no banco), concorrência (threads). Suíte completa: 917 testes OK em PostgreSQL 16 (0 pulados) e em SQLite (9 pulados: o teste do banco esperado e os 8 de ordem estrita, só PostgreSQL), após a imutabilidade da linha de dotação; `check` e `makemigrations --check` limpos.
+
+### Documentos alterados
+`24` (centavos nos serviços, chave da viagem, `P_liberada`, §24.19.1), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
+
+### P0.07b — estado `active` do cenário pelo ORM (2026-10-18)
+
+> **Ajuste de precisão (mesma data, commit seguinte):** a permissão virou `_activation_permit` (privada) e o texto abaixo foi corrigido para o limite de confiança real; +4 testes de fronteira (números na seção "Fronteira" ao fim desta entrada).
+
+Revisão do commit `28036d7`: `_ScenarioQuerySet.update()` só entrava no protocolo de bloqueio quando `name` estava nos argumentos; `update(active=...)` passava direto, e `active=True` pelo ORM contornava a validação das dotações exigidas feita por `activate_scenario()`. Correção pontual, sem alterar decisões econômicas.
+1. **Ativar só pelo serviço.** `activate_scenario()` valida as dotações exigidas (já com tudo travado) e só então concede `_activation_permit(pk)` (mecanismo **interno e privado**, variável de contexto, só para aquele cenário e só dentro do bloco; usado em um único ponto, dentro de `activate_scenario`). As transições para ativo pelos caminhos comuns do ORM são recusadas com `ScenarioActivationForbiddenError` (`SCENARIO_ACTIVATION_FORBIDDEN`): `QuerySet.update` (valor ou expressão), `save` (também com `update_fields`; instância "nova" com pk explícito, que o Django grava como UPDATE), `bulk_update`, `bulk_create` (cenário nasce inativo), `create`/`get_or_create`/`update_or_create`. Upsert em lote de cenários é recusado. `save(update_fields=[...sem "active"])` não ativa; manter ativo o que já está ativo é no-op permitido; uma instância velha não reativa um cenário que o serviço desativou.
+2. **Protocolo.** `update`/`bulk_update`/`save` que tocam `name` ou `active` travam **todos** os cenários em ordem de pk como primeiro passo e só depois leem e decidem (nova `bulk_update` de `LedgerScenario`, antes sem guarda própria). Desativar é livre, mas sob o mesmo protocolo. Sem lock novo fora da ordem.
+3. **Contorno do mesmo tipo achado no teste, corrigido junto** (`ScenarioGrantLine.save`): uma instância "nova" com o pk de uma linha já usada, apontando para outro cenário sem histórico, movia a linha (a auditoria acusava `GRANT_LINE_MISSING`), porque a leitura do estado guardado dependia de `_state.adding`. Agora depende só de `pk is not None`. Mesma regra para renome de cenário por `save`.
+4. **Testes (+17; `ledger` = 270)**: `test_scenario_activation_guard.py` (14, SQLite e PostgreSQL: caminhos de `update`, `save`, criação, `bulk_*`, permissão restrita ao cenário e ao bloco, serviço ainda recusa cenário incompleto e o ORM não contorna, instância velha, desativação em todos os caminhos, renome/exclusão inalterados, pk explícito em linha de dotação); `test_scenario_concurrency.py`: 1 de propriedade (2 ativações pelo serviço × 2 ativações proibidas pelo ORM × 2 desativações, 4 rodadas: sem deadlock, nunca ativo o incompleto, no máximo um ativo, auditoria limpa; SQLite e PostgreSQL) e 2 determinísticos só PostgreSQL (uma thread pausada segurando os bloqueios, a outra espera e termina depois: desativação pelo ORM × ativação pelo serviço × `update`/`save` proibidos; e a ordem inversa). O teste antigo "banco recusa dois ativos" passou a usar SQL direto (o ORM agora recusa antes). O auxiliar `fund_account` restaura o cenário ativo anterior pelo `activate_scenario`.
+5. **Os testes detectam a falha**: com a guarda de ativação neutralizada (e a correção do pk explícito revertida), 12 verificações falham (10 FAIL + 2 ERROR, em PostgreSQL); com o `update` de `active` sem o bloqueio inicial, os 2 estritos de PostgreSQL falham ("deveria estar esperando"/"não chegou a travar").
+
+**Evidências reais**
+- PostgreSQL 16.15 (cluster local descartável, `POLIS_EXPECT_DB=postgresql`): suíte completa → `Ran 937 tests ... OK` (0 pulados); `test_scenario_concurrency` + `test_concurrency` + `test_grant_line_immutability` + `test_scenario_activation_guard` repetidos 12 vezes → 12 × `Ran 59 tests ... OK`.
+- SQLite: suíte completa → `Ran 937 tests ... OK (skipped=13)` (o teste do banco esperado e 12 só de PostgreSQL); as mesmas quatro suítes repetidas 15 vezes → 15 × `Ran 59 tests ... OK (skipped=13)`; `manage.py test ledger`: 270 testes (13 pulados).
+- `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+
+**Limitações restantes**: `_activation_permit` **não revalida nada** (a validação das dotações exigidas é do `activate_scenario`, sob os bloqueios globais, antes de concedê-la) e **não é defesa contra código Python que a chame de propósito**: a recusa do ORM evita a ativação acidental pelos caminhos comuns. Difere da `_GrantPermit`, que é revalidada em `_check_grant`. A fronteira é garantida por convenção e por teste (nome privado, nenhum outro módulo a importa, um só ponto de uso dentro de `activate_scenario`, e a permissão só é concedida depois da validação). SQL direto segue fora do alcance da guarda (a restrição única parcial do banco ainda impede dois ativos); a ordem estrita só foi exercitada em PostgreSQL 16 (`READ COMMITTED`, uma instância local, `fsync` desligado), sem CI.
+
+**Fronteira (ajuste de precisão)**: `activation_permit` → `_activation_permit` (privada; nenhum outro módulo a importa; um único ponto de uso, dentro de `activate_scenario`). Nenhuma mudança de comportamento da guarda. +4 testes em `test_scenario_activation_guard.py` (agora 18; `ledger` = 274): a permissão não é exposta pelos módulos públicos; o único uso fora de `models.py` está dentro de `activate_scenario` (verificado por AST); o serviço só a concede depois de validar (recusa por dotação ausente ou cenário inexistente: a permissão nem é concedida; ativação ok: concedida uma vez, para o pk certo, em transação atômica, com as linhas exigidas já explícitas); todos os papéis exigidos continuam validados.
+- PostgreSQL 16.15: suíte completa → `Ran 941 tests ... OK` (0 pulados); as quatro suítes afetadas, uma execução → `Ran 63 tests ... OK`.
+- SQLite: suíte completa → `Ran 941 tests ... OK (skipped=13)`; `manage.py test ledger`: 274 testes (13 pulados).
+- `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+- As repetições (12× PostgreSQL, 15× SQLite) citadas acima foram da versão anterior; nesta rodada o código só mudou de nome e em comentários, e as suítes afetadas rodaram uma vez em PostgreSQL.
+
+---
+
+### P0.07b — ordem global de bloqueio na guarda de `ScenarioGrantLine` (2026-10-18)
+
+Revisão do commit `9e15929`: a guarda lia os cenários da linha, travava esse conjunto em ordem de pk, **relia** os dados e `_check_line_changes()` podia travar cenários adicionais achados só na releitura (ex.: outra operação moveu a linha para outro cenário enquanto a primeira esperava). Cada chamada a `lock_scenarios()` era ordenada, mas a sequência não: ciclo possível com `activate_scenario()`. Corrigido sem alterar nenhuma decisão de design nem enfraquecer a guarda.
+1. **Abordagem escolhida (a mais segura para o escopo)**: toda mutação de configuração (`activate_scenario`, `set_grant_line`, qualquer escrita ORM em `ScenarioGrantLine`, renome/exclusão de `LedgerScenario`) trava **todos** os cenários em ordem crescente de pk, numa única instrução (`lock_all_scenarios()`), **como primeiro bloqueio**; só depois lê dados. Nenhuma verificação trava mais nada. Cenário referenciado que não esteja no conjunto travado (criado/removido entre as leituras) → `ScenarioSetChangedError` (`SCENARIO_SET_CHANGED`, repetir a operação), nunca um bloqueio fora de ordem. Emissão: contas por id e depois **um** cenário (o emissor), nada depois. Sem ciclo possível.
+2. **Protocolo documentado** em `ledger/models.py`, `ledger/services.py` e `design/24` §24.11 (pontos 1–3). Regra: não compor emissão e mutação numa mesma transação externa. `set_grant_line` passou a usar o mesmo conjunto travado.
+3. **Testes** (+3, `ledger` = 253): propriedade em SQLite e PostgreSQL (dois movimentos, ou movimento e exclusão, da mesma linha sem histórico com uma ativação concorrente: terminam, configuração final consistente, no máximo um cenário ativo, `audit_ledger().ok`); e dois testes determinísticos **só PostgreSQL** (`PostgresLockOrderWithMovingLineTests`): mover × mover e mover × excluir a mesma linha sem histórico, com ativação concorrente, forçando o intercalamento por portões nas chamadas de `lock_scenarios`; verificam ausência de deadlock, configuração final e que, depois da emissão, a linha continua imutável.
+4. **O teste detecta a falha**: rodados contra o `models.py`/`services.py` do `9e15929`, em PostgreSQL, os dois testes determinísticos falham com `deadlock detected` real na thread da ativação; contra o código novo passam.
+
+**Evidências reais**
+- PostgreSQL 16.15 (cluster local descartável, UTF8, `POLIS_EXPECT_DB=postgresql`): suíte completa → `Ran 920 tests ... OK` (0 pulados); `test_scenario_concurrency` + `test_concurrency` + `test_grant_line_immutability` repetidos 15 vezes → 15 × `Ran 42 tests ... OK`.
+- SQLite: suíte completa → `Ran 920 tests ... OK (skipped=11)` (o teste do banco esperado e 10 de ordem estrita, só PostgreSQL); as mesmas três suítes repetidas 15 vezes → 15 × `Ran 42 tests ... OK (skipped=11)`. App `ledger` em SQLite: `Ran 253 tests ... OK (skipped=11)`.
+- `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+
+**Limitações restantes**: a ordem estrita e o deadlock evitado só foram exercitados em PostgreSQL 16 (`READ COMMITTED`, uma instância local, `fsync` desligado); sem CI em PostgreSQL; em SQLite os 10 testes estritos são pulados. Quem chama as operações de configuração com `SCENARIO_SET_CHANGED` precisa repetir a operação (nenhum chamador de produção existe ainda). SQL direto continua fora do alcance da guarda (contido por `GRANT_HISTORY_INCONSISTENT` e pela auditoria).
+
+---
+
+### P0.07b — imutabilidade efetiva da linha de dotação (2026-10-17)
+
+Única ressalva importante da auditoria independente (Grok, "aprovado com ressalvas" para o Bot Test): a imutabilidade de `ScenarioGrantLine` após a primeira dotação existia só no serviço `set_grant_line`; o ORM (`update`, `delete`, `save`...) e "excluir e recriar" a contornavam. Escopo único; nenhuma decisão de design alterada.
+1. **Guarda no modelo** (`ledger/models.py`): com dotação histórica para o par (cenário, papel), a linha não muda de valor, **cenário nem papel** e não é excluída por `save` (inclusive `update_fields`), `QuerySet.update`, `bulk_update`, `bulk_create` (upsert em lote recusado), `update_or_create`, `delete` (instância, `QuerySet`, cascata), `_raw_delete` e `_base_manager` (`Meta.base_manager_name`, migração `0003`). Recusa `GrantLineLockedError` (`GRANT_LINE_LOCKED`). Recriar a linha de um par com histórico com valor diferente do emitido também é recusado (inserção, `set_grant_line` ou mover outra linha para o par); repor o valor histórico é permitido. Para o renome ou a exclusão do cenário (que escapariam da regra pela referência por nome), cenário com dotações não muda de nome nem é excluído.
+2. **Protocolo de bloqueio respeitado**: a guarda trava os cenários envolvidos em ordem crescente de pk e consulta o histórico **depois** do bloqueio (`lock_scenarios`, o mesmo do serviço de emissão); uma emissão em andamento termina antes. A verificação roda antes do `delete` do Django (o `pre_delete` fica só como última defesa), porque uma recusa dentro do `atomic(savepoint=False)` do Collector envenenaria uma transação externa.
+3. **Segunda defesa em `_check_grant`**: antes de autorizar emissão nova, o valor configurado tem de coincidir com todas as dotações históricas do cenário e papel; senão recusa com **`GRANT_HISTORY_INCONSISTENT`** (detalhe: valor configurado e valores históricos), sem gravar nada. A auditoria continua detectando a divergência histórica (`GRANT_AMOUNT_MISMATCH`). `set_grant_line` passou a recusar também a recriação com valor diferente do histórico.
+4. **Comportamento normal preservado**: chamadas que não alteram nada, linhas e cenários sem dotações, outros papéis e outros cenários continuam livres.
+5. **Testes** (+18, `ledger` = 250): `test_grant_line_immutability.py` (12): exclusão (instância, queryset, em lote, cascata, `_base_manager`, `_raw_delete`), alteração (queryset, `F()`, instância, `update_fields`, `bulk_update`, `update_or_create`, upsert, serviço), renome do cenário, **exclusão e recriação com valor alterado não emite o valor adulterado**, **linha adulterada por SQL direto: emissão nova recusada, auditoria aponta as antigas, nenhuma transação, lançamento ou saldo novo**, recriação por SQL, idempotência e fluxos normais; concorrência em `test_scenario_concurrency.py`: 2 de propriedade (SQLite e PostgreSQL: `update`/`delete` do ORM × emissão) e 4 de ordem estrita só em PostgreSQL (`update`, `delete`, `save` e exclusão do cenário esperam a emissão em andamento e são recusados).
+6. **Os testes detectam a falha**: com a guarda do modelo neutralizada, em PostgreSQL, 15 verificações falham (as de exclusão do cenário continuam recusadas pelo `pre_delete`); com a checagem de `_check_grant` neutralizada, os 2 testes de SQL direto falham.
+
+**Evidências reais**
+- PostgreSQL 16.15 (cluster local descartável, UTF8, `POLIS_EXPECT_DB=postgresql`): suíte completa → `Ran 917 tests ... OK` (0 pulados; os 8 testes de ordem estrita rodaram); `test_scenario_concurrency` + `test_concurrency` + `test_grant_line_immutability` repetidos 15 vezes → 15 OK (39 testes cada).
+- SQLite: suíte completa → `Ran 917 tests ... OK (skipped=9)` (o teste do banco esperado e os 8 de ordem estrita, que exigem PostgreSQL); as mesmas três suítes repetidas 15 vezes → 15 OK.
+- `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+
+**Limitações restantes**: SQL direto (fora do ORM) continua possível por definição; ele é contido pela recusa de emissões novas (`GRANT_HISTORY_INCONSISTENT`) e detectado pela auditoria, não impedido (um trigger de banco seria a única barreira real e não faz parte deste escopo). A ordem estrita de bloqueio só foi exercitada em PostgreSQL 16 (`READ COMMITTED`, uma instância local, `fsync` desligado); em SQLite esses 8 testes são pulados. As demais pendências das entradas abaixo continuam (sem CI em PostgreSQL, `ValueError` dos serviços com tipo de conta inválido, provedores P1.x).
+
+---
+
+### P0.07b — serialização da configuração de dotações com a emissão (2026-10-17)
+
+O Game Director aprovou as três interpretações da correção anterior (mapa fechado de cinco papéis, empresas fora; cenário **ativo** para emissão nova, replay idempotente permitido depois da desativação; linha com dotações é imutável). Última questão técnica da revisão: `_check_grant()` travava o cenário, mas `set_grant_line()` não participava do protocolo, e `activate_scenario()` travava só o cenário ativado. Corrigido sem alterar nenhuma decisão de design.
+1. **`set_grant_line()`** roda numa transação atômica: trava o cenário (`FOR UPDATE`, o mesmo bloqueio da emissão), **relê** a linha e as dotações já emitidas depois de adquirir o bloqueio e então grava; `GRANT_LINE_LOCKED` mantido. Antes, validar uma dotação e alterar a linha antes do commit podia emitir um valor diferente da linha final.
+2. **`activate_scenario()`** trava **todos** os cenários em ordem crescente de pk (`_lock_scenarios`), relê as linhas e só então desativa os outros e ativa o escolhido. Antes, duas ativações simultâneas travavam cada uma o seu cenário e depois tentavam atualizar o outro: deadlock em PostgreSQL. Agora elas se serializam, e uma emissão em andamento (que segura o cenário emissor até confirmar) termina antes da ativação.
+3. **Protocolo único e sem ciclo** (documentado no código e no `design/24` §24.11): emissão = contas em ordem de id e depois um cenário; `set_grant_line` = um cenário; `activate_scenario` = todos os cenários em ordem de pk. Ninguém espera por conta segurando cenário.
+4. **Defesa em profundidade**: restrição única parcial `ledger_single_active_scenario` (no máximo um cenário com `active = true`), migração `0002_single_active_scenario`.
+5. **Testes** (`ledger/tests/test_scenario_concurrency.py`, 9): *propriedades* em SQLite e PostgreSQL (alteração de linha × emissão nunca emite valor que contradiga a linha final; 6 ativações simultâneas × 4 rodadas sem deadlock e com exatamente um ativo; ativação × emissão; o banco recusa dois ativos; alteração falha mantém a configuração) e *ordem estrita* só em PostgreSQL (4 testes: uma thread segura o bloqueio no meio da operação e a outra tem de esperar e terminar depois: alteração de linha × emissão, ativação × emissão, emissão × ativação, ativação × ativação). Verificam valor emitido, configuração final, no máximo um ativo e `audit_ledger().ok`.
+6. **Os testes detectam a corrida**: rodados contra o código anterior à correção (em PostgreSQL), 5 dos 9 falham (alteração de linha sem bloqueio; ativações simultâneas com deadlock; emissão que não espera a ativação; restrição de banco); contra o código novo, os 9 passam. Os dois testes de propriedade de emissão × linha/ativação passam nos dois códigos, porque a janela da corrida real é minúscula: quem prova a ordem são os testes de ordem estrita.
+
+**Evidências reais**
+- PostgreSQL 16.15 (cluster local descartável, UTF8, `POLIS_EXPECT_DB=postgresql`): suíte completa → `Ran 899 tests ... OK` (0 pulados, os 4 testes de ordem estrita rodaram); `test_scenario_concurrency` + `test_concurrency` repetidos 15 vezes → 15 OK.
+- SQLite: suíte completa → `Ran 899 tests ... OK (skipped=5)` (os pulados: o teste do banco esperado e os 4 de ordem estrita, que exigem PostgreSQL); as mesmas duas suítes de concorrência repetidas 15 vezes → 15 OK; `ledger`: 232 testes.
+- `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+
+**Pendências residuais**: as das entradas abaixo (sem CI em PostgreSQL; uma única instância local com `fsync` desligado; `ValueError` dos serviços com tipo de conta inválido; provedores P1.x; permissão de emissão protegida por revalidação e não por inacessibilidade em Python). Novas: a cobertura de ordem estrita é só em PostgreSQL 16 com `READ COMMITTED` (padrão); `grant_for_role` lê o cenário ativo e a linha antes de pedir a emissão sem bloquear, e a revalidação em `_check_grant` recusa se a configuração mudou nesse intervalo (recusa, nunca valor errado).
+
+---
+
+### P0.07b — bloqueio P0 da emissão (2026-10-17)
+
+Achado da revisão externa do commit `7c6238a`: `SCENARIO_GRANT` era aceita por `transfer()`/`post_transaction()` (`ISSUANCE` → conta operacional) sem validar a dotação, e `grant_scenario_allocation()` só verificava se o cenário existia. Corrigido sem reabrir decisões de mecânica (design/24 §24.11).
+1. **Via única de emissão, no serviço.** `post_transaction` recusa `SCENARIO_GRANT` (`ISSUANCE_NOT_ALLOWED`, `why=grant_path_only`) sem uma permissão interna (`_GrantPermit`) que só `grant_scenario_allocation` cria e que tem de descrever exatamente a transação (uma perna, destino, valor, chave `grant:<cenário>:<conta>`, referência, `explained`). Mesmo com permissão, `_post` revalida a dotação **dentro da transação, com as contas travadas**: uma permissão forjada só consegue o que o cenário já configurou, uma vez por conta. Chamar `transfer()`/`post_transaction()` com a natureza, a chave e a referência corretas é recusado.
+2. **Validação da dotação** (`grant_scenario_allocation`): cenário existente e **ativo** (`SCENARIO_NOT_FOUND`, `SCENARIO_NOT_ACTIVE`); papel conhecido (`GRANT_ROLE_UNKNOWN`) com linha explícita (`SCENARIO_GRANT_UNSPECIFIED`); papel compatível com o tipo da conta (`GRANT_ROLE_ACCOUNT_MISMATCH`); valor **exatamente** igual à linha (`GRANT_AMOUNT_MISMATCH`). Sem valor padrão novo e sem emissão alternativa.
+3. **Auditoria — invariante 18**: cada dotação é reconferida só pelo log e pela configuração (cenário, `explained`, chave, transação de uma perna, duplicidade por (cenário, conta), papel, tipo de conta, linha, valor). Os testes incluem adulteração direta no banco e emissão inválida que contorna a validação do serviço (a auditoria não confia nele).
+4. **Testes**: novo `ledger/tests/test_emission.py` (29 casos): transferência direta a partir de `ISSUANCE`, `post_transaction` direto com `SCENARIO_GRANT` (inclusive imitando a dotação exata), permissão reaproveitada ou forjada, valor divergente (acima e abaixo), papel incompatível, papel desconhecido/vazio, linha ausente ou `NULL`, cenário inexistente/inativo/desativado por outro, replay após desativação, e a auditoria; cada recusa confere que saldos, lançamentos e transações ficaram idênticos. Mais um teste de concorrência (dotações paralelas à mesma conta emitem uma vez).
+
+**Decisões técnicas a confirmar pelo Game Director** (o design 24 não as define; não alteram mecânica de jogo, mas fixam interpretação):
+- **Mapa fechado papel → tipo de conta** (`GRANT_ROLE_KINDS`): `player`→jogador/Bot, `union`→União, `state`→Estado, `municipality`→Município, `militia_bank`→banco de milícia, que é exatamente o que o §24.11 nomeia. **Empresas não são papel de dotação** (o §24.11 não as lista). Os testes, que usam contas de empresa, registram um papel só de teste por `mock.patch.dict`; o mapa de produção não muda.
+- **"Autorizado pelo estado do cenário" = cenário ATIVO.** Ativar já exige todas as linhas explícitas (§24.11); só um cenário fica ativo.
+- **Linha que já gerou dotações não muda de valor** (`GRANT_LINE_LOCKED`), para a auditoria comparar cada dotação com a linha; `set_grant_line` também recusa papel fora do mapa.
+
+**Evidências reais**
+- PostgreSQL 16.15 (cluster local descartável, UTF8, `POLIS_EXPECT_DB=postgresql`): suíte completa → `Ran 890 tests ... OK` (0 pulados); `test_concurrency` repetido 15 vezes seguidas → 15 OK; `test_concurrency` + `test_emission` repetidos 10 vezes (antes do teste de concorrência de emissão) → 10 OK.
+- SQLite: suíte completa → `Ran 890 tests ... OK (skipped=1)`; `ledger`: 223 testes; `manage.py check` sem problemas e `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+- Um teste novo falhou de forma intermitente na primeira versão (expectativa do teste, não do código): divergências concorrentes recebem `GRANT_AMOUNT_MISMATCH` se chegam antes da dotação válida e `IDEMPOTENCY_CONFLICT` se chegam depois (mesma chave, conteúdo diferente). Ambas são recusas corretas; a asserção passou a exigir "exatamente uma OK, as outras recusadas por um desses dois códigos".
+
+**Pendências residuais**: as mesmas da entrada abaixo (sem CI em PostgreSQL; uma única instância local; `ValueError` dos serviços com tipo de conta inválido; provedores P1.x). Novas: o estado *ativo* do cenário só é exigido na emissão (a auditoria não o reconfere, pois muda depois); e a permissão `_GrantPermit` é protegida por revalidação, não por inacessibilidade em Python (quem importa o módulo privado ainda a constrói, mas só emite o já configurado).
+
+---
+
+### P0.07b — revisão técnica consolidada (2026-10-17)
+
+Segunda rodada pedida pelo Game Director antes da auditoria externa final; nenhuma decisão de mecânica foi reaberta.
+1. **Obrigação pendente**: `open_obligation` compara também `tax_rate` e `tax_territory` na idempotência (mesma chave com qualquer um diferente = `IDEMPOTENCY_CONFLICT`). Para a comparação ser exata, a alíquota é validada e normalizada a 6 casas (`0.1`, `"0.10"` e `Decimal("0.100000")` são a mesma) e o território deve ser vazio ou `tipo:id`; o mesmo vale para `submit_remuneration` (antes uma alíquota com mais de 6 casas era arredondada calada pelo banco e um território malformado só falhava na quitação).
+2. **Dia de competência efetivo**: calculado antes do payload canônico, que agora tem `request` (o pedido; o hash identifica a requisição) e `competence_day` (efetivo, sempre presente). O dia derivado do relógio não entra no hash, para um reenvio depois da meia-noite continuar idempotente. A auditoria sempre exige que o dia efetivo do payload seja o de todos os lançamentos (`TRANSACTION_DAY_MISMATCH`); dia informado diferente do efetivo é achado.
+3. **Auditoria de `uses`**: soma por reserva dos consumos registrados nas transações comparada a `original_amount − amount` (`HOLD_CONSUMPTION_MISMATCH`); reserva inexistente (`HOLD_USE_UNKNOWN_HOLD`), de outra conta (`HOLD_USE_ACCOUNT_MISMATCH`) e `uses` malformado (`TRANSACTION_USES_INVALID`) são achados estruturados; alterar `uses` no banco e recalcular o hash continua sendo detectado. Novo invariante 17.
+4. **PostgreSQL real**: PostgreSQL 16.15 (cluster descartável local, UTF8, porta 54329) com `DATABASE_URL`; `POLIS_EXPECT_DB=postgresql` confirmado por teste que não foi pulado. Novos testes de concorrência: duas chaves consumindo a mesma reserva, reserva × pagamento disputando o saldo, três quitações concorrentes do mesmo devedor.
+
+**Evidências reais**
+- PostgreSQL 16.15: `manage.py test` completo → `Ran 860 tests ... OK` (0 pulados); `test_concurrency` repetido 15 vezes seguidas → 15 OK.
+- SQLite: `manage.py test` completo → `Ran 860 tests ... OK (skipped=1)` (o pulado é o teste que só roda com `POLIS_EXPECT_DB`); `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+- Sonda (descartada, não versionada) em PostgreSQL: 60 rodadas × 8 threads com a mesma chave e o mesmo conteúdo → todas OK com a mesma transação; das 420 requisições repetidas, 11 acharam o vencedor na checagem inicial e 409 na reconferência depois do travamento das contas; **nenhuma** chegou à violação de chave única. Ou seja, em PostgreSQL o travamento resolve a corrida antes da gravação; o caminho `IntegrityError → relê o vencedor` só é exercitado de forma determinística (simulação da checagem cega) e não foi observado numa corrida real.
+- Achado de ambiente (não do código): um cluster PostgreSQL SQL_ASCII recusa JSON com acentos (`\u00e7`); produção deve usar UTF8, como o cluster dos testes acima.
+
+**Pendências residuais**
+- Não há CI neste repositório: a execução em PostgreSQL foi manual e local (comandos acima); fica para a infraestrutura de testes.
+- Os serviços (não a auditoria) ainda levantam `ValueError` ao operar se acharem um tipo de conta inválido no banco; não alterado por estar fora do pedido.
+- Isolamento `READ COMMITTED` (padrão) assumido; níveis mais altos exigiriam tratar falhas de serialização.
+- Provedores de `W`/`S`/`T` e do salário político, valores de dotação e demais itens de P1.x seguem pendentes (ver entrada anterior).
+
+---
+
+### P0.07b — correções antes da auditoria externa (2026-10-16)
+
+Pedidas pelo Game Director sobre o PR #11; nenhuma altera decisão de mecânica.
+1. **Idempotência sob concorrência** (`post_transaction`): mesma chave + mesmo conteúdo devolve SEMPRE a transação original, inclusive quando duas requisições disputam a criação (a perdedora desfaz o que fez, como reservas consumidas, e relê o vencedor; há também reconferência depois de travar as contas). `IDEMPOTENCY_CONFLICT` ficou só para conteúdo diferente. Mesmo contrato aplicado a reservas, obrigações e pedidos de remuneração (antes uma corrida podia levantar `IntegrityError`). Cada `Transaction` passou a guardar o conteúdo canônico (`payload`) além do `payload_hash`. Migração `0001` regenerada (o app ainda não foi mergeado nem aplicado em lugar algum).
+2. **Imutabilidade em lote**: `Transaction` ganhou o mesmo manager protegido de `Entry`; `QuerySet.update`, `bulk_update`, `update_or_create`, `delete`, `_raw_delete` e `bulk_create(update_conflicts=True)` levantam `LedgerImmutableError`; `save()` de transação já gravada continua recusado.
+3. **Auditoria robusta**: valores fora do domínio das enumerações (conta, natureza, estados, política) viram achado `INVALID_ENUM_VALUE`; cada seção roda isolada e falha inesperada vira `AUDIT_SECTION_FAILED`; novo invariante 16 confere chave, instante, ator, referência, dia, hash e conteúdo canônico de cada transação contra os lançamentos (adulteração direta de metadados é detectada mesmo com o hash recalculado); `ledger_metrics` tolera tipo de conta desconhecido.
+4. Documento `24`: §24.5.3 (contrato de idempotência sob concorrência) e §24.17 (invariantes 6, 15 e 16).
+
+**Evidências (2026-10-16):** `manage.py test` → `Ran 838 tests ... OK`; `manage.py test ledger` → 171 OK; `test_concurrency` repetido 10 vezes sem falha; `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected`.
+
+**Limitação conhecida:** em SQLite a corrida real entre threads é serializada pelo banco, então o caminho da violação de chave única é exercitado de forma determinística nos testes (por simulação da checagem cega) e, em paralelo, pelos testes com threads; em PostgreSQL vale também o travamento de contas com `FOR UPDATE`. Os serviços (não a auditoria) ainda levantam `ValueError` se encontrarem um tipo de conta inválido no banco ao operar.
+
+---
+
 ## 2026-10-15 — P0.07a — registro monetário (design/24, FINAL — BOT TEST)
 
 Documento `design/24-Registro-Monetario-FINAL-BOT-TEST.md`, **sem código**. Incorpora Q1/Q2 e as decisões de 11.1.0, 09 §45, 18.14, 19.16 e 21.60. **Aprovado pelo Game Director em 2026-10-15** (PR #10), com as correções A–D e os ajustes de R1–R10 incorporados. Branch `dev/p0.07a-registro-monetario`.
