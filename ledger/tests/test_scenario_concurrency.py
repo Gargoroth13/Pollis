@@ -18,6 +18,7 @@ from unittest import mock
 from django.db import OperationalError, close_old_connections, connection
 from django.test import TransactionTestCase
 
+from ledger import models as ledger_models
 from ledger import services as ledger
 from ledger.audit import audit_ledger
 from ledger.constants import AccountKind
@@ -42,10 +43,10 @@ def _attempt(fn):
 class Job:
     """Uma thread que roda `fn`, guarda resultado ou exceção e os instantes de início e fim (monotônicos)."""
 
-    def __init__(self, fn, barrier=None):
+    def __init__(self, fn, barrier=None, name=None):
         self.result = self.error = self.started = self.ended = None
         self._fn, self._barrier = fn, barrier
-        self.thread = threading.Thread(target=self._run)
+        self.thread = threading.Thread(target=self._run, name=name)
 
     def _run(self):
         try:
@@ -151,6 +152,25 @@ class ScenarioPropertyTests(ScenarioConcurrencyBase):
         self._orm_mutation_versus_grant(
             lambda name: ScenarioGrantLine.objects.filter(scenario__name=name).delete(),
             ([], "SCENARIO_GRANT_UNSPECIFIED"), "od")
+
+    def test_two_moves_or_a_move_and_a_delete_with_an_activation_end_consistent(self):
+        """Duas mutações da MESMA linha (ainda sem dotação) + uma ativação, em paralelo, várias rodadas."""
+        for n in range(6):
+            d1, d2, d3 = (f"p{n}{k}" for k in (1, 2, 3))
+            ledger.create_scenario(d1, {})
+            ledger.create_scenario(d2, {"militia_bank": 500})
+            ledger.create_scenario(d3, {})
+            line = ScenarioGrantLine.objects.get(scenario__name=d2)
+            second = ((lambda: ScenarioGrantLine.objects.filter(pk=line.pk).update(scenario=LedgerScenario.objects.get(name=d3)))
+                      if n % 2 == 0 else (lambda: ScenarioGrantLine.objects.filter(pk=line.pk).delete()))
+            run_together(
+                lambda: ScenarioGrantLine.objects.filter(pk=line.pk).update(scenario=LedgerScenario.objects.get(name=d1)),
+                second,
+                lambda: ledger.activate_scenario(d1, []))
+            where = list(ScenarioGrantLine.objects.filter(pk=line.pk).values_list("scenario__name", flat=True))
+            self.assertIn(where, ([d1], [d3], []) if n % 2 == 0 else ([d1], []), (n, where))
+            self.assertEqual(self.active_names(), [d1])
+            self.assertLedgerClean()
 
     def test_concurrent_activations_never_deadlock_and_leave_exactly_one_active(self):
         names = [f"act{n}" for n in range(6)]
@@ -349,3 +369,94 @@ class PostgresOrmGuardLockOrderTests(PostgresLockOrderTests.__bases__[0]):
 
     def test_scenario_delete_waits_for_a_grant_in_flight_and_is_refused(self):
         self._mutation_waits_and_is_refused(lambda: LedgerScenario.objects.filter(name="A").delete())
+
+
+class _Gate:
+    def __init__(self):
+        self.entered, self.go, self.used = threading.Event(), threading.Event(), False
+
+
+@unittest.skipUnless(ON_PG, "intercalamento determinístico por bloqueios de linha: só tem efeito em PostgreSQL")
+class PostgresLockOrderWithMovingLineTests(ScenarioConcurrencyBase):
+    """
+    O intercalamento que, com leitura PRÉVIA dos cenários + bloqueio parcial, dava ciclo com `activate_scenario`:
+      X move a linha D2→D1; Y (move D2→D3 ou exclui) espera X; X confirma; Y consegue seus bloqueios e PARA (segurando-os);
+      a ativação entra e pega o que está livre; Y é liberada e relê a linha, que agora está em D1.
+    Com bloqueio parcial, Y pediria D1 (fora da ordem) e travaria com a ativação (deadlock). Com o protocolo atual (todos os
+    cenários, em ordem, como primeiro passo; nenhuma verificação trava mais nada) todas terminam.
+    """
+
+    def setUp(self):
+        ledger.create_scenario("D1", {})
+        ledger.create_scenario("D2", {"militia_bank": 500})
+        ledger.create_scenario("D3", {})
+        self.pks = {n: LedgerScenario.objects.get(name=n).pk for n in ("D1", "D2", "D3")}
+        # ordem global de pk é D1 < D2 < D3 (o que torna a aquisição de D1 depois de D2/D3 uma violação da ordem)
+        self.assertLess(self.pks["D1"], self.pks["D2"])
+        self.assertLess(self.pks["D2"], self.pks["D3"])
+        self.line = ScenarioGrantLine.objects.get(scenario__name="D2", role="militia_bank")
+        self.bank = ledger.get_or_create_account(AccountKind.MILITIA_BANK, 1)
+
+    def choreography(self, second_op):
+        gates = {"X": _Gate(), "Y": _Gate()}
+        real = ledger_models.lock_scenarios
+
+        def hooked(ids=None, names=None):
+            rows = real(ids, names)
+            gate = gates.get(threading.current_thread().name)
+            if gate is not None and not gate.used:        # só a PRIMEIRA aquisição de cada thread marcada pausa
+                gate.used = True
+                gate.entered.set()
+                if not gate.go.wait(30):
+                    raise AssertionError("pausa não liberada")
+            return rows
+
+        line_pk, d1 = self.line.pk, self.pks["D1"]
+        with mock.patch.object(ledger_models, "lock_scenarios", hooked):
+            x = Job(lambda: ScenarioGrantLine.objects.filter(pk=line_pk).update(scenario_id=d1), name="X").start()
+            self.assertTrue(gates["X"].entered.wait(15), "X não chegou a travar")
+            y = Job(second_op, name="Y").start()
+            time.sleep(0.7)                                # Y fica esperando os bloqueios de X
+            self.assertIsNone(y.ended, "Y deveria estar esperando X")
+            gates["X"].go.set()                            # X confirma e libera
+            self.assertTrue(gates["Y"].entered.wait(15), "Y não chegou a travar depois de X")
+            a = Job(lambda: ledger.activate_scenario("D1", []), name="A").start()
+            time.sleep(0.9)                                # a ativação pega o que estiver livre e espera o resto
+            gates["Y"].go.set()                            # Y relê (a linha agora está em D1) e continua
+            for j in (x, y, a):
+                j.join()
+        errors = {j.thread.name: j.error for j in (x, y, a) if j.error is not None}
+        self.assertEqual(errors, {}, "alguma operação falhou (deadlock?)")
+        self.assertTrue(a.result.ok, a.result)
+        self.assertEqual(self.active_names(), ["D1"])
+        return x, y, a
+
+    def assertImmutableAfterEmission(self, scenario):
+        """Depois do intercalamento a configuração continua consistente e a imutabilidade pós-emissão segue valendo."""
+        self.assertTrue(ledger.activate_scenario(scenario, ["militia_bank"]).ok)
+        self.assertTrue(ledger.grant_scenario_allocation(scenario, self.bank.pk, 500, role="militia_bank").ok)
+        line = ScenarioGrantLine.objects.get(scenario__name=scenario, role="militia_bank")
+        for mutate in (lambda: ScenarioGrantLine.objects.filter(pk=line.pk).update(amount=900),
+                       lambda: ScenarioGrantLine.objects.filter(pk=line.pk).update(scenario_id=self.pks["D1"]),
+                       lambda: ScenarioGrantLine.objects.filter(pk=line.pk).delete(),
+                       lambda: ledger.set_grant_line(scenario, "militia_bank", 900)):
+            with self.assertRaises((GrantLineLockedError, ledger.LedgerRefusal)):
+                mutate()
+        self.assertEqual(list(ScenarioGrantLine.objects.filter(pk=line.pk).values_list("scenario__name", "amount")),
+                         [(scenario, 500)])
+        self.assertEqual(self.emitted(self.bank), 500)
+        self.assertLedgerClean()
+
+    def test_two_moves_of_the_same_line_with_a_concurrent_activation_do_not_deadlock(self):
+        d3 = self.pks["D3"]
+        self.choreography(lambda: ScenarioGrantLine.objects.filter(pk=self.line.pk).update(scenario_id=d3))
+        # X moveu para D1 e Y (depois) para D3: a linha existe uma única vez, em D3, com o valor original
+        self.assertEqual(list(ScenarioGrantLine.objects.values_list("scenario__name", "role", "amount")),
+                         [("D3", "militia_bank", 500)])
+        self.assertImmutableAfterEmission("D3")
+
+    def test_a_move_and_a_delete_of_the_same_line_with_a_concurrent_activation_do_not_deadlock(self):
+        self.choreography(lambda: ScenarioGrantLine.objects.filter(pk=self.line.pk).delete())
+        self.assertEqual(ScenarioGrantLine.objects.count(), 0)          # X moveu e Y apagou a linha que X deixou em D1
+        ledger.set_grant_line("D3", "militia_bank", 500)                # recriar uma linha ainda sem dotação é livre
+        self.assertImmutableAfterEmission("D3")

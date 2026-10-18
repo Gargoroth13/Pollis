@@ -31,6 +31,23 @@ Provedor de `W`/`S`/`T` a partir de `skills`/`11` (P1.04/P1.12) e provedor do sa
 ### Documentos alterados
 `24` (centavos nos serviços, chave da viagem, `P_liberada`, §24.19.1), `TASK`, `TASK_QUEUE`, `CHANGELOG_DEV`.
 
+### P0.07b — ordem global de bloqueio na guarda de `ScenarioGrantLine` (2026-10-18)
+
+Revisão do commit `9e15929`: a guarda lia os cenários da linha, travava esse conjunto em ordem de pk, **relia** os dados e `_check_line_changes()` podia travar cenários adicionais achados só na releitura (ex.: outra operação moveu a linha para outro cenário enquanto a primeira esperava). Cada chamada a `lock_scenarios()` era ordenada, mas a sequência não: ciclo possível com `activate_scenario()`. Corrigido sem alterar nenhuma decisão de design nem enfraquecer a guarda.
+1. **Abordagem escolhida (a mais segura para o escopo)**: toda mutação de configuração (`activate_scenario`, `set_grant_line`, qualquer escrita ORM em `ScenarioGrantLine`, renome/exclusão de `LedgerScenario`) trava **todos** os cenários em ordem crescente de pk, numa única instrução (`lock_all_scenarios()`), **como primeiro bloqueio**; só depois lê dados. Nenhuma verificação trava mais nada. Cenário referenciado que não esteja no conjunto travado (criado/removido entre as leituras) → `ScenarioSetChangedError` (`SCENARIO_SET_CHANGED`, repetir a operação), nunca um bloqueio fora de ordem. Emissão: contas por id e depois **um** cenário (o emissor), nada depois. Sem ciclo possível.
+2. **Protocolo documentado** em `ledger/models.py`, `ledger/services.py` e `design/24` §24.11 (pontos 1–3). Regra: não compor emissão e mutação numa mesma transação externa. `set_grant_line` passou a usar o mesmo conjunto travado.
+3. **Testes** (+3, `ledger` = 253): propriedade em SQLite e PostgreSQL (dois movimentos, ou movimento e exclusão, da mesma linha sem histórico com uma ativação concorrente: terminam, configuração final consistente, no máximo um cenário ativo, `audit_ledger().ok`); e dois testes determinísticos **só PostgreSQL** (`PostgresLockOrderWithMovingLineTests`): mover × mover e mover × excluir a mesma linha sem histórico, com ativação concorrente, forçando o intercalamento por portões nas chamadas de `lock_scenarios`; verificam ausência de deadlock, configuração final e que, depois da emissão, a linha continua imutável.
+4. **O teste detecta a falha**: rodados contra o `models.py`/`services.py` do `9e15929`, em PostgreSQL, os dois testes determinísticos falham com `deadlock detected` real na thread da ativação; contra o código novo passam.
+
+**Evidências reais**
+- PostgreSQL 16.15 (cluster local descartável, UTF8, `POLIS_EXPECT_DB=postgresql`): suíte completa → `Ran 920 tests ... OK` (0 pulados); `test_scenario_concurrency` + `test_concurrency` + `test_grant_line_immutability` repetidos 15 vezes → 15 × `Ran 42 tests ... OK`.
+- SQLite: suíte completa → `Ran 920 tests ... OK (skipped=11)` (o teste do banco esperado e 10 de ordem estrita, só PostgreSQL); as mesmas três suítes repetidas 15 vezes → 15 × `Ran 42 tests ... OK (skipped=11)`. App `ledger` em SQLite: `Ran 253 tests ... OK (skipped=11)`.
+- `manage.py check` sem problemas; `makemigrations --check --noinput` → `No changes detected` (SQLite e PostgreSQL).
+
+**Limitações restantes**: a ordem estrita e o deadlock evitado só foram exercitados em PostgreSQL 16 (`READ COMMITTED`, uma instância local, `fsync` desligado); sem CI em PostgreSQL; em SQLite os 10 testes estritos são pulados. Quem chama as operações de configuração com `SCENARIO_SET_CHANGED` precisa repetir a operação (nenhum chamador de produção existe ainda). SQL direto continua fora do alcance da guarda (contido por `GRANT_HISTORY_INCONSISTENT` e pela auditoria).
+
+---
+
 ### P0.07b — imutabilidade efetiva da linha de dotação (2026-10-17)
 
 Única ressalva importante da auditoria independente (Grok, "aprovado com ressalvas" para o Bot Test): a imutabilidade de `ScenarioGrantLine` após a primeira dotação existia só no serviço `set_grant_line`; o ORM (`update`, `delete`, `save`...) e "excluir e recriar" a contornavam. Escopo único; nenhuma decisão de design alterada.

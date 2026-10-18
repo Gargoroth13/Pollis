@@ -254,16 +254,34 @@ class GrantLineLockedError(LedgerImmutableError):
 # --- imutabilidade da configuração de dotação depois da primeira dotação (design/24 §24.11) ------------------------------
 # Toda escrita em `ScenarioGrantLine` (e o renome/exclusão de `LedgerScenario`) passa por aqui, seja `save`, `update`,
 # `bulk_update`, `bulk_create`, `update_or_create` ou exclusão (instância, QuerySet ou cascata, via `pre_delete`).
-# Protocolo de bloqueio: trava os cenários envolvidos em ORDEM CRESCENTE DE PK (o mesmo da emissão, `set_grant_line` e
-# `activate_scenario`) e só DEPOIS consulta o histórico: uma dotação em andamento (que segura o cenário até confirmar)
-# termina antes, e a mutação concorrente enxerga a dotação.
+#
+# PROTOCOLO DE BLOQUEIO (único; vale para toda a configuração de cenários e para a emissão):
+#   * Operação de MUTAÇÃO da configuração (`activate_scenario`, `set_grant_line`, qualquer escrita em `ScenarioGrantLine`,
+#     renome/exclusão de `LedgerScenario`): o PRIMEIRO passo que bloqueia é `lock_all_scenarios()`, que trava TODOS os
+#     cenários em ordem crescente de pk numa só instrução. Só depois a operação lê os dados (linha, histórico) e decide. NADA
+#     é lido antes para escolher o que travar e NENHUMA verificação adquire bloqueio adicional: se os dados mudarem enquanto a
+#     operação esperava (outra mutação moveu a linha para outro cenário), o que ela relê já está coberto pelo conjunto
+#     travado. Assim não existe aquisição fora da ordem global crescente, logo não há ciclo com `activate_scenario`.
+#   * EMISSÃO (`services._check_grant`): contas em ordem crescente de id e, por último, UM só cenário (o emissor); ela nunca
+#     pede outro cenário nem outro bloqueio depois. Uma mutação espera a emissão em andamento (que segura o cenário até
+#     confirmar) e depois relê o histórico, que já contém a dotação.
+#   * Referência a um cenário que NÃO está no conjunto travado (criado depois da instrução de bloqueio) é recusada com
+#     `ScenarioSetChangedError` (repita a operação): travá-lo agora seria uma aquisição fora da ordem.
+#   * Não compor, numa mesma transação externa, uma emissão (que segura um cenário) e uma mutação (que pede todos).
 _UNKNOWN = object()                                  # valor vindo de expressão (F(), Case...): não dá para saber antes de gravar
 _VERIFIED = contextvars.ContextVar("ledger_grant_line_verified", default=False)
 _LINE_FIELDS = {"scenario": "scenario_id", "scenario_id": "scenario_id", "role": "role", "amount": "amount"}
 
 
+class ScenarioSetChangedError(LedgerImmutableError):
+    """Código `SCENARIO_SET_CHANGED`: a operação referencia um cenário criado depois de ela travar todos; repita a operação."""
+
+    code = "SCENARIO_SET_CHANGED"
+
+
 def lock_scenarios(ids=None, names=None):
-    """`SELECT ... FOR UPDATE` dos cenários, em ordem crescente de pk (protocolo único de travamento)."""
+    """`SELECT ... FOR UPDATE` dos cenários, em ordem crescente de pk. Mutações usam `lock_all_scenarios()`; a emissão usa
+    `names=[seu cenário]` (um só)."""
     qs = LedgerScenario.objects.select_for_update().order_by("pk")
     if ids is not None:
         qs = qs.filter(pk__in=ids)
@@ -272,43 +290,56 @@ def lock_scenarios(ids=None, names=None):
     return list(qs)
 
 
+def lock_all_scenarios():
+    """Primeiro passo de toda mutação da configuração: trava TODOS os cenários (ordem crescente de pk). `{pk: nome}`."""
+    return {sc.pk: sc.name for sc in lock_scenarios()}
+
+
+def _scenario_name(locked, scenario_id):
+    try:
+        return locked[scenario_id]
+    except KeyError:
+        raise ScenarioSetChangedError(
+            f"SCENARIO_SET_CHANGED: o cenário {scenario_id!r} não existe ou foi criado depois do bloqueio; repita a operação") from None
+
+
 def grant_history(scenario_name, role=None):
     """Lançamentos de dotação já gravados para o cenário (e papel): o que a configuração não pode mais contradizer."""
     qs = Entry.objects.filter(nature=Nature.SCENARIO_GRANT.value, reference_kind="scenario", reference_id=scenario_name)
     return qs if role is None else qs.filter(explained__role=role)
 
 
-def _check_line_changes(changes):
+def _check_line_changes(changes, locked):
     """
-    `changes`: lista de `(antes, depois)`, cada um `(scenario_id, role, amount)` ou None (inserção / exclusão). Deve rodar
-    dentro de uma transação. Recusa (`GrantLineLockedError`) se:
+    `changes`: lista de `(antes, depois)`, cada um `(scenario_id, role, amount)` ou None (inserção / exclusão). `locked`: o
+    `{pk: nome}` de `lock_all_scenarios()` (esta função NÃO bloqueia nada). Deve rodar dentro da transação que o obteve.
+    Recusa (`GrantLineLockedError`) se:
       * a linha de ANTES já gerou dotações e algo nela muda (valor, cenário, papel) ou ela é excluída;
       * o par (cenário, papel) de DEPOIS já tem dotações e o valor novo difere do que foi emitido (recriar a linha).
     """
-    ids = {t[0] for pair in changes for t in pair if t is not None and isinstance(t[0], int)}
-    names = {sc.pk: sc.name for sc in lock_scenarios(ids)}
     for old, new in changes:
         if old == new:
             continue                                          # idempotente: nada muda
-        if old is not None and old[0] in names and grant_history(names[old[0]], old[1]).exists():
-            raise GrantLineLockedError("a linha já gerou dotações; não pode mudar nem ser excluída",
-                                       scenario=names[old[0]], role=old[1], configured=old[2])
-        if new is not None and (old is None or old[:2] != new[:2]) and new[0] in names:
-            history = grant_history(names[new[0]], new[1])
+        if old is not None:
+            name = _scenario_name(locked, old[0])
+            if grant_history(name, old[1]).exists():
+                raise GrantLineLockedError("a linha já gerou dotações; não pode mudar nem ser excluída",
+                                           scenario=name, role=old[1], configured=old[2])
+        if new is not None and new[0] is not None and (old is None or old[:2] != new[:2]):
+            name = _scenario_name(locked, new[0])
+            history = grant_history(name, new[1])
             conflicting = history.exists() if new[2] is _UNKNOWN else history.exclude(amount=new[2]).exists()
             if conflicting:
                 raise GrantLineLockedError("já há dotações para este cenário e papel com outro valor",
-                                           scenario=names[new[0]], role=new[1], configured=new[2])
+                                           scenario=name, role=new[1], configured=new[2])
 
 
 def _check_scenario_renames(renames):
-    """`renames`: `(pk, nome_antigo, nome_novo)`. Um cenário com dotações não muda de nome (a referência do lançamento é o nome)."""
-    changed = [(pk, old) for pk, old, new in renames if old != new]
-    if changed:
-        lock_scenarios({pk for pk, _ in changed})
-        for _, old in changed:
-            if grant_history(old).exists():
-                raise GrantLineLockedError("o cenário já tem dotações; o nome não muda", scenario=old)
+    """`renames`: `(pk, nome_antigo, nome_novo)`; chamada com todos os cenários já travados. Um cenário com dotações não muda
+    de nome (a referência do lançamento é o nome)."""
+    for _, old, new in renames:
+        if old != new and grant_history(old).exists():
+            raise GrantLineLockedError("o cenário já tem dotações; o nome não muda", scenario=old)
 
 
 def _check_scenario_deletion(name):
@@ -332,10 +363,10 @@ class _GrantLineQuerySet(models.QuerySet):
         if new_values.get("scenario_id") is _UNKNOWN or new_values.get("role") is _UNKNOWN:
             raise LedgerImmutableError("expressões em cenário/papel de uma linha de dotação não são suportadas")
         with transaction.atomic(using=self.db):
-            lock_scenarios({r[1] for r in self._rows()} | ({new_values["scenario_id"]} if new_values.get("scenario_id") else set()))
-            rows = self._rows()                               # relido DEPOIS do bloqueio
+            locked = lock_all_scenarios()                     # 1º passo: tudo travado, em ordem; nada é lido antes
+            rows = self._rows()                               # lido DEPOIS do bloqueio
             _check_line_changes([((s, r, a), (new_values.get("scenario_id", s), new_values.get("role", r),
-                                              new_values.get("amount", a))) for _, s, r, a in rows])
+                                              new_values.get("amount", a))) for _, s, r, a in rows], locked)
             return super().update(**kwargs)
 
     def bulk_update(self, objs, fields, batch_size=None):
@@ -344,11 +375,9 @@ class _GrantLineQuerySet(models.QuerySet):
         if not touched:
             return super().bulk_update(objs, fields, batch_size)
         with transaction.atomic(using=self.db):
+            locked = lock_all_scenarios()
             stored = {r[0]: r[1:] for r in self.model.objects.filter(pk__in=[o.pk for o in objs])
-                      .values_list("pk", "scenario_id", "role", "amount")}
-            lock_scenarios({t[0] for t in stored.values()} | {o.scenario_id for o in objs if o.scenario_id})
-            stored = {r[0]: r[1:] for r in self.model.objects.filter(pk__in=[o.pk for o in objs])
-                      .values_list("pk", "scenario_id", "role", "amount")}          # relido DEPOIS do bloqueio
+                      .values_list("pk", "scenario_id", "role", "amount")}          # lido DEPOIS do bloqueio
             changes = []
             for o in objs:
                 old = stored.get(o.pk)
@@ -357,7 +386,7 @@ class _GrantLineQuerySet(models.QuerySet):
                 now = {"scenario_id": o.scenario_id, "role": o.role, "amount": o.amount}
                 changes.append((old, tuple(now[f] if f in touched else old[i]
                                            for i, f in enumerate(("scenario_id", "role", "amount")))))
-            _check_line_changes(changes)
+            _check_line_changes(changes, locked)
             token = _VERIFIED.set(True)                       # já verificado: `update()` não repete
             try:
                 return super().bulk_update(objs, fields, batch_size)
@@ -369,14 +398,15 @@ class _GrantLineQuerySet(models.QuerySet):
             raise LedgerImmutableError("linhas de dotação não aceitam upsert em lote; use set_grant_line")
         objs = list(objs)
         with transaction.atomic(using=self.db):
-            _check_line_changes([(None, (o.scenario_id, o.role, o.amount)) for o in objs])
+            locked = lock_all_scenarios()
+            _check_line_changes([(None, (o.scenario_id, o.role, o.amount)) for o in objs], locked)
             return super().bulk_create(objs, *args, update_conflicts=False, **kwargs)
 
     def delete(self):
         # verifica ANTES do Collector: a recusa dentro do `atomic(savepoint=False)` dele envenenaria uma transação externa
         with transaction.atomic(using=self.db):
-            lock_scenarios({r[1] for r in self._rows()})
-            _check_line_changes([((s, r, a), None) for _, s, r, a in self._rows()])         # relido DEPOIS do bloqueio
+            locked = lock_all_scenarios()
+            _check_line_changes([((s, r, a), None) for _, s, r, a in self._rows()], locked)   # lido DEPOIS do bloqueio
             return super().delete()
 
     def _raw_delete(self, using):
@@ -389,14 +419,13 @@ class _ScenarioQuerySet(models.QuerySet):
             return super().update(**kwargs)
         new_name = _constant(kwargs["name"])
         with transaction.atomic(using=self.db):
-            rows = list(self.values_list("pk", "name"))
-            lock_scenarios({pk for pk, _ in rows})
+            lock_all_scenarios()
             _check_scenario_renames([(pk, name, new_name) for pk, name in self.values_list("pk", "name")])
             return super().update(**kwargs)
 
     def delete(self):
         with transaction.atomic(using=self.db):
-            lock_scenarios({pk for pk, _ in self.values_list("pk", "name")})
+            lock_all_scenarios()
             for _, name in self.values_list("pk", "name"):
                 _check_scenario_deletion(name)
             return super().delete()
@@ -416,13 +445,14 @@ class LedgerScenario(models.Model):
 
     def delete(self, *args, **kwargs):
         with transaction.atomic(using=kwargs.get("using")):
-            lock_scenarios({self.pk})
+            lock_all_scenarios()
             _check_scenario_deletion(self.name)
             return super().delete(*args, **kwargs)
 
     def save(self, *args, **kwargs):
         with transaction.atomic(using=kwargs.get("using")):
             if self.pk is not None and not self._state.adding:
+                lock_all_scenarios()                                 # 1º passo; o nome guardado é lido DEPOIS
                 stored = LedgerScenario.objects.filter(pk=self.pk).values_list("name", flat=True).first()
                 if stored is not None:
                     _check_scenario_renames([(self.pk, stored, self.name)])
@@ -452,11 +482,10 @@ class ScenarioGrantLine(models.Model):
 
     def delete(self, *args, **kwargs):
         with transaction.atomic(using=kwargs.get("using")):
-            stored = self._stored()
-            lock_scenarios({self.scenario_id})
-            stored = self._stored()                                  # relido DEPOIS do bloqueio
+            locked = lock_all_scenarios()
+            stored = self._stored()                                  # lido DEPOIS do bloqueio
             if stored is not None:
-                _check_line_changes([(stored, None)])
+                _check_line_changes([(stored, None)], locked)
             return super().delete(*args, **kwargs)
 
     def save(self, *args, **kwargs):
@@ -464,9 +493,8 @@ class ScenarioGrantLine(models.Model):
         if update_fields is None and len(args) >= 3:
             update_fields = args[2]
         with transaction.atomic(using=kwargs.get("using")):
-            stored = self._stored()
-            lock_scenarios({i for i in (self.scenario_id, stored[0] if stored else None) if i is not None})
-            stored = self._stored()                                  # relido DEPOIS do bloqueio
+            locked = lock_all_scenarios()
+            stored = self._stored()                                  # lido DEPOIS do bloqueio
             now = {"scenario_id": self.scenario_id, "role": self.role, "amount": self.amount}
             fields = ("scenario_id", "role", "amount")
             if stored is not None and update_fields is not None:
@@ -474,7 +502,7 @@ class ScenarioGrantLine(models.Model):
                 new = tuple(now[f] if f in chosen else stored[i] for i, f in enumerate(fields))
             else:
                 new = tuple(now[f] for f in fields)
-            _check_line_changes([(stored, new)])
+            _check_line_changes([(stored, new)], locked)
             return super().save(*args, **kwargs)
 
     class Meta:
@@ -488,14 +516,14 @@ class ScenarioGrantLine(models.Model):
 @receiver(pre_delete, sender=ScenarioGrantLine)
 def _guard_grant_line_delete(sender, instance, **kwargs):
     """Última defesa (a verificação normal roda antes, em `delete()`): qualquer exclusão que chegue ao Collector, cascata incluída."""
-    lock_scenarios({instance.scenario_id})
+    locked = lock_all_scenarios()
     stored = ScenarioGrantLine.objects.filter(pk=instance.pk).values_list("scenario_id", "role", "amount").first()
     if stored is not None:
-        _check_line_changes([(stored, None)])
+        _check_line_changes([(stored, None)], locked)
 
 
 @receiver(pre_delete, sender=LedgerScenario)
 def _guard_scenario_delete(sender, instance, **kwargs):
-    lock_scenarios({instance.pk})
+    lock_all_scenarios()
     if grant_history(instance.name).exists():
         raise GrantLineLockedError("o cenário já tem dotações; não pode ser excluído", scenario=instance.name)
