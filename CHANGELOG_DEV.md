@@ -4,6 +4,47 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-18 — P1.02 — Inventário implementado (app `inventory`)
+
+Implementa `design/05` (REVIEW) sobre a base integrada (#8 → #9 → #10 → #11 já mergeados em `main`). Branch `dev/p1.02-inventario`. **PR aberto; não mergeado; aguarda autorização do Game Director.**
+
+### O que foi entregue
+- **Posse** (`inventory/models.py`): `InventoryItem` (jogador → produto → quantidade inteira, só existe com quantidade > 0); categorias vêm do catálogo (`inventory_of` agrupa por `Product.category`; nada é duplicado).
+- **Trilha imutável** `InventoryMovement` (05 §19): origem, destino, produto, delta, quantidade resultante, tipo, instante, referência e `Explained`; idempotente por `key`. `InventoryItem.quantity` é cache; a verdade auditável é a soma dos movimentos.
+- **Entrada/saída externas** (`credit`/`debit`): restritas a `purchase`/`production` e `sale`. Compra, Varejo e produção ainda não existem; o ponto de entrada está pronto, sem inventar quem o chama.
+- **Consumir** (05 §5-6; `04` §15): ação `consume` no Action Registry (alvo PRODUTO). Alimento → Nutrição (limitada ao espaço disponível, `Explained` com `food_nutrition` e `nutrition_room`) + efeito temporário de QoL na categoria FOOD (substitui o anterior, regra de `04`). Valores NULL do catálogo recusam com `UNSPECIFIED_DESIGN_VALUE`.
+- **Correio** (05 §11-12): ação `send_item` (alvo PARAMS `{recipient, product, quantity}`). Taxa = `MAX(mínima, valor_de_referência × percentual)`, valor de referência = `base_price × quantidade`, cobrada do remetente para a União (`Nature.MAIL_FEE`) pelo `ledger.transfer`; sem envio gratuito; o `Shipment` guarda o detalhamento da taxa.
+- **Auditoria** (`audit_inventory`, `manage.py audit_inventory [--json]`): posse = Σ movimentos e `quantity_after`; operação x sinal; envios x movimentos x lançamento `MAIL_FEE`.
+- **Registry**: novos tipos de alvo `PRODUCT` e `PARAMS` em `players/registry.py`; as duas ações usam as mesmas recusas dos serviços (sem caminho privilegiado para Bots).
+
+### Valores `[PROV]` (Q3 de 2026-10-14: provisórios permitidos se auditáveis; `inventory/params.py`)
+- Percentual da taxa de correio: **10%**; taxa mínima: **R$ 1,00** (100 centavos); duração do efeito temporário de alimento: **3600 s**. Todos calibráveis; origem registrada no código. Arredondamento da taxa: HALF_EVEN, uma única vez.
+
+### Decisões técnicas (não alteram a mecânica; registradas por honestidade técnica)
+- Consumir é **uma unidade por ação**. Alimento sem efeito de QoL (NO_EFFECT / intensidade 0) não aplica efeito temporário e **não** substitui o existente. Produto não alimento recusa com `NO_CONSUMPTION_EFFECT`.
+- Correio: o design não prevê custo de Energia nem regra de localização; nenhum foi criado. Envio a si mesmo recusado (`SAME_PLAYER`). Quantidades são inteiras.
+- **Protocolo de bloqueio** (docstring de `inventory/services.py`): 1) linhas `Player` envolvidas em ordem crescente de pk; 2) `InventoryItem` em ordem crescente de player_id; 3) contas do ledger.
+
+### Bug real encontrado e corrigido (PostgreSQL)
+Envios cruzados (A→B e B→A simultâneos) davam deadlock em 3/3 execuções: o INSERT com FK toma `FOR KEY SHARE` na linha `Player` referenciada, que conflita com o `FOR UPDATE` da outra transação. Correção: `send_item` trava as duas linhas `Player` em ordem crescente de pk antes de qualquer outra coisa. Coberto por teste de concorrência (5 execuções consecutivas no PG sem falha).
+
+### Verificação (executada)
+- PostgreSQL 16, suíte completa: **997 testes OK** (941 anteriores + 56 do `inventory`).
+- SQLite, suíte completa: **997 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos.
+
+### Fora do escopo (explícito)
+- **Mercado de Jogadores, Varejo e compra** (05 §13-16): sistemas próprios.
+- **Estado ativo** (roupa/veículo/residência, 05 §7-10): depende de Imóveis/Veículos/Roupas.
+- **Auto-consumo** (`04` §16): **única decisão pendente do GD** — ver abaixo.
+- Estoque empresarial (05 §17): estrutura distinta.
+- As quatro pendências herdadas do P1.01 **já haviam sido resolvidas na P0.02**; nenhuma bloqueou.
+
+### Decisão necessária (apenas para o Auto-consumo)
+O `04` §16 define o auto-consumo quando Nutrição < 10, mas o gatilho no tempo (o jogo é preguiçoso, sem tick) e a ordem de escolha não estão especificados. **Recomendação:** avaliar no fim do `catch-up` preguiçoso (hook de acesso), reutilizando `inventory.services.consume`; alimento preferido primeiro, senão o disponível de menor ganho de Nutrição. Nada foi implementado.
+
+---
+
 ## 2026-10-16 — P0.07b — registro monetário implementado (app `ledger`)
 
 Implementa `design/24` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p0.07b-ledger`, empilhada sobre o PR #10 (que sobre #9 → #8). **Não mergeada; aguarda auditoria externa e aprovação do Game Director.**

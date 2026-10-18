@@ -202,11 +202,11 @@ Implementar a estrutura central de `22`.
 
 **Entregue:** app `catalog` (`Product`, `Recipe`, `RecipeInput`, `FoodProfile`; ids estáveis; `sync_catalog`/`check_catalog`; consultas derivadas; integridade com erro x pendência de design). O `22` atual é **incompleto**: só entrou o que ele declara; lacunas e pendências em `CHANGELOG_DEV.md` (2026-10-11). Valores não especificados (quantidades, rendimento, Nutrição, intensidade de QoL, estrelas das Matrizes) ficam `NULL`, **distintos de zero**, e quem os usa recusa com `UNSPECIFIED_DESIGN_VALUE`.
 
-## [ ] P1.02 — Inventário
+## [x] P1.02 — Inventário  *(implementado em 2026-10-18, branch `dev/p1.02-inventario`; PR aguarda autorização do GD)*
 
 **Depende de P0.07.**
 
-> **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FOOD_VALUES_UNDEFINED` (Nutrição e intensidade de QoL numéricas; ordenação para o auto-consumo), `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED` (taxa de correio). Ver `CHANGELOG_DEV.md` (2026-10-11).
+> **Pendências herdadas do P1.01:** as quatro (`GAP_FOOD_VALUES_UNDEFINED`, `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED`) foram resolvidas na P0.02; nenhuma bloqueou. **Entregue:** posse, trilha imutável, `consume`, `send_item` (Correio), `audit_inventory`. **Fora do escopo:** Mercado de Jogadores, Varejo/compra, estado ativo, Auto-consumo (aguarda decisão do GD sobre o gatilho; ver `CHANGELOG_DEV.md`, 2026-10-18).
 
 Implementar `05`.
 
