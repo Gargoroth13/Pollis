@@ -4,6 +4,33 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-19 — P1.04a — Empresas: núcleo (`design/02` §16-17)
+
+Primeira fatia de P1.04 (Empresas é grande demais para um PR revisável; a divisão abaixo é de ordem de execução, **nenhuma parte sai do Bot Test**). Branch `dev/p1.04a-empresas-nucleo`, empilhada sobre o PR #14 (P1.02a); PR próprio; **não mergeado**.
+
+### O que foi entregue
+- App `companies`: `Company` (tipo, fundador, estrela, custo cobrado, chave do lançamento), `Position` (cargo; só o **Dono** nesta fatia) e `CapitalContribution` (aporte, imutável).
+- **Fundação** (`found_company`, ação do Action Registry): custo por tipo do `02` §17 (Varejo 15.000; Serviços 25.000; Matriz 40.000; Construtora 60.000; Industrial 80.000; Financeira 100.000 reais), cobrado do fundador para o caixa federal (`COMPANY_FOUNDING`, `24` Q2); cria a empresa, a conta `COMPANY` (sem caixa) e o **cargo Dono** ocupado pelo fundador com o salário que ele definiu (`02` §16). Dinheiro movido, nunca criado; recusas sem efeito.
+- **Aporte de capital** (`fund_company`): o Dono move dinheiro existente para a conta da empresa (resolve a questão do `24` "capital inicial da empresa = transferência do dono"). Não existe retirada nem distribuição (Q9).
+- `audit_companies` (cargo Dono único e ocupado, conta da empresa, lançamentos de fundação e de aporte) e `manage.py audit_companies [--json]`.
+- Protocolo de bloqueio documentado: jogador → empresa → contas do ledger.
+
+### Interpretações técnicas (preservam o design; para confirmação, não bloqueiam)
+- **Natureza do aporte**: a lista de naturezas do `24` é fechada e não tem "aporte"; usei `DONATION` com categoria `company_capital` (não é remuneração nem venda, não gera imposto). Se o GD preferir uma natureza própria, é mudança do `24`.
+- **Estrela inicial** = 1 `[PROV]` (`companies/params.py`, tabela auditável).
+- Nome da empresa: 1–80 caracteres; unicidade não exigida (o design não pede). Sem limite de empresas por jogador (o design não limita).
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **1059 testes OK** (1034 + 25 novos de `companies`).
+- SQLite, suíte completa: **1059 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos; `companies` + registro 3× no PostgreSQL (82 testes cada, incluindo concorrência: fundações simultâneas do mesmo fundador, aportes + fundações, fundadores cruzados sem deadlock).
+
+### Lacunas reais de design encontradas (não inventei; ficam visíveis)
+1. **Como uma empresa ganha estrelas** (e quantas ela tem ao nascer em definitivo): não está em nenhum documento (`02` §14 só diz que estrelas definem limites; `14` ranqueia por estrelas, `10` §16 as usa para imóvel comercial). Bloqueia Engenheiros/Advogados por estrela, estoque por estrela, teto de qualidade e a estrela mínima das receitas na produção.
+2. **Política de caixa insuficiente no salário** (`PENDING` ou `REFUSE`, `24` §24.x): o ledger suporta os dois; falta escolher para empresas.
+3. **"Pessoa autorizada" a aprovar candidatos** (`02` §15): o design não define como o Dono autoriza alguém.
+4. **Localização**: `02` define que a empresa tem localização, mas `10` §29 diz que "onde a empresa pode operar" e "qual imóvel ela ocupa" pertencem a Imóveis (P1.07; `08` §5: transições de ocupação são do `10`). Esta fatia não inventa lote/ocupação; a ligação entra com P1.07.
+
 ## 2026-10-19 — P1.02a — Auto-consumo de alimentos (`design/04` §16)
 
 Implementa o §16 integralmente, sem alterar a mecânica. Branch `dev/p1.02a-auto-consumo`, **empilhada sobre o PR #12** (P1.02); PR próprio; **não mergeado**. Auto-consumo é obrigatório no primeiro Bot Test e a regra já estava definida; a separação em PR é de tarefa, não de escopo.

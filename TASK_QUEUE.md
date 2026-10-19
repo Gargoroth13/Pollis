@@ -226,7 +226,7 @@ Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos 
 
 > **Pendências para blocos futuros:** Empresas (P1.04) e Escolas devem plugar bloqueios/contexto de atividade pelos mecanismos existentes (provedores de bloqueio, `ActivityContext`, hooks), sem caminho de execução separado; Máscara de Ações (`21 §21`) é o **P1.19**; categoria/visibilidade/cooldown dependem de decisão do GD.
 
-## [ ] P1.04 — Empresas
+## [~] P1.04 — Empresas  *(dividida em fatias de execução; P1.04a implementada em 2026-10-19; o restante segue no Bot Test)*
 
 **Depende de P0.07.** Decisões aprovadas (2026-10-14): o Dono recebe salário associado ao cargo, pago pela conta da empresa e sujeito a `S` e `T`; sem retirada de lucro, dividendos ou distribuição passiva; propriedade não equivale a receber dinheiro; sem exceção às regras de `06.23`. Materiais operacionais ficam fora desta primeira implementação (limitação conhecida; nenhum insumo oculto é cobrado).
 
@@ -236,7 +236,17 @@ Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos 
 
 **Decisão do GD (2026-10-15):** os produtos militares do Exército são produzidos por empresas **Industrial / Produção** (usar `catalog.services.producer_sector_of`); permanecem distintos dos produtos improvisados da milícia.
 
-Implementar `02` utilizando `22` como fonte de produtos/receitas.
+Implementar `02` utilizando `22` como fonte de produtos/receitas. **Fatias** (ordem de execução; nenhuma sai do escopo do primeiro Bot Test):
+
+- **[x] P1.04a — Núcleo** (branch `dev/p1.04a-empresas-nucleo`, PR empilhado sobre o #14; `CHANGELOG_DEV.md`, 2026-10-19): tipos, fundação com custo (`02` §17), conta da empresa, cargo Dono (`02` §16), aporte de capital, `audit_companies`.
+- **[ ] P1.04b — Cargos, mural e salários** (`02` §15-16; `24` §24.13; `01` §1.7): cargos com salário, vagas no mural público, candidatura e aprovação, regra de um emprego contratado (Dono não conta), salário de trabalho e do Dono pelo registro de remuneração (`WAGE`/`OWNER_SALARY`, provedores de `W`/`S`/`T`), provedor de bloqueio e `ActivityContext` para Trabalhar. **Precisa de decisões do GD:** política de caixa insuficiente (recomendação: `PENDING`) e quem é "pessoa autorizada" a aprovar (recomendação: só o Dono nesta etapa, delegação como extensão explícita).
+- **[ ] P1.04c — Produção e estoque** (`02` §5-8, §13, §18-20): um produto por vez, troca com custo/setup/cooldown, Energia → trabalho → produção por skill/especialização, qualidade ponderada com teto de estrela, estoque empresarial, `check_production_ready`. **Precisa da decisão de estrelas** (lacuna 1 abaixo).
+- **[ ] P1.04d — Suporte** (`02` §9): Engenheiro (bônus diário de produção) e Advogado (multiplicador de risco de Burnout de Trabalhar/Estudar, piso 1%); depende de estrelas (limite por estrela).
+- **[ ] P1.04e — Varejo e Construtora** (`02` §11-12; permissões de compra/venda §4 pelos usos do catálogo): estoque × capacidade de venda; obra ativa por vez (o imóvel concluído depende de P1.07).
+- **Localização/ocupação** (`10` §29): integra com **P1.07**; consumo operacional (`02` §10): materiais operacionais seguem como limitação conhecida da primeira implementação de Empresas (Q10), a retomar na sua fase de integração.
+
+**Lacunas de design a decidir pelo GD:** (1) como a empresa ganha estrelas (e a estrela inicial definitiva); (2) caixa insuficiente no salário; (3) "pessoa autorizada" no mural. Detalhes e recomendações em `CHANGELOG_DEV.md` (2026-10-19).
+
 
 ## [ ] P1.05 — Mercado e transparência
 
