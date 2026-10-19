@@ -76,8 +76,8 @@ def quantity_of(player_id: int, product_key: str) -> int:
 
 def inventory_of(player_id: int) -> Dict[str, List[ItemView]]:
     """Itens do jogador agrupados pela categoria do catálogo (05 §3): categorias em ordem alfabética, produtos por chave."""
-    rows = (InventoryItem.objects.filter(player_id=player_id).select_related("product")
-            .order_by("product__category", "product__key"))
+    rows = sorted(InventoryItem.objects.filter(player_id=player_id).select_related("product"),
+                  key=lambda i: (i.product.category, i.product.key))      # ordem em Python: não depende da collation do banco
     grouped: Dict[str, List[ItemView]] = {}
     for item in rows:
         p = item.product
@@ -110,7 +110,8 @@ def _locked_item(player_id: int, product_id: int) -> Optional[InventoryItem]:
 
 
 def _apply(player_id: int, product: Product, delta: int, operation: Operation, *, origin: str, destination: str, key: str,
-           reference_kind: str, reference_id, at: int, explained: Optional[Dict[str, Any]]) -> ActionResult:
+           reference_kind: str, reference_id, at: int, explained: Optional[Dict[str, Any]],
+           _retry: bool = True) -> ActionResult:
     """Aplica UM movimento (entra +, sai −) sobre a posse, com a trilha. Deve rodar dentro de uma transação."""
     replay = _replay(key, player_id, product.pk, delta, operation)
     if replay is not None:
@@ -134,12 +135,15 @@ def _apply(player_id: int, product: Product, delta: int, operation: Operation, *
                 origin=origin, destination=destination, key=key, reference_kind=reference_kind,
                 reference_id=str(reference_id), at=at, explained=explained or {})
     except IntegrityError:
-        # outra transação criou a posse (ou usou a chave) primeiro: relê sob bloqueio e decide de novo
+        # outra transação criou a posse (ou usou a chave) primeiro: relê sob bloqueio e decide de novo, UMA vez. Um segundo
+        # IntegrityError não é corrida (restrição do banco violada de verdade) e sobe, em vez de recursar sem fim.
         replay = _replay(key, player_id, product.pk, delta, operation)
         if replay is not None:
             return replay
+        if not _retry:
+            raise
         return _apply(player_id, product, delta, operation, origin=origin, destination=destination, key=key,
-                      reference_kind=reference_kind, reference_id=reference_id, at=at, explained=explained)
+                      reference_kind=reference_kind, reference_id=reference_id, at=at, explained=explained, _retry=False)
     return ActionResult(True, "OK", {"movement": movement.pk, "quantity": after, "delta": delta, "product": product.key})
 
 
@@ -355,8 +359,8 @@ def _send_locked(sender_id: int, recipient_id: int, product_key: str, quantity: 
                 reference_kind="shipment", reference_id=f"{sender_id}:{sequence}", at=now, actor=f"player:{sender_id}",
                 category="mail", operation="send_item",
                 explained={"product": product_key, "quantity": quantity, "recipient": recipient_id, "fee": cents})
-            if not paid.ok:
-                return _refuse("INSUFFICIENT_FUNDS", fee=cents, **paid.detail)
+            if not paid.ok:                       # propaga o código REAL do ledger (saldo, conflito de chave...), sem rotular
+                return _refuse(paid.code, **{**paid.detail, "fee": cents})
         reference = from_reais(product.base_price) * quantity
         shipment = Shipment.objects.create(
             sender_id=sender_id, recipient_id=recipient_id, product=product, quantity=quantity, sequence=sequence,

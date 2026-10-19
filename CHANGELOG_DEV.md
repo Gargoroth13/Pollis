@@ -6,7 +6,7 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ## 2026-10-18 — P1.02 — Inventário implementado (app `inventory`)
 
-Implementa `design/05` (REVIEW) sobre a base integrada (#8 → #9 → #10 → #11 já mergeados em `main`). Branch `dev/p1.02-inventario`. **PR aberto; não mergeado; aguarda autorização do Game Director.**
+Implementa `design/05` (REVIEW) sobre a base integrada (#8 → #9 → #10 → #11 já mergeados em `main`). Branch `dev/p1.02-inventario`, PR #12. **Não mergeado; aguarda autorização do Game Director.**
 
 ### O que foi entregue
 - **Posse** (`inventory/models.py`): `InventoryItem` (jogador → produto → quantidade inteira, só existe com quantidade > 0); categorias vêm do catálogo (`inventory_of` agrupa por `Product.category`; nada é duplicado).
@@ -28,20 +28,23 @@ Implementa `design/05` (REVIEW) sobre a base integrada (#8 → #9 → #10 → #1
 ### Bug real encontrado e corrigido (PostgreSQL)
 Envios cruzados (A→B e B→A simultâneos) davam deadlock em 3/3 execuções: o INSERT com FK toma `FOR KEY SHARE` na linha `Player` referenciada, que conflita com o `FOR UPDATE` da outra transação. Correção: `send_item` trava as duas linhas `Player` em ordem crescente de pk antes de qualquer outra coisa. Coberto por teste de concorrência (5 execuções consecutivas no PG sem falha).
 
-### Verificação (executada)
-- PostgreSQL 16, suíte completa: **997 testes OK** (941 anteriores + 56 do `inventory`).
-- SQLite, suíte completa: **997 testes OK (13 pulados que exigem PostgreSQL)**.
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **998 testes OK** (941 anteriores + 57 do `inventory`).
+- SQLite, suíte completa: **998 testes OK (13 pulados que exigem PostgreSQL)**.
 - `manage.py check` e `makemigrations --check` limpos nos dois bancos.
+- Envios cruzados A↔B (`test_crossing_sends_between_two_players_never_deadlock_and_conserve_items_and_money`): passa no PostgreSQL (3 execuções do arquivo de concorrência, 5 testes cada). Mutação feita para provar que o teste vale: sem o bloqueio ordenado das duas linhas `Player`, ele falha com `deadlock detected` (2/2 execuções); código restaurado.
 
-### Fora do escopo (explícito)
-- **Mercado de Jogadores, Varejo e compra** (05 §13-16): sistemas próprios.
-- **Estado ativo** (roupa/veículo/residência, 05 §7-10): depende de Imóveis/Veículos/Roupas.
-- **Auto-consumo** (`04` §16): **única decisão pendente do GD** — ver abaixo.
-- Estoque empresarial (05 §17): estrutura distinta.
+### Fora do escopo DESTE PR (continua no Bot Test; cada item tem etapa própria)
+- **Auto-consumo** (`04` §16): **obrigatório no primeiro Bot Test; a regra já está definida no `04` §16 e NÃO aguarda decisão de mecânica** (a nota anterior desta entrada que o chamava de "decisão pendente do GD" estava errada e foi removida). É a tarefa **P1.02a**, imediatamente depois deste PR (`TASK_QUEUE.md`). Separação de tarefa, não redução de escopo. Armadilha conhecida: o gatilho vive no processamento lazy (`_catch_up`), e `consume()` público chama `sync_player()` → `_catch_up()`; a P1.02a reutiliza a mesma regra de negócio sobre o jogador já travado, sem reentrar no catch-up.
+- **Mercado de Jogadores, Varejo e compra** (05 §13-16): P1.05/P1.04; este PR entrega os pontos de entrada/saída (`credit`/`debit`).
+- **Estado ativo** (roupa/veículo/residência, 05 §7-10): depende de Roupas/Imóveis/Veículos; segue planejado nessas etapas.
+- Estoque empresarial (05 §17): estrutura distinta, em P1.04.
 - As quatro pendências herdadas do P1.01 **já haviam sido resolvidas na P0.02**; nenhuma bloqueou.
 
-### Decisão necessária (apenas para o Auto-consumo)
-O `04` §16 define o auto-consumo quando Nutrição < 10, mas o gatilho no tempo (o jogo é preguiçoso, sem tick) e a ordem de escolha não estão especificados. **Recomendação:** avaliar no fim do `catch-up` preguiçoso (hook de acesso), reutilizando `inventory.services.consume`; alimento preferido primeiro, senão o disponível de menor ganho de Nutrição. Nada foi implementado.
+### Revisão consolidada do diff (correções incluídas no PR)
+- `_apply`: a releitura após `IntegrityError` era recursiva e ilimitada; uma violação real de restrição recursaria sem fim. Agora relê **uma** vez e, se o erro persiste, ele sobe (teste novo).
+- `send_item`: a recusa de pagamento rotulava qualquer falha do ledger como `INSUFFICIENT_FUNDS`; agora propaga o código real do ledger.
+- `inventory_of`: a ordem das categorias dependia da collation do banco; agora é ordenada em Python.
 
 ---
 

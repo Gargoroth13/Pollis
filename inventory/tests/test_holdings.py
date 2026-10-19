@@ -159,3 +159,23 @@ class TrailTests(InventoryTestCase):
         from django.db.models import ProtectedError
         with self.assertRaises(ProtectedError):
             Player.objects.filter(pk=self.player.pk).delete()
+
+
+class IntegrityRetryTests(InventoryTestCase):
+    def test_a_real_database_violation_is_raised_once_and_never_recurses_forever(self):
+        """Corrida na criação = UMA releitura; restrição violada de verdade (aqui simulada) sobe, sem recursão infinita."""
+        from unittest import mock
+
+        from django.db import IntegrityError
+        calls = []
+
+        def boom(*args, **kwargs):
+            calls.append(1)
+            raise IntegrityError("restrição violada")
+
+        with mock.patch.object(InventoryMovement.objects, "create", side_effect=boom):
+            with self.assertRaises(IntegrityError):
+                credit(self.player, "wheat", 3)
+        self.assertEqual(len(calls), 2)                                 # tentativa + uma releitura
+        self.assertEqual(self.qty(self.player, "wheat"), 0)
+        self.assertEqual(InventoryMovement.objects.count(), 0)
