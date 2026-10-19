@@ -33,16 +33,17 @@ class DescriptorContractTests(TravelTestCase):
 
     def test_the_actions_are_registered_with_stable_ids(self):
         self.assertEqual([d.id for d in registry.list_descriptors()],
-                         ["auto_consumption", "consume", "leisure", "send_item", "study", "travel", "work"])
+                         ["auto_consumption", "consume", "found_company", "fund_company", "leisure", "send_item", "study", "travel", "work"])
         self.assertEqual({d.id: d.name for d in registry.list_descriptors()},
                          {"work": "Trabalhar", "study": "Estudar", "leisure": "Lazer", "travel": "Viajar",
                           "consume": "Consumir", "send_item": "Enviar item pelo Correio",
-                          "auto_consumption": "Configurar Auto-consumo"})
+                          "auto_consumption": "Configurar Auto-consumo", "found_company": "Fundar empresa",
+                          "fund_company": "Aportar capital na empresa"})
 
     def test_travel_is_not_added_to_the_energy_action_enum(self):
         """Viajar não tem custo de Energia (04 §2.2): o enum Action continua com as 3 ações de custo fixo."""
         self.assertEqual({a.value for a in Action}, {"work", "study", "leisure"})
-        self.assertEqual({d.id for d in registry.list_descriptors()} - {a.value for a in Action}, {"travel", "consume", "send_item", "auto_consumption"})
+        self.assertEqual({d.id for d in registry.list_descriptors()} - {a.value for a in Action}, {"travel", "consume", "send_item", "auto_consumption", "found_company", "fund_company"})
 
     def test_every_contract_field_is_present(self):
         for d in registry.list_descriptors():
@@ -64,7 +65,7 @@ class DescriptorContractTests(TravelTestCase):
 
     def test_availability_lists_actions_in_a_deterministic_id_order(self):
         self.assertEqual([a.action_id for a in registry.available_actions(self.player.pk)],
-                         ["auto_consumption", "consume", "leisure", "send_item", "study", "travel", "work"])
+                         ["auto_consumption", "consume", "found_company", "fund_company", "leisure", "send_item", "study", "travel", "work"])
 
     def test_descriptors_are_immutable(self):
         with self.assertRaises(Exception):

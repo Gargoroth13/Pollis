@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "catalog",  # catálogo central de Produtos, Receitas e usos (design/22)
     "ledger",  # registro monetário: contas, lançamentos, reservas, obrigações, remuneração (design/24)
     "inventory",  # inventário pessoal: posse de produtos, consumo, correio (design/05)
+    "companies",  # empresas: núcleo (fundação, cargo Dono, aporte de capital; design/02)
 ]
 
 MIDDLEWARE = [
