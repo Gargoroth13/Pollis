@@ -4,6 +4,32 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-19 — P1.02a — Auto-consumo de alimentos (`design/04` §16)
+
+Implementa o §16 integralmente, sem alterar a mecânica. Branch `dev/p1.02a-auto-consumo`, **empilhada sobre o PR #12** (P1.02); PR próprio; **não mergeado**. Auto-consumo é obrigatório no primeiro Bot Test e a regra já estava definida; a separação em PR é de tarefa, não de escopo.
+
+### O que foi entregue
+- **Configuração** (`inventory.AutoConsumption`, ação `auto_consumption` no Action Registry, alvo `{"enabled": bool, "preferred": produto | None}`): habilitar/desabilitar e escolher (ou limpar) o alimento preferido; o preferido precisa ser alimento consumível do catálogo (mesmas recusas do consumo manual). Sem custo de Energia/dinheiro (o design não define).
+- **Execução** (`inventory/auto.py`): hook de acesso (`players.hooks`, On Access) no fim do catch-up. Com Nutrição ≥ 10 não consulta nada; com `Nutrição < 10` e Auto-consumo habilitado: 1) preferido, se houver no inventário; 2) senão o alimento disponível de menor ganho de Nutrição; repete enquanto Nutrição < 10 e houver elegível; para ao atingir/ultrapassar 10; sem elegível, nada. Sem polling por jogador.
+- **Mesmas regras do manual**: `services.consume_locked` é o núcleo único (item → efeito → quantidade reduzida) usado por `consume` e pelo hook; o efeito de Nutrição/Comida é `players.services.apply_food_locked` (extraído de `consume_food`, que o reutiliza). Sem bônus especial; o efeito de Comida substitui o anterior.
+- **Sem recursão**: o hook não chama `consume`/`sync_player`; opera sobre o jogador que o catch-up já travou (em memória) e tem guarda de reentrada. `consume` manual passou a usar `locked_player` (um único catch-up por consumo).
+- **Trilha e auditoria**: movimento de consumo com `reference_kind="auto_consumption"` e `explained` (`automatic`, `nutrition_before`, regra de escolha, preferido, candidatos com ganho). `audit_inventory` ganhou o invariante 4 (consumo automático só abaixo do limiar, de alimento, como consumo).
+
+### Interpretações técnicas (preservam o design; registradas por honestidade técnica)
+- "Elegível" = alimento do catálogo com valores especificados (NULL é recusado pelo consumo manual, `NULL ≠ 0`) **e ganho de Nutrição > 0**, com ≥ 1 unidade no inventário. Um alimento de ganho 0 (hoje Sorvete e Refrigerante `[PROV]`) não resolve a fome e, se contasse como "menor ganho", seria consumido até acabar sem nunca encerrar o laço. Eles continuam consumíveis manualmente.
+- Empate no menor ganho: desempate determinístico pela chave do produto (ordem alfabética). O design não o define; não afeta o gameplay de forma material.
+- Limiar 10 é do design (`inventory.constants.AUTO_CONSUME_BELOW`), não `[PROV]`.
+- O momento é o do processamento lazy (fim do catch-up, estado em `now`), não retroativo ciclo a ciclo: coerente com "durante o processamento lazy do estado do jogador" e com o guia de continuidade.
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **1034 testes OK** (998 + 36 novos: 33 de Auto-consumo + 3 de concorrência).
+- SQLite, suíte completa: **1034 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos; arquivo de concorrência do `inventory` 3× no PostgreSQL (8 testes cada).
+- Mutação: trocar o núcleo pelo `consume` público no hook faz 8 testes (não-recursão e repetição) falharem; código restaurado.
+- Coberto: configuração e recusas; preferido; alternativa de menor ganho; desempate; preferido inelegível (NULL); ganho 0 e não-alimento; repetição, parada em 10 e após ultrapassar; fim do alimento; ausência de elegível; mesmas regras do manual (Nutrição, efeito, trilha); substituição do efeito de Comida; Nutrição ≤ 100 e dinheiro intacto; trilha/auditoria (inclusive movimento forjado); fome acumulada com o tempo tratada no próximo acesso e não antes; todos os caminhos lazy (`sync_player`, `locked_player`, `get_snapshot`, `check_action`, `available_actions`, `execute_action`); não-recursão (um `_catch_up` por acesso); concorrência no PostgreSQL (acessos simultâneos consomem uma vez; acesso × envio da última unidade tem um vencedor; envios cruzados + acessos sem deadlock).
+
+---
+
 ## 2026-10-18 — P1.02 — Inventário implementado (app `inventory`)
 
 Implementa `design/05` (REVIEW) sobre a base integrada (#8 → #9 → #10 → #11 já mergeados em `main`). Branch `dev/p1.02-inventario`, PR #12. **Não mergeado; aguarda autorização do Game Director.**

@@ -20,7 +20,7 @@ from players.services import ActionResult
 
 from .constants import (ARMY_PRODUCER_SECTOR, NO_STAR_SECTORS, RAW_SECTORS, Category, Channel, NutritionLevel, QolEffect, Sector,
                         UseKind)
-from .models import Product
+from .models import FoodProfile, Product
 
 
 @dataclass(frozen=True)
@@ -88,6 +88,17 @@ def food_of(key: str) -> Optional[FoodView]:
         return None
     return FoodView(NutritionLevel(food.nutrition_level), QolEffect(food.qol_effect), food.nutrition_amount,
                     food.qol_intensity)
+
+
+def food_gains(keys) -> "dict[str, Decimal]":
+    """
+    Ganho de Nutrição (valor do catálogo, 22) dos ALIMENTOS COMPLETAMENTE especificados dentre `keys` e com ganho > 0. Quem
+    escolhe alimento sem conhecer o catálogo (Auto-consumo, 04 §16) usa isto: alimento com valor NULL (não especificado, que o
+    consumo recusaria) ou sem ganho (não resolve fome) não entra.
+    """
+    rows = FoodProfile.objects.filter(product__key__in=list(keys), nutrition_amount__gt=0, qol_intensity__isnull=False
+                                      ).values_list("product__key", "nutrition_amount")
+    return {key: amount for key, amount in rows}
 
 
 def category_of(key: str) -> Optional[Category]:
