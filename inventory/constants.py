@@ -2,6 +2,7 @@
 Vocabulário do Inventário (design/05). Nenhum valor de balanceamento vive aqui: os números `[PROV]` estão em `params.py`.
 """
 import enum
+from decimal import Decimal
 
 
 class Operation(str, enum.Enum):
@@ -22,3 +23,7 @@ EXTERNAL_CREDIT = frozenset({Operation.PURCHASE, Operation.PRODUCTION})
 EXTERNAL_DEBIT = frozenset({Operation.SALE})
 
 MAX_QUANTITY = 10 ** 12
+
+# Auto-consumo (design/04 §16): número DEFINIDO pelo design (não é `[PROV]`): "Quando `Nutrição < 10`".
+AUTO_CONSUME_BELOW = Decimal(10)
+AUTO_CONSUMPTION_REFERENCE = "auto_consumption"      # `reference_kind` dos movimentos de consumo automático (trilha, 05 §19)

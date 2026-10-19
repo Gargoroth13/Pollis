@@ -27,7 +27,7 @@ from players.services import create_player
 _seq = itertools.count(1)
 
 
-class InventoryConcurrencyTests(TransactionTestCase):
+class ConcurrencyBase(TransactionTestCase):
     def setUp(self):
         install_test_role(self)
         generate_world(get_scenario(**SMALL))
@@ -49,6 +49,7 @@ class InventoryConcurrencyTests(TransactionTestCase):
         self.assertTrue(report.ok, report.findings)
         self.assertTrue(ledger_report.ok, ledger_report.findings)
 
+class InventoryConcurrencyTests(ConcurrencyBase):
     def test_two_sends_of_the_last_unit_have_exactly_one_winner(self):
         for round_ in range(6):
             key = ("hamburger", "pasta", "chocolate", "juice", "soda", "ice_cream")[round_]
@@ -107,4 +108,65 @@ class InventoryConcurrencyTests(TransactionTestCase):
         wins = [j for j in jobs if j.result.ok]
         self.assertEqual((len(wins), self.qty(self.a, "wheat")), (1, 1))
         self.assertTrue(all(j.result.code == "INSUFFICIENT_QUANTITY" for j in jobs if not j.result.ok))
+        self.assertClean()
+
+
+class AutoConsumptionConcurrencyTests(ConcurrencyBase):
+    """Auto-consumo (04 §16) sob concorrência: o hook roda sob o bloqueio do jogador e segue o mesmo protocolo."""
+
+    def hungry(self, player, nutrition=5):
+        from players.models import Player
+        Player.objects.filter(pk=player.pk).update(nutrition=nutrition)
+
+    def automatic(self):
+        return InventoryMovement.objects.filter(reference_kind="auto_consumption")
+
+    def test_simultaneous_accesses_of_a_hungry_player_consume_exactly_once(self):
+        from inventory import auto
+        from players import services as player_services
+        for round_ in range(5):
+            self.give(self.a, "chocolate", 2)
+            self.assertTrue(auto.configure(self.a.pk, True, None).ok)
+            self.hungry(self.a, 5)
+            before = self.automatic().count()
+            run_together(*[lambda: player_services.sync_player(self.a.pk) for _ in range(4)])
+            self.assertEqual(self.automatic().count(), before + 1)                 # as outras já o encontram alimentado
+        self.assertClean()
+
+    def test_an_access_and_a_send_of_the_last_unit_have_exactly_one_winner_and_stay_consistent(self):
+        from inventory import auto
+        from players import services as player_services
+        self.assertTrue(auto.configure(self.a.pk, True, "juice").ok)
+        for round_ in range(6):
+            self.give(self.a, "juice", 1)
+            self.hungry(self.a, 5)
+            ate_before, received_before = self.automatic().filter(player=self.a).count(), self.qty(self.b, "juice")
+            _access, send = run_together(lambda: player_services.sync_player(self.a.pk),
+                                         lambda: services.send_item(self.a.pk, self.b.pk, "juice", 1))
+            ate = self.automatic().filter(player=self.a).count() - ate_before
+            received = self.qty(self.b, "juice") - received_before
+            self.assertEqual(self.qty(self.a, "juice"), 0)
+            self.assertEqual(ate + received, 1, (ate, received))                    # a última unidade vai para UM destino só
+            self.assertEqual(send.result.ok, received == 1, send.result)
+            self.assertTrue(send.result.ok or send.result.code == "INSUFFICIENT_QUANTITY", send.result)
+        self.assertClean()
+
+    def test_automatic_consumption_crossed_with_sends_in_both_directions_never_deadlocks(self):
+        from inventory import auto
+        from players import services as player_services
+        self.assertTrue(auto.configure(self.a.pk, True, None).ok)
+        self.assertTrue(auto.configure(self.b.pk, True, None).ok)
+        for round_ in range(4):
+            self.give(self.a, "chocolate", 3)
+            self.give(self.b, "chocolate", 3)
+            self.hungry(self.a, 5)
+            self.hungry(self.b, 5)
+            jobs = run_together(lambda: services.send_item(self.a.pk, self.b.pk, "chocolate", 1),
+                                lambda: services.send_item(self.b.pk, self.a.pk, "chocolate", 1),
+                                lambda: player_services.sync_player(self.a.pk),
+                                lambda: player_services.sync_player(self.b.pk))
+            self.assertTrue(all(j.result is not None for j in jobs))
+        total = sum(self.qty(p, "chocolate") for p in (self.a, self.b)) + sum(-m.delta for m in
+                                                                              InventoryMovement.objects.filter(operation="consumption"))
+        self.assertEqual(total, 24)                                                 # 4 rodadas × 2 jogadores × 3 unidades
         self.assertClean()
