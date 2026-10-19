@@ -13,7 +13,7 @@ Prioridade:
 
 # P0 — Antes / junto do início da implementação
 
-## [x] P0.01 — Auditoria final de documentos em REVIEW  *(consolidação documental concluída em 2026-10-14, PR #8; aguarda auditoria e merge)*
+## [x] P0.01 — Auditoria final de documentos em REVIEW  *(consolidação documental concluída em 2026-10-14, PR #8, mergeado em `main`)*
 
 > **Estado (2026-10-14):** as decisões aprovadas do Game Director (D1–D25, Q1–Q12 e confirmações) foram documentadas em PR único (branch `dev/p0.01-consolidacao-documental`). `06`, `11` e `19` seguem em **REVIEW** apenas por dependências de execução registradas em `06` 06.36, `11` (teto de déficit sem proposta; zoneamento por lei, P1.07) e `19` 19.48. Isso não bloqueia a P0.02. Decisões e dependências: `CHANGELOG_DEV.md` ("P0.01 — consolidação documental").
 
@@ -51,12 +51,12 @@ Critérios:
 
 ---
 
-## [x] P0.07 — Registro monetário (ledger)  *(P0.07a aprovada; P0.07b implementada em 2026-10-16, aguarda merge)*
+## [x] P0.07 — Registro monetário (ledger)  *(P0.07a aprovada; P0.07b implementada em 2026-10-16; ambas mergeadas em `main`, PRs #10 e #11)*
 
 Pré-requisito transversal: não existe sistema de dinheiro em nenhum documento nem na fila. Posição: depois de P0.01 e P0.02, antes de P1.02. Duas fases:
 
 - **P0.07a — Documento de design** — **aprovado em 2026-10-15** como `design/24-Registro-Monetario-FINAL-BOT-TEST.md` (PR #10); teto de déficit decidido (`24` §24.16, implementação na P1.09/P1.12);
-- **P0.07b — Implementação** — **implementada em 2026-10-16** na branch `dev/p0.07b-ledger` (app `ledger`; PR empilhado sobre o #10; aguarda auditoria externa e aprovação do GD para merge). Decisões técnicas em `24` §24.19.1 e `CHANGELOG_DEV.md`.
+- **P0.07b — Implementação** — **implementada em 2026-10-16** na branch `dev/p0.07b-ledger` (app `ledger`; PR #11 mergeado em `main`). Decisões técnicas em `24` §24.19.1 e `CHANGELOG_DEV.md`.
 
 **Decisões do Game Director já aprovadas (2026-10-14):**
 - **Origem do dinheiro:** dotação inicial explícita e auditável por conta (humana ou Bot) conforme parâmetro do cenário; lançamento de emissão com natureza, origem, destino e referência ao cenário. Como Bots são criados continuamente até a população-alvo, é uma fonte de emissão durante a formação da população, não uma emissão única. Emissão total e contas contempladas aparecem nas métricas financeiras. Zero é válido se escolhido explicitamente; valor ausente faz o cenário recusar a inicialização e registrar a pendência. Sem emissão periódica discricionária pela União; despesas, títulos e transferências não criam dinheiro.
@@ -108,7 +108,7 @@ Critérios:
 
 Entregue: app `players` (`Player`, `QolEffect`, `rules`, `services`, `qol`, `balance`), `core.breakdown` (detalhamento
 estruturado do doc 20) e `TickKind.TEN_MINUTES`. Parâmetros `[PROV]` e interpretações: `CHANGELOG_DEV.md` (2026-10-01).
-Fica para quando o sistema dependente existir: Tratamento (dinheiro), auto-consumo de alimentos (Inventário),
+Fica para quando o sistema dependente existir: Tratamento (dinheiro), auto-consumo de alimentos (P1.02a, depende do Inventário),
 Recuperação Regional (saúde/médicos). *(O bloqueio por Viagem foi implementado no P0.06.1.)*
 
 ---
@@ -196,21 +196,29 @@ ponto de extensão para leis, recursos espaciais, cenário/seed, geração deter
 
 # P1 — Núcleo econômico e interação
 
-## [x] P1.01 — Produtos, Receitas e usos  *(implementado em 2026-10-11, branch `dev/p1.01-produtos-receitas`; em auditoria)*
+## [x] P1.01 — Produtos, Receitas e usos  *(implementado em 2026-10-11; PR #6 mergeado em `main`)*
 
 Implementar a estrutura central de `22`.
 
 **Entregue:** app `catalog` (`Product`, `Recipe`, `RecipeInput`, `FoodProfile`; ids estáveis; `sync_catalog`/`check_catalog`; consultas derivadas; integridade com erro x pendência de design). O `22` atual é **incompleto**: só entrou o que ele declara; lacunas e pendências em `CHANGELOG_DEV.md` (2026-10-11). Valores não especificados (quantidades, rendimento, Nutrição, intensidade de QoL, estrelas das Matrizes) ficam `NULL`, **distintos de zero**, e quem os usa recusa com `UNSPECIFIED_DESIGN_VALUE`.
 
-## [ ] P1.02 — Inventário
+## [x] P1.02 — Inventário  *(implementado em 2026-10-18, branch `dev/p1.02-inventario`; PR #12 aberto; aguarda revisão e autorização do GD)*
 
 **Depende de P0.07.**
 
-> **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FOOD_VALUES_UNDEFINED` (Nutrição e intensidade de QoL numéricas; ordenação para o auto-consumo), `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED` (taxa de correio). Ver `CHANGELOG_DEV.md` (2026-10-11).
+> **Pendências herdadas do P1.01:** as quatro (`GAP_FOOD_VALUES_UNDEFINED`, `GAP_FOOD_PROFILE_BREAD_UNDECLARED`, `GAP_INVENTORY_CATEGORIES_UNDEFINED`, `GAP_BASE_PRICE_UNDEFINED`) foram resolvidas na P0.02; nenhuma bloqueou. **Entregue:** posse, trilha imutável, `consume`, `send_item` (Correio), `audit_inventory`. **Fora deste PR (segue no Bot Test, etapas próprias):** Auto-consumo (P1.02a, abaixo; regra já definida em `04` §16, sem decisão pendente), Mercado de Jogadores (P1.05), Varejo/compra (P1.04), estado ativo (Roupas/Imóveis/Veículos).
 
 Implementar `05`.
 
-## [x] P1.03 — Action Registry  *(implementado em 2026-10-12, branch `dev/p1.03-action-registry`; em auditoria)*
+## [ ] P1.02a — Auto-consumo de alimentos  *(obrigatório no primeiro Bot Test; regra definida em `design/04` §16; depende de P1.02)*
+
+Implementar o §16 integralmente: o jogador habilita o Auto-consumo no Inventário e escolhe um alimento preferido; quando `Nutrição < 10`, durante o processamento lazy, o sistema consome automaticamente (1º alimento preferido, se houver; 2º o alimento disponível de menor ganho de Nutrição), repete enquanto Nutrição < 10 e houver alimento elegível, para ao atingir/ultrapassar 10, não faz nada sem alimento elegível, usa exatamente as regras do consumo manual (sem bônus) e o efeito de Comida substitui o anterior. Sem verificação contínua por jogador.
+
+Critérios: preferência/habilitação persistidas e expostas pelo Action Registry; integração com `players.services._catch_up()` **sem recursão** (`_catch_up` → hook → consumo → `sync_player` → `_catch_up`); mesma regra de negócio do `consume()` sobre o jogador já travado; desempate determinístico entre ganhos iguais (detalhe técnico registrado; só vai ao GD se afetar o gameplay de forma material); testes: preferido, alternativa de menor ganho, consumo repetido, parada, sem elegível, integridade de inventário/Nutrição/auditoria, não-recursão, concorrência no PostgreSQL.
+
+---
+
+## [x] P1.03 — Action Registry  *(implementado em 2026-10-12; PR #7 mergeado em `main`)*
 
 Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos e validação.
 
