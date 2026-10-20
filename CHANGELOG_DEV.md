@@ -4,6 +4,38 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-20 — P1.04d — Cargos de suporte: Engenheiro e Advogado (`design/02` §9, §13, §22)
+
+Quarta fatia de P1.04. Branch `dev/p1.04d-suporte`, empilhada sobre o PR #17 (P1.04c); PR próprio; **não mergeado**. Nenhuma parte do Bot Test foi removida ou adiada.
+
+### O que foi entregue
+- **Engenheiro** (`companies/support.py`): cada Trabalhar soma `base × fator de skill × fator de especialização` ao **bônus do dia** da empresa; a produção por trabalho dos funcionários de produção passa a ser multiplicada por `1 + bônus do dia` (passo `engineering_bonus` no detalhamento de `output_per_work`). O bônus reinicia sozinho a cada dia (soma por empresa/cargo/dia de competência de `SupportWork`; sem tarefa de limpeza). Sem teto artificial: o limite é estrutural (estrela × nº de Engenheiros × Energia), como o §9.1 manda.
+- **Advogado**: cada Trabalhar soma à **redução do dia**; o multiplicador de risco de Burnout dos funcionários da empresa passa a ser `1 − redução` (piso de 1% aplicado por `players.rules`) sobre os ganhos de **Trabalhar e Estudar**; Lazer não é afetado (§9.2). Integra-se por um novo ponto genérico de `players`: `register_burnout_risk_provider` / `resolve_burnout_risk` (mesmo desenho do provedor de atividade: só vale quando quem chamou não informa `burnout_risk`; jogadores reais e Bots pelo mesmo caminho; a pré-visualização da ação mostra o mesmo valor que será pago).
+- **Limite de vagas por estrela**: Engenheiros e Advogados abertos ou ocupados ≤ estrela (`SUPPORT_LIMIT_REACHED` em `open_position`, também no Action Registry).
+- **Especialização** (§13): Engenheiro no produto da empresa; Advogado na própria atividade (`support:lawyer`).
+- `SupportWork` imutável (ligado ao salário pago pela mesma ação) e `audit_companies` invariante 11 (toda contribuição tem o salário pago; dia correto; valor = detalhamento; vagas de suporte dentro do limite).
+- Migração `0004_support_work`. O salário de Engenheiro/Advogado é o mesmo da P1.04b (por ação de Trabalhar, `WAGE`); o Trabalho deles não é bloqueado por produto/setup/estoque (só quem produz é).
+
+### Interpretações técnicas `[PROV]` (sem alterar mecânica; para confirmação do GD) — em `companies/params.py` e `provisional_table()`
+- Contribuição por Trabalhar: Engenheiro 0,02 e Advogado 0,02 × fator de skill (`1 + nível × 0,02`, mesma curva da produção) × fator de especialização (`1 + pontos × 0,01`). Calibração do alvo do §9.1 (~2,5×): 5★, 5 Engenheiros, 5 trabalhos cada (barra de Energia = 100/20), nível máximo e sem especialização → `25 × 0,02 × 3 = 1,5` → 2,5× (verificado por teste; é alvo de balanceamento, não teto). O §9.2 não dá alvo para o Advogado: mesma forma e mesma base.
+- Vagas de suporte por estrela = estrela (`02a` §2.3).
+- Beneficiários do Advogado: ocupantes de cargos da empresa **exceto o Dono** (o Dono não é um emprego contratado, §16), inclusive o próprio Advogado e o Engenheiro.
+- O efeito vale para as ações **depois** da contribuição no mesmo dia (a própria ação do Advogado usa o acumulado até então).
+- A skill/especialização usadas são as do momento do hook (antes do ganho da própria ação, os hooks das Empresas rodam antes dos de Skills), como na produção.
+
+### Lacunas/dependências encontradas
+- Fórmula exata do efeito dos cargos de suporte e alvo do Advogado: o §9 diz "outros parâmetros definidos pelo sistema" (valores acima `[PROV]`, calibráveis pelos Bots).
+- Limite de funcionários por estrela continua sem definição (`02a` lacuna 7).
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **1175 testes OK** (1148 + 27 novos: suporte, provedor de risco, concorrência).
+- SQLite, suíte completa: **1175 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos; `companies` 3× no PostgreSQL (136 testes cada, com a concorrência de suporte).
+- Mutação: sem as travas do Dono/empresa em `open_position`, o teste de vagas simultâneas falha (2 ou 4 vagas abertas em 1★).
+
+### Locking (PostgreSQL)
+Protocolo inalterado: jogador → empresa → registro monetário. O hook de suporte trava a empresa antes de gravar. A corrida por vagas de suporte é serializada pelo jogador Dono (e pela empresa); o teste de concorrência falha se as duas travas forem removidas (as quatro aberturas simultâneas passam), logo não é vacuoso.
+
 ## 2026-10-20 — P1.04c — Produção e estoque empresarial (`design/02` §5-8, §11.1, §13, §18-20; `22`)
 
 Terceira fatia de P1.04. Branch `dev/p1.04c-producao-estoque`, empilhada sobre o PR #16 (P1.04b); PR próprio; **não mergeado**. Nenhuma parte do Bot Test foi removida ou adiada; o que depende de outro sistema (terreno da Matriz, materiais operacionais, estrelas por upgrade) tem ponto de integração explícito e recusa clara, nunca valor inventado.

@@ -121,8 +121,12 @@ def effective_quality(company: Company, quality: Optional[Decimal]) -> Optional[
     return Calc("production_quality", quality).cap("star_cap", quality_cap(company.stars)).result(game_clock.now())
 
 
-def output_per_work(product_key: str, level: Decimal, specialization: Decimal, at: Optional[int] = None) -> Explained:
-    """Unidades (fracionárias) por trabalho (02 §7) com os fatores (20): base × skill × especialização × rendimento do catálogo."""
+def output_per_work(product_key: str, level: Decimal, specialization: Decimal, at: Optional[int] = None,
+                    engineering_bonus: Optional[Explained] = None) -> Explained:
+    """
+    Unidades (fracionárias) por trabalho (02 §7, §9.1) com os fatores (20): base × skill × especialização × (1 + bônus diário do
+    Engenheiro) × rendimento do catálogo. Sem Engenheiro trabalhando no dia, o bônus é 0 e o fator é 1.
+    """
     product = catalog.get_product(product_key)
     recipe = catalog.recipe_of(product_key)
     yield_q = (product.raw_yield if product.sector in {s.value for s in RAW_SECTORS} else
@@ -133,6 +137,8 @@ def output_per_work(product_key: str, level: Decimal, specialization: Decimal, a
     return (Calc("units_per_work_base", params.UNITS_PER_WORK_BASE)
             .mul("skill_production", skill.value, detail=skill)
             .mul("specialization_production", 1 + Decimal(specialization) * params.SPECIALIZATION_PRODUCTION_PER_POINT)
+            .mul("engineering_bonus", 1 + (Decimal(0) if engineering_bonus is None else engineering_bonus.value),
+                 detail=engineering_bonus)
             .mul("catalog_yield", yield_q)
             .result(at))
 
@@ -332,7 +338,8 @@ def produce_on_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
     product = line.product
     level = get_levels(player_id)[relevant_skill(PositionKind.WORKER)]
     spec = specialization_value(player_id, product.key)
-    per_work = output_per_work(product.key, level, spec, ctx.now)
+    from . import support
+    per_work = output_per_work(product.key, level, spec, ctx.now, support.engineering_bonus(company.pk, ctx.now))
     total = line.carry + per_work.value
     whole = int(total.to_integral_value(rounding=ROUND_FLOOR))
     out, limited_by = whole, []

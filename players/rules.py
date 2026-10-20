@@ -84,16 +84,16 @@ def update_burnout_active(player: Player, bal: Balance) -> None:
         player.burnout_active = False
 
 
-def burnout_change(action: Action, risk: Decimal, bal: Balance) -> Explained:
+def burnout_change(action: Action, risk: Decimal, bal: Balance, risk_detail: Optional[Explained] = None) -> Explained:
     """
     Trabalhar +5, Estudar +3, Lazer -10 (04 §7.1). `risk` = multiplicador de risco (1 = 100%):
     efeitos como o do Advogado (02 §9.2) o reduzem, nunca abaixo de `burnout_risk_floor` (1%).
-    O risco só modula GANHOS; a redução do Lazer não é afetada.
+    O risco só modula GANHOS; a redução do Lazer não é afetada. `risk_detail` = como o multiplicador foi composto (20).
     """
     if action is Action.LEISURE:
         return Calc("leisure_change", bal.burnout_change_leisure).result()
     base = bal.burnout_gain_work if action is Action.WORK else bal.burnout_gain_study
-    risk_ex = Calc("risk", risk).floor("risk_floor", bal.burnout_risk_floor).result()
+    risk_ex = Calc("risk", risk, detail=risk_detail).floor("risk_floor", bal.burnout_risk_floor).result()
     return Calc("action_gain", base).mul("risk", risk_ex.value, detail=risk_ex).result()
 
 

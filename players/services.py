@@ -180,23 +180,34 @@ def get_snapshot(player_id: int) -> PlayerSnapshot:
         )
 
 
+def burnout_risk_for(player: Player, action: Action, now: int, explicit=None):
+    """(multiplicador, detalhamento) do risco de Burnout desta ação: o informado por quem chamou ou o dos provedores (02 §9.2)."""
+    if explicit is not None:
+        return D(explicit), None
+    if action is Action.LEISURE:
+        return Decimal(1), None                          # o risco só modula ganhos (Trabalhar/Estudar)
+    resolved = hooks.resolve_burnout_risk(player, action, now)
+    return (Decimal(1), None) if resolved is None else (resolved.value, resolved)
+
+
 @transaction.atomic
-def perform_action(player_id: int, action: Action, *, burnout_risk=1,
+def perform_action(player_id: int, action: Action, *, burnout_risk=None,
                    effect: Optional[EffectSpec] = None,
                    activity: Optional[ActivityContext] = None) -> ActionResult:
     """
     Trabalhar, Estudar ou Lazer: custo FIXO de Energia (04 §2.2: o jogador não escolhe quanto gastar),
     alteração de Burnout (+5/+3/-10) e, no Lazer, o efeito temporário da atividade (categoria Lazer).
-    `burnout_risk`: multiplicador de risco de Burnout (02 §9.2), 1 = 100%.
+    `burnout_risk`: multiplicador de risco de Burnout (02 §9.2), 1 = 100%. Se não for informado, os provedores de risco
+    (players.hooks; ex.: o Advogado da empresa do jogador) o resolvem; sem provedor, 100%.
     `activity`: o que a atividade oferece a OUTROS sistemas (ex.: skills que desenvolve). Os hooks
     registrados (players.hooks) reagem a ela dentro desta mesma transação, depois do sucesso da ação.
     Se `activity` não for informada, os provedores de atividade (players.hooks; ex.: o emprego do jogador, design/02 §6) a resolvem.
     """
     bal = get_balance()
-    risk = D(burnout_risk)
     player = _locked(player_id)
     now = game_clock.now()
     _catch_up(player, now)
+    risk, risk_detail = burnout_risk_for(player, action, now, burnout_risk)
     if activity is None:
         activity = hooks.resolve_activity(player, action, now)      # o cargo/curso informa a atividade (design/02 §6)
 
@@ -209,7 +220,7 @@ def perform_action(player_id: int, action: Action, *, burnout_risk=1,
     cost = rules.energy_cost(action, bal)
 
     player.energy = q(player.energy - cost)
-    change = rules.burnout_change(action, risk, bal)
+    change = rules.burnout_change(action, risk, bal, risk_detail)
     rules.apply_burnout_change(player, change.value, bal)
     if action is Action.WORK:
         player.last_work_at = now

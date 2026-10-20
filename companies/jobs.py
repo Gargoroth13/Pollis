@@ -27,7 +27,7 @@ from skills.constants import Skill
 from skills.services import get_levels
 
 from . import params
-from .constants import (MAX_REQUIREMENT_LEVEL, MAX_SALARY_CENTS, MURAL_PAGE_LIMIT, ApplicationStatus, CompanyType, EventKind,
+from .constants import (MAX_REQUIREMENT_LEVEL, MAX_SALARY_CENTS, MURAL_PAGE_LIMIT, SUPPORT_POSITION_KINDS, ApplicationStatus, CompanyType, EventKind,
                         PositionKind, PositionStatus)
 from .models import Application, Company, Position, PositionEvent
 from .services import owner_of
@@ -114,6 +114,11 @@ def open_position_refusal(player_id: int, company_id: Any, kind: Any, salary: An
                        allowed=sorted(k.value for k in allowed))
     if not _is_int(salary) or not 0 < salary <= MAX_SALARY_CENTS:
         return _refuse("INVALID_SALARY", salary=repr(salary)[:40], max=MAX_SALARY_CENTS)
+    if position_kind.value in SUPPORT_POSITION_KINDS:
+        limit = params.SUPPORT_LIMIT_PER_STAR[company.stars]
+        have = Position.objects.filter(company_id=company_id, kind=position_kind.value).exclude(status=PositionStatus.CLOSED.value).count()
+        if have >= limit:
+            return _refuse("SUPPORT_LIMIT_REACHED", kind=position_kind.value, stars=company.stars, limit=limit, have=have)
     return _requirements_problem(requirements)
 
 
@@ -122,7 +127,7 @@ def open_position(player_id: int, company_id: Any, kind: Any, salary: Any, requi
     O Dono abre uma vaga no mural público (02 §15). `salary` (centavos) é o valor devido por ação de Trabalhar do ocupante; o teto
     real é S/T no pagamento. `requirements` = {skill: nível mínimo} (01 §1.9; vazio = sem requisito).
     Recusas: PLAYER_NOT_FOUND, INVALID_PARAMS, COMPANY_NOT_FOUND, NOT_OWNER, INVALID_POSITION_KIND, POSITION_KIND_NOT_ALLOWED,
-    INVALID_SALARY, INVALID_REQUIREMENTS.
+    INVALID_SALARY, SUPPORT_LIMIT_REACHED (Engenheiros/Advogados abertos ou ocupados já no limite da estrela, 02 §9), INVALID_REQUIREMENTS.
     """
     requirements = {} if requirements is None else requirements
     if not Player.objects.filter(pk=player_id).exists():

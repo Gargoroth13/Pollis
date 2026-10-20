@@ -153,6 +153,34 @@ class WorkWage(_Immutable):
         ]
 
 
+class SupportWork(_Immutable):
+    """
+    Uma ação de Trabalhar de Engenheiro ou Advogado (02 §9): a contribuição ao efeito DIÁRIO da empresa (bônus de produção ou redução
+    do risco de Burnout). Imutável; liga-se ao salário pago pela mesma ação (`player`, `sequence`). O efeito do dia é a soma por
+    (empresa, cargo, `competence_day`): ele reinicia sozinho a cada dia, sem tarefa de limpeza.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="support_works")
+    player = models.ForeignKey("players.Player", on_delete=models.PROTECT, related_name="support_works")
+    position = models.ForeignKey(Position, on_delete=models.PROTECT, related_name="support_works")
+    kind = models.CharField(max_length=16, choices=_choices(PositionKind))      # engineer | lawyer
+    sequence = models.IntegerField()                                # o MESMO nº do salário desta ação (WorkWage)
+    competence_day = models.IntegerField()
+    at = models.BigIntegerField()
+    level = models.DecimalField(max_digits=14, decimal_places=6)
+    specialization = models.DecimalField(max_digits=14, decimal_places=6)
+    contribution = models.DecimalField(max_digits=18, decimal_places=6)
+    explained = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(fields=["player", "sequence"], name="supportwork_unique_player_sequence"),
+            models.CheckConstraint(condition=Q(contribution__gte=0), name="supportwork_contribution_gte_0"),
+        ]
+        indexes = [models.Index(fields=["company", "kind", "competence_day"], name="supportwork_company_day")]
+
+
 class CapitalContribution(models.Model):
     """Aporte do Dono ao caixa da empresa: dinheiro que JÁ existia, movido do jogador para a conta da empresa (24; sem dinheiro novo)."""
 

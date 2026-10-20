@@ -161,3 +161,51 @@ class BurnoutHealthPenaltyTests(PlayerTestCase):
         self.set_state(burnout=100, burnout_active=True)
         c = self.snap().health_change_per_cycle
         self.assertEqual((c.value, c.step("penalty:burnout").amount), (3, -2))
+
+
+class BurnoutRiskProviderTests(PlayerTestCase):
+    """Provedores de risco de Burnout (02 §9.2): outros sistemas (ex.: Advogado) o reduzem pelo mesmo caminho de jogadores e bots."""
+
+    def provide(self, name, factor, seen=None):
+        from core.breakdown import Calc
+        from players import hooks
+
+        def provider(player, action, now):
+            if seen is not None:
+                seen.append(action)
+            return Calc(name, factor).result(now)
+        hooks.register_burnout_risk_provider(name, provider)
+        self.addCleanup(hooks.unregister_burnout_risk_provider, name)
+
+    def test_providers_multiply_and_the_floor_still_applies_with_the_composition_explained(self):
+        self.provide("sys_a", D("0.5"))
+        self.provide("sys_b", D("0.5"))
+        change = act(self, Action.WORK).detail["burnout_change"]
+        self.assertEqual(change.value, D("1.25"))                              # 5 × 0,5 × 0,5
+        composed = change.step("risk").detail.steps[0].detail
+        self.assertEqual((composed.step("sys_a").amount, composed.step("sys_b").amount), (D("0.5"), D("0.5")))
+
+    def test_an_explicit_risk_from_the_caller_wins_and_providers_are_not_consulted(self):
+        seen = []
+        self.provide("sys_a", D("0.5"), seen)
+        change = act(self, Action.WORK, burnout_risk=1).detail["burnout_change"]
+        self.assertEqual((change.value, seen), (D(5), []))
+
+    def test_providers_are_not_consulted_for_leisure_and_are_deterministic_by_name(self):
+        seen = []
+        self.provide("sys_a", D("0.5"), seen)
+        self.set_state(burnout=40)
+        act(self, Action.LEISURE)
+        self.assertEqual(seen, [])
+        self.assertEqual(self.state().burnout, 30)
+
+    def test_a_provider_cannot_go_below_the_one_percent_floor_and_duplicates_are_refused(self):
+        from players import hooks
+        self.provide("sys_a", D("-3"))
+        self.assertEqual(act(self, Action.WORK).detail["burnout_change"].value, D("0.05"))
+        with self.assertRaises(ValueError):
+            hooks.register_burnout_risk_provider("sys_a", lambda p, a, n: None)
+
+    def test_without_any_provider_nothing_changes(self):
+        change = act(self, Action.WORK).detail["burnout_change"]
+        self.assertEqual((change.value, change.step("risk").amount), (D(5), D(1)))

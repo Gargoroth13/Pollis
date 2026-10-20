@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
+from core.breakdown import Calc, Explained
+
 from .actions import Action
 from .balance import Balance
 from .models import Player
@@ -63,12 +65,17 @@ AccessHook = Callable[[Player, int], None]
 # Só é consultado quando quem chamou `perform_action` NÃO informou `activity`: jogadores reais e bots, que pedem a ação pelo
 # Action Registry, nunca informam o contexto; ele vem do sistema dono (design/02 §6; GD 2026-10-12).
 ActivityProvider = Callable[[Player, Action, int], Optional[ActivityContext]]
+# Provedor de risco de Burnout (02 §9.2): devolve o multiplicador dos GANHOS de Burnout de Trabalhar/Estudar (1 = 100%) com o
+# detalhamento, ou None se o sistema não tem efeito sobre este jogador agora. Só é consultado quando quem chamou `perform_action`
+# NÃO informou `burnout_risk`; os provedores se multiplicam e o piso de 1% é aplicado depois (`rules.burnout_change`).
+BurnoutRiskProvider = Callable[[Player, Action, int], Optional[Explained]]
 
 _action_hooks: Dict[str, ActionHook] = {}
 _created_hooks: Dict[str, PlayerCreatedHook] = {}
 _block_providers: Dict[str, BlockProvider] = {}
 _access_hooks: Dict[str, AccessHook] = {}
 _activity_providers: Dict[str, ActivityProvider] = {}
+_burnout_risk_providers: Dict[str, BurnoutRiskProvider] = {}
 
 
 def register_action_hook(name: str, fn: ActionHook) -> None:
@@ -117,6 +124,23 @@ def register_activity_provider(name: str, fn: ActivityProvider) -> None:
     _activity_providers[name] = fn
 
 
+def register_burnout_risk_provider(name: str, fn: BurnoutRiskProvider) -> None:
+    if name in _burnout_risk_providers:
+        raise ValueError(f"Provedor de risco de Burnout duplicado: {name}")
+    _burnout_risk_providers[name] = fn
+
+
+def resolve_burnout_risk(player: Player, action: Action, now: int) -> Optional[Explained]:
+    """Produto dos multiplicadores dos provedores (ordem de nome, determinístico) com o detalhamento; None se nenhum responde."""
+    calc, any_effect = Calc("burnout_risk_base", 1), False
+    for name in sorted(_burnout_risk_providers):
+        effect = _burnout_risk_providers[name](player, action, now)
+        if effect is not None:
+            calc.mul(name, effect.value, detail=effect)
+            any_effect = True
+    return calc.result(now) if any_effect else None
+
+
 def resolve_activity(player: Player, action: Action, now: int) -> Optional[ActivityContext]:
     """Primeiro contexto não vazio, em ordem de nome (determinístico). Sem provedor que responda, a ação segue sem contexto."""
     for name in sorted(_activity_providers):
@@ -159,3 +183,7 @@ def unregister_action_hook(name: str) -> None:        # para testes
 
 def unregister_player_created_hook(name: str) -> None:  # para testes
     _created_hooks.pop(name, None)
+
+
+def unregister_burnout_risk_provider(name: str) -> None:  # para testes
+    _burnout_risk_providers.pop(name, None)

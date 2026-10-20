@@ -17,10 +17,14 @@ Auditoria das Empresas (design/02 §16-17; 24). Só LÊ. Invariantes (numeraçã
      empresa; os insumos consumidos são exatamente os registrados; nada é produzido sem produto escolhido
  10  linha de produção: nº de seleções = histórico; produto atual = último do histórico; só tipos que produzem; trocas respeitam o
      cooldown; fração acumulada em [0, 1)
+ 11  cargos de suporte: toda contribuição (`SupportWork`) tem o salário pago da mesma ação (jogador, sequência), da mesma empresa e
+     cargo, de Engenheiro ou Advogado; o dia é o da ação; o valor é o do detalhamento; vagas de suporte (abertas ou ocupadas) dentro
+     do limite da estrela
 """
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal
 
 from core.models import WorldClock
 from core.timeline import TickKind, ticks_between
@@ -31,9 +35,9 @@ from ledger.models import Account, Entry, Obligation, RemunerationRequest
 from ledger.money import competence_day_of
 
 from . import params
-from .constants import ApplicationStatus, CompanyType, EventKind, PositionKind, PositionStatus
+from .constants import SUPPORT_POSITION_KINDS, ApplicationStatus, CompanyType, EventKind, PositionKind, PositionStatus
 from .models import (Application, CapitalContribution, Company, Position, PositionEvent, ProductionChange, ProductionLine,
-                     StockItem, StockMovement, WorkWage)
+                     StockItem, StockMovement, SupportWork, WorkWage)
 
 
 def audit_companies() -> AuditReport:
@@ -70,6 +74,7 @@ def audit_companies() -> AuditReport:
     _audit_owner_payroll(report)
     _audit_stock(report)
     _audit_production(report)
+    _audit_support(report)
     report.stats.update({"companies": companies, "contributions": contributions,
                          "capital": sum(CapitalContribution.objects.values_list("amount", flat=True))})
     return report
@@ -243,3 +248,22 @@ def _audit_production(report: AuditReport) -> None:
         for before, after in zip(changes, changes[1:]):
             if before.cooldown_until is not None and after.at < before.cooldown_until:
                 report.add(10, "COOLDOWN_VIOLATED", company=line.company_id, sequence=after.sequence)
+
+
+def _audit_support(report: AuditReport) -> None:
+    for w in SupportWork.objects.select_related("position").order_by("id").iterator():
+        wage = WorkWage.objects.filter(player_id=w.player_id, sequence=w.sequence).first()
+        if (wage is None or wage.company_id != w.company_id or wage.position_id != w.position_id or w.kind != w.position.kind
+                or w.kind not in SUPPORT_POSITION_KINDS):
+            report.add(11, "SUPPORT_WORK_WITHOUT_PAID_WORK", support_work=w.pk)
+            continue
+        if w.competence_day != competence_day_of(w.at) or wage.at != w.at:
+            report.add(11, "SUPPORT_WORK_DAY_MISMATCH", support_work=w.pk, day=w.competence_day)
+        if abs(w.contribution - Decimal(str(w.explained.get("value", w.contribution)))) > Decimal("0.000001"):
+            report.add(11, "SUPPORT_CONTRIBUTION_MISMATCH", support_work=w.pk, contribution=str(w.contribution))
+    for company in Company.objects.order_by("id").iterator():
+        limit = params.SUPPORT_LIMIT_PER_STAR[company.stars]
+        for kind in sorted(SUPPORT_POSITION_KINDS):
+            have = Position.objects.filter(company=company, kind=kind).exclude(status=PositionStatus.CLOSED.value).count()
+            if have > limit:
+                report.add(11, "SUPPORT_LIMIT_EXCEEDED", company=company.pk, kind=kind, have=have, limit=limit)

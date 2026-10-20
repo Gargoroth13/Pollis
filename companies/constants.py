@@ -42,6 +42,9 @@ class PositionKind(str, enum.Enum):
     SALESPERSON = "salesperson"
 
 
+SUPPORT_POSITION_KINDS = frozenset({PositionKind.ENGINEER.value, PositionKind.LAWYER.value})    # cargos de suporte (02 §9)
+
+
 class PositionStatus(str, enum.Enum):
     OPEN = "open"            # vaga no mural, sem ocupante
     FILLED = "filled"        # ocupada (o Dono nasce FILLED)
