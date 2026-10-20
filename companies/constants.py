@@ -73,3 +73,19 @@ MAX_NAME_LENGTH = 80
 MAX_SALARY_CENTS = 10 ** 12          # só barra valor absurdo; o teto real do salário é S/T do registro monetário (24 §24.12)
 MAX_REQUIREMENT_LEVEL = 10 ** 6      # só barra valor absurdo; os níveis reais são de Skills (01 §1.9)
 MURAL_PAGE_LIMIT = 200               # técnico: o mural público é paginado (não é regra de jogo)
+
+
+class StockOperation(str, enum.Enum):
+    """Tipo do movimento do estoque empresarial (05 §17, §19). Só existe o que o design documenta."""
+    PRODUCTION = "production"                      # entra: o trabalho de um funcionário (02 §6-7)
+    PURCHASE = "purchase"                          # entra: compra de outra empresa/mercado (P1.05/P1.08)
+    INPUT_CONSUMPTION = "input_consumption"        # sai: insumo da receita consumido pela produção (02 §5, §20)
+    SALE = "sale"                                  # sai: venda (Varejo, P1.04e/P1.05)
+
+
+STOCK_CREDIT_OPERATIONS = frozenset({StockOperation.PRODUCTION, StockOperation.PURCHASE})
+STOCK_DEBIT_OPERATIONS = frozenset({StockOperation.INPUT_CONSUMPTION, StockOperation.SALE})
+# O que OUTROS sistemas podem pedir por `credit_stock`/`debit_stock` (a produção e o insumo só nascem dentro do Trabalho).
+EXTERNAL_STOCK_CREDIT = frozenset({StockOperation.PURCHASE})
+EXTERNAL_STOCK_DEBIT = frozenset({StockOperation.SALE})
+MAX_STOCK_QUANTITY = 10 ** 12

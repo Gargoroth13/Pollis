@@ -69,6 +69,10 @@ class AuditTests(CompanyTestCase):
         rows = {r.parameter: r for r in params.provisional_table()}
         expected = {"initial_stars", "min_wage_per_day_cents", "wage_ceiling_per_day_cents", "income_tax_rate"}
         expected |= {f"relevant_skill.{k.value}" for k in PositionKind} | {f"hirable_kinds.{t.value}" for t in CompanyType}
+        expected |= {"production.producing_types", "production.units_per_work_base", "production.skill_per_level",
+                     "production.specialization_per_point", "production.curve", "stock.capacity_per_star",
+                     "quality.cap_per_star", "production.setup_seconds", "production.cooldown_seconds",
+                     "production.change_cost_cents"}
         self.assertEqual(set(rows), expected)
         self.assertEqual(rows["initial_stars"].status, "PROV")
         self.assertEqual(rows["wage_ceiling_per_day_cents"].value, "None")      # T sem teto: None, nunca 0

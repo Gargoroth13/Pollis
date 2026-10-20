@@ -196,6 +196,12 @@ def get_skill_snapshot(player_id: int) -> SkillSnapshot:
     return SkillSnapshot(game_clock.now(), levels, rules.specialization_profile(levels), specs)
 
 
+def specialization_value(player_id: int, key: str) -> Decimal:
+    """Valor atual da especialização `key` do jogador (02 §13); 0 se nunca atuou na área. Só LÊ (a decadência é do tick lazy)."""
+    value = Specialization.objects.filter(player_id=player_id, key=key).values_list("value", flat=True).first()
+    return Decimal(0) if value is None else value
+
+
 def meets_requirements(player_id: int, requirement: SkillRequirement) -> RequirementCheck:
     """Requisito mínimo de skill (01 §1.9) para cargos e atividades. Com detalhamento do que falta."""
     return rules.check_requirements(get_levels(player_id), requirement)

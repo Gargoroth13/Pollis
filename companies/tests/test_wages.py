@@ -1,7 +1,8 @@
 """Salário do Trabalho (por ação), folha diária do Dono (tick do mundo), `PENDING` e quitação (02 §16; 24 §24.12-24.13; GD 2026-10-19)."""
 from decimal import Decimal
 
-from companies import jobs, payroll, services
+from companies import jobs, payroll, production, services, stock
+from companies.constants import StockOperation
 from companies.audit import audit_companies
 from companies.models import WorkWage
 from core import ticks
@@ -33,6 +34,9 @@ class WageBase(JobsBase):
         self.firm = services_company
         if self.company_cash:
             self.assertTrue(services.fund_company(self.boss.pk, self.firm, self.company_cash * 100).ok)
+        self.assertTrue(production.set_production(self.boss.pk, self.firm, "flour").ok)         # 02 §5: um produto por vez
+        self.assertTrue(stock.credit_stock(self.firm, "wheat", 400, origin="test", key="seed:wheat", reference_kind="test",
+                                           reference_id="1").ok)
         self.position, _ = self.hire(self.worker, company=self.firm, salary=self.wage)
 
     def hire(self, player, position=None, company=None, salary=2_000, **kw):

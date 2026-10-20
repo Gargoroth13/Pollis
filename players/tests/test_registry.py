@@ -35,7 +35,7 @@ class DescriptorContractTests(TravelTestCase):
         self.assertEqual([d.id for d in registry.list_descriptors()],
                          ["apply_position", "approve_application", "auto_consumption", "close_position", "consume", "dismiss_employee",
                           "found_company", "fund_company", "leisure", "open_position", "reject_application", "resign",
-                          "send_item", "study", "travel", "withdraw_application", "work"])
+                          "send_item", "set_production", "study", "travel", "withdraw_application", "work"])
         self.assertEqual({d.id: d.name for d in registry.list_descriptors()},
                          {"work": "Trabalhar", "study": "Estudar", "leisure": "Lazer", "travel": "Viajar",
                           "consume": "Consumir", "send_item": "Enviar item pelo Correio",
@@ -44,7 +44,7 @@ class DescriptorContractTests(TravelTestCase):
                           "close_position": "Fechar vaga", "apply_position": "Candidatar-se a uma vaga",
                           "withdraw_application": "Retirar candidatura", "approve_application": "Aprovar candidato",
                           "reject_application": "Rejeitar candidato", "dismiss_employee": "Demitir funcionário",
-                          "resign": "Pedir demissão"})
+                          "resign": "Pedir demissão", "set_production": "Definir produção da empresa"})
 
     def test_travel_is_not_added_to_the_energy_action_enum(self):
         """Viajar não tem custo de Energia (04 §2.2): o enum Action continua com as 3 ações de custo fixo."""
@@ -52,7 +52,7 @@ class DescriptorContractTests(TravelTestCase):
         self.assertEqual({d.id for d in registry.list_descriptors()} - {a.value for a in Action}, {
             "travel", "consume", "send_item", "auto_consumption", "found_company", "fund_company", "open_position",
             "close_position", "apply_position", "withdraw_application", "approve_application", "reject_application",
-            "dismiss_employee", "resign"})
+            "dismiss_employee", "resign", "set_production"})
 
     def test_every_contract_field_is_present(self):
         for d in registry.list_descriptors():
@@ -76,7 +76,7 @@ class DescriptorContractTests(TravelTestCase):
         self.assertEqual([a.action_id for a in registry.available_actions(self.player.pk)],
                          ["apply_position", "approve_application", "auto_consumption", "close_position", "consume", "dismiss_employee",
                           "found_company", "fund_company", "leisure", "open_position", "reject_application", "resign",
-                          "send_item", "study", "travel", "withdraw_application", "work"])
+                          "send_item", "set_production", "study", "travel", "withdraw_application", "work"])
 
     def test_descriptors_are_immutable(self):
         with self.assertRaises(Exception):

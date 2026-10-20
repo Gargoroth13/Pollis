@@ -4,6 +4,40 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-20 — P1.04c — Produção e estoque empresarial (`design/02` §5-8, §11.1, §13, §18-20; `22`)
+
+Terceira fatia de P1.04. Branch `dev/p1.04c-producao-estoque`, empilhada sobre o PR #16 (P1.04b); PR próprio; **não mergeado**. Nenhuma parte do Bot Test foi removida ou adiada; o que depende de outro sistema (terreno da Matriz, materiais operacionais, estrelas por upgrade) tem ponto de integração explícito e recusa clara, nunca valor inventado.
+
+### O que foi entregue
+- **Estoque empresarial** (`companies/stock.py`): posse de Produtos do catálogo por empresa (distinta do inventário do jogador), quantidades inteiras, qualidade média por unidade (desconhecida = `NULL`, nunca 0), trilha imutável `StockMovement` (chave idempotente, origem, destino, operação, `Explained`), capacidade por estrela (`STOCK_FULL`). Entrada externa só `PURCHASE` (`credit_stock`) e saída externa só `SALE` (`debit_stock`): produção e consumo de insumo só existem dentro do Trabalho. A camada **não move dinheiro**; quem compra/vende (P1.05/P1.08/P1.04e) liga o pagamento ao movimento na mesma transação.
+- **Escolha de produto** (`set_production`, ação do Action Registry, só o Dono): um produto por vez; recusas explicadas (`NOT_OWNER`, `COMPANY_TYPE_CANNOT_PRODUCE`, `PRODUCT_NOT_FOR_COMPANY_TYPE`, `STARS_TOO_LOW` com o que falta, `PRODUCTION_NOT_READY` via `check_production_ready`, `ALREADY_PRODUCING`, `COOLDOWN_ACTIVE`, `MATRIX_SITE_UNDEFINED`, `PRODUCT_OUTSIDE_TERRAIN_CATEGORY`). Troca = **setup** (empresa fora de operação, 6 h `[PROV]`) + **cooldown** (7 dias `[PROV]`); a primeira escolha é livre e sem espera `[PROV]`. Histórico imutável `ProductionChange`.
+- **O Trabalho do funcionário de produção produz** (hook de `perform_action`, mesma transação, mesmo caminho de jogadores e bots): unidades = base × fator da skill relevante × fator da especialização × rendimento do catálogo; a fração fica em `carry` (nada se perde). Insumos saem do estoque da empresa pela receita; faltou insumo ou espaço, produz o que cabe (como o limite de salário `01` §1.7); sem nada possível, o Trabalho é **bloqueado antes** (provedor de bloqueio, sem gastar Energia, sem pagar salário). A especialização do funcionário cresce no produto trabalhado (`ActivityContext.specialization_key`, `skills.specialization_value`).
+- **Qualidade** (§8): cada unidade entra com a skill relevante de quem trabalhou; o estoque guarda a média por unidade; o teto da estrela se aplica na leitura (`MIN`).
+- `audit_companies` ganhou as invariantes 8 (estoque = soma dos movimentos, qualidade, capacidade), 9 (toda produção ligada a um salário de trabalho pago de um funcionário daquela empresa e insumos consumidos conferem) e 10 (histórico da linha, cooldown, `carry`).
+- Provedor de terreno para a Matriz (`register_site_provider`): ponto de integração com P1.07; sem provedor, produto de Matriz é recusado.
+
+### Interpretações técnicas `[PROV]` (sem alterar mecânica; para confirmação do GD) — todas em `companies/params.py` e em `provisional_table()`
+- Base de 1 unidade por Trabalho; fator de skill `1 + nível × 0,02` (curva `linear_prov`, usada quando o balanceamento de Skills não define outra); fator de especialização `1 + pontos × 0,01`.
+- Capacidade de estoque 500 × estrela; teto de qualidade 100 × estrela (documentados em `design/02a` §2.3).
+- Setup 6 h e cooldown 7 dias (`02` §5.3 dá só a ordem de grandeza).
+- Produzem: Matriz (matéria-prima) e Industrial (produtos de fabricação). Varejo/Serviços/Construtora/Financeira não escolhem produto aqui (Varejo vende em P1.04e; Construtora tem obra).
+- Só o funcionário de produção (`WORKER`) produz; Dono/Engenheiro/Advogado/Vendedor trabalham sem produzir e sem ser bloqueados.
+
+### Lacunas/dependências encontradas
+- **Custo fixo da troca de produto** (`02` §5.3): o `24` não tem natureza nem destino; valor `[PROV]` = 0 e qualquer valor > 0 é recusado (`PRODUCTION_CHANGE_COST_UNDEFINED`) até o GD definir.
+- **Categoria da empresa Industrial** e **terreno da Matriz**: dependem de P1.07 (hoje a Industrial aceita qualquer produto de fabricação com estrela suficiente; a Matriz exige o provedor).
+- **Materiais operacionais** (`02` §10): limitação conhecida (Q10), a retomar na integração.
+- **Unidade do salário, curva de skill, capacidade/teto por estrela**: valores `[PROV]` acima.
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **1148 testes OK** (1116 + 32 novos: produção/estoque, auditoria, registro, concorrência).
+- SQLite, suíte completa: **1148 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos; `companies` 3× no PostgreSQL (114 testes cada, com a concorrência de produção/estoque).
+- Uma falha apareceu na primeira rodada completa (`skills`: a curva `[PROV]` registrada no registro de curvas quebrava o teste "só a curva neutra é embutida"); corrigida mantendo a curva `[PROV]` dentro das Empresas, sem registrá-la em Skills.
+
+### Locking (PostgreSQL)
+Protocolo: jogador → empresa (serializa linha de produção, estoque e movimentos) → registro monetário. Bug real encontrado só em PostgreSQL pelo teste de concorrência: `select_for_update` sobre `select_related` de FK nula (`FOR UPDATE cannot be applied to the nullable side of an outer join`) → `of=("self",)`. Mutação (tirar a trava da empresa em produção e estoque) faz o teste de concorrência falhar (soma errada do estoque e deadlock), logo ele não é vacuoso.
+
 ## 2026-10-20 — P1.04b — Cargos, mural e salários (`design/02` §15-16; `24` §24.12-24.13)
 
 Segunda fatia de P1.04. Branch `dev/p1.04b-cargos-mural`, empilhada sobre o PR #15 (P1.04a); PR próprio; **não mergeado**. Nenhuma parte do Bot Test foi removida ou adiada.

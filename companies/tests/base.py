@@ -1,3 +1,4 @@
+from catalog.loader import sync_catalog
 from companies import services
 from core.models import WorldClock
 from companies.audit import audit_companies
@@ -16,18 +17,24 @@ class CompanyTestCase(LedgerHelpers, PlayerTestCase):
 
     audit_companies_at_end = True
 
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        sync_catalog()                  # produtos e receitas do 22 (a produção consulta o catálogo)
+
     def setUp(self):
         super().setUp()
         self.ledger_setup()
         WorldClock.load()
         WorldClock.objects.filter(pk=1).update(anchor_game=T0, world_processed_until=T0)   # o mundo "começa" em T0
-        if self.audit_companies_at_end:
-            self.addCleanup(self._audit_companies)
+        self.addCleanup(self._audit_companies)                  # decide ao FIM se audita (o teste pode adulterar de propósito)
         self.other = self.new_player("p2")
         for p in (self.player, self.other):
             self.fund(p, 500_000)
 
     def _audit_companies(self):
+        if not self.audit_companies_at_end:
+            return
         report = audit_companies()
         self.assertTrue(report.ok, report.findings)
 

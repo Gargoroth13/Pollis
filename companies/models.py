@@ -1,13 +1,13 @@
 """
 Modelos das Empresas (design/02). P1.04a: a empresa, o cargo Dono e o aporte. P1.04b: vagas/cargos, candidaturas, trilha de eventos e
-salário de trabalho. Produção, Varejo e Construtora entram em etapas seguintes, mantidas no escopo do Bot Test (`TASK_QUEUE.md`).
+salário de trabalho. P1.04c: linha de produção, estoque empresarial e sua trilha. Varejo e Construtora entram em etapas seguintes, mantidas no escopo do Bot Test (`TASK_QUEUE.md`).
 
 O dinheiro da empresa NÃO vive aqui: é a conta `COMPANY` do registro monetário (`ledger`, design/24), cujo dono é `Company.pk`.
 """
 from django.db import models
 from django.db.models import Q
 
-from .constants import ApplicationStatus, CompanyType, EventKind, PositionKind, PositionStatus
+from .constants import ApplicationStatus, CompanyType, EventKind, PositionKind, PositionStatus, StockOperation
 
 
 def _choices(enum_cls):
@@ -177,3 +177,86 @@ class CapitalContribution(models.Model):
 
     def delete(self, *args, **kwargs):
         raise CompaniesImmutableError("aportes são imutáveis")
+
+
+class ProductionLine(models.Model):
+    """
+    O que a empresa produz AGORA (02 §5.1: um produto por vez, escolhido só pelo Dono). `setup_until` = fim do setup da última
+    troca (empresa fora de operação, 02 §5.3); `cooldown_until` = quando poderá trocar de novo; `carry` = fração de unidade
+    produzida que ainda não virou unidade inteira de estoque (a produção por trabalho é fracionária, o estoque é inteiro).
+    """
+
+    company = models.OneToOneField(Company, on_delete=models.PROTECT, related_name="line")
+    product = models.ForeignKey("catalog.Product", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    selected_at = models.BigIntegerField(null=True, blank=True)
+    setup_until = models.BigIntegerField(null=True, blank=True)
+    cooldown_until = models.BigIntegerField(null=True, blank=True)
+    carry = models.DecimalField(max_digits=14, decimal_places=6, default=0)
+    changes = models.IntegerField(default=0)                       # nº de seleções (a 1ª é a escolha inicial)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=Q(carry__gte=0, carry__lt=1), name="line_carry_fraction"),
+            models.CheckConstraint(condition=Q(product__isnull=False) | Q(changes=0), name="line_changes_need_product"),
+        ]
+
+
+class ProductionChange(_Immutable):
+    """Cada escolha/troca de produto (02 §5.3): o que mudou, o custo cobrado e os prazos de setup e cooldown."""
+
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="production_changes")
+    sequence = models.IntegerField()
+    from_product = models.ForeignKey("catalog.Product", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    to_product = models.ForeignKey("catalog.Product", on_delete=models.PROTECT, related_name="+")
+    at = models.BigIntegerField()
+    cost = models.BigIntegerField(default=0)                       # centavos
+    setup_until = models.BigIntegerField(null=True, blank=True)    # None na escolha inicial
+    cooldown_until = models.BigIntegerField(null=True, blank=True)
+    actor = models.BigIntegerField()
+    explained = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [models.UniqueConstraint(fields=["company", "sequence"], name="productionchange_unique_sequence")]
+
+
+class StockItem(models.Model):
+    """
+    Estoque empresarial agregado (05 §17): `quantity` unidades de `product`. Só existe com quantidade > 0. `quality` = média por
+    unidade da qualidade das unidades em estoque (02 §8); NULL = não conhecida (nunca zero, 02: NULL ≠ 0).
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="stock")
+    product = models.ForeignKey("catalog.Product", on_delete=models.PROTECT, related_name="company_stock")
+    quantity = models.BigIntegerField()
+    quality = models.DecimalField(max_digits=32, decimal_places=6, null=True, blank=True)
+
+    class Meta:
+        ordering = ["company_id", "product_id"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "product"], name="stockitem_unique_company_product"),
+            models.CheckConstraint(condition=Q(quantity__gt=0), name="stockitem_quantity_positive"),
+        ]
+
+
+class StockMovement(_Immutable):
+    """Trilha IMUTÁVEL do estoque (05 §19): `StockItem.quantity` é cache; a verdade auditável é a soma dos movimentos."""
+
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="stock_movements")
+    product = models.ForeignKey("catalog.Product", on_delete=models.PROTECT, related_name="+")
+    delta = models.BigIntegerField()
+    quantity_after = models.BigIntegerField()
+    quality_after = models.DecimalField(max_digits=32, decimal_places=6, null=True, blank=True)
+    operation = models.CharField(max_length=20, choices=_choices(StockOperation))
+    key = models.CharField(max_length=160, unique=True)
+    reference_kind = models.CharField(max_length=40)
+    reference_id = models.CharField(max_length=120)
+    origin = models.CharField(max_length=60)
+    destination = models.CharField(max_length=60)
+    actor = models.BigIntegerField(null=True, blank=True)          # jogador cujo trabalho/ação gerou o movimento
+    at = models.BigIntegerField()
+    explained = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [models.CheckConstraint(condition=~Q(delta=0), name="stockmovement_delta_nonzero")]

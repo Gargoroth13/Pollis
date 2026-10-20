@@ -52,17 +52,23 @@ tipo, saldo da empresa.
 
 | Parâmetro | 1★ | 2★ | 3★ | 4★ | 5★ | Onde é usado |
 |---|---|---|---|---|---|---|
-| Teto de qualidade (escala de qualidade do `02` §18) | a definir com a escala | | | | | P1.04c |
+| Teto de qualidade (escala de qualidade do `02` §18) | 100 `[PROV]` | 200 | 300 | 400 | 500 | P1.04c (`params.QUALITY_CAP_PER_STAR`) |
 | Engenheiros | 1 | 2 | 3 | 4 | 5 | `02` §9.1 (P1.04d) |
 | Advogados | 1 | 2 | 3 | 4 | 5 | `02` §9.2 (P1.04d) |
-| Estoque máximo (unidades) | a definir | | | | | `02` §11.1, P1.04c/e |
+| Estoque máximo (unidades) | 500 `[PROV]` | 1.000 | 1.500 | 2.000 | 2.500 | `02` §11.1, P1.04c (`params.STOCK_CAPACITY_PER_STAR`); P1.04e para a venda |
 | Limite de funcionários | a definir | | | | | `02` §14 ("pode influenciar") |
 | Receitas liberadas | receitas com `min_stars ≤ estrela` | | | | | `22`, P1.04c |
 | Nível de imóvel comercial | a definir com `10` §16 | | | | | P1.07 |
 
-Engenheiros/Advogados "= estrela" é um ponto de partida linear. **Teto de qualidade, estoque máximo e limite de funcionários
-dependem de unidades que ainda não estão fixadas** (escala de qualidade, unidades de estoque e quantidade típica de
-funcionários): propor números agora seria inventar. Ficam como lacunas a calibrar (§3, itens 5–7).
+Engenheiros/Advogados "= estrela" é um ponto de partida linear.
+
+**Valores `[PROV]` aplicados em P1.04c (2026-10-20), para confirmação do GD** — o `02` e o `22` não fixam unidades, então a
+implementação usou a forma mais simples (linear por estrela), parametrizada em `companies/params.py`, listada em
+`provisional_table()` e auditável, sem decisão de design escondida:
+- **Teto de qualidade** = 100 × estrela, na mesma escala dos níveis de skill (a qualidade de cada unidade é a skill relevante de
+  quem trabalhou, `02` §8; o teto aplica `MIN(qualidade, teto)` na leitura, o estoque guarda a média sem corte).
+- **Estoque máximo** = 500 unidades × estrela, somando todos os produtos da empresa.
+- **Limite de funcionários**: continua **sem limite** (o `02` §14 só diz "pode influenciar"; lacuna 7 abaixo).
 
 ### 2.4. Rastreabilidade
 - Cada melhoria grava um registro imutável (empresa, de/para, custo, instante, executor, chave idempotente, `Explained`),

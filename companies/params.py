@@ -48,6 +48,21 @@ HIRABLE_KINDS: Dict[CompanyType, FrozenSet[PositionKind]] = {
 }
 
 
+# --- produção (02 §5-8, §13, §18, §22: "valores calibrados principalmente através dos testes com bots") ----------------------
+# Todos `[PROV]` (GD 2026-10-14, Q3): estrutura do design, números calibráveis. A progressão de estrelas está em `design/02a`.
+PRODUCING_TYPES = frozenset({CompanyType.MATRIX, CompanyType.INDUSTRIAL})     # 02 §2.1-2.2; Construtora: obra (P1.04e)
+UNITS_PER_WORK_BASE = Decimal(1)                 # 02 §7: skill 1 e especialização 0 → ~1 unidade por trabalho
+SKILL_PRODUCTION_PER_LEVEL = Decimal("0.02")     # curva `linear_prov`: fator = 1 + nível × 0,02 (01 §1.6: relação em aberto)
+SPECIALIZATION_PRODUCTION_PER_POINT = Decimal("0.01")   # fator = 1 + especialização × 0,01 (02 §7, §13)
+PRODUCTION_CURVE = "linear_prov"                 # usada quando o balanceamento de Skills não define outra (≠ "none")
+STARS = (1, 2, 3, 4, 5)
+STOCK_CAPACITY_PER_STAR = {n: 500 * n for n in STARS}      # 02 §11.1, §22: unidades de estoque por estrela
+QUALITY_CAP_PER_STAR = {n: Decimal(100 * n) for n in STARS}    # 02 §8, §18: teto de qualidade, na escala dos níveis de skill
+SETUP_SECONDS = 6 * 3600                         # 02 §5.3: setup "significativamente menor que o cooldown"
+COOLDOWN_SECONDS = 7 * 86_400                    # 02 §5.3: "aproximadamente uma semana"
+PRODUCTION_CHANGE_COST_CENTS = 0                 # 02 §5.3: "custo fixo"; natureza/destino do dinheiro não definidos no 24 (GAP)
+
+
 @dataclass(frozen=True)
 class ProvisionalRow:
     scope: str
@@ -67,6 +82,20 @@ def provisional_table() -> List[ProvisionalRow]:
                                "T: padrão 'sem teto' (11 §11.1); None não é zero", "11 §11.1 padrão"))
     rows.append(ProvisionalRow("companies", "income_tax_rate", str(INCOME_TAX_RATE),
                                "IR sobre salário pago (11 §11.1) até o sistema de leis existir", "11 §11.1 padrão"))
+    for name, value, rule in (
+            ("production.producing_types", ",".join(sorted(t.value for t in PRODUCING_TYPES)), "tipos que escolhem produto (02 §5)"),
+            ("production.units_per_work_base", str(UNITS_PER_WORK_BASE), "unidades por trabalho com skill 1 e especialização 0 (02 §7)"),
+            ("production.skill_per_level", str(SKILL_PRODUCTION_PER_LEVEL), "curva linear de skill → produção (01 §1.6 em aberto)"),
+            ("production.specialization_per_point", str(SPECIALIZATION_PRODUCTION_PER_POINT), "especialização → produção (02 §7)"),
+            ("production.curve", PRODUCTION_CURVE, "curva de skill usada se o balanceamento de Skills estiver em 'none'"),
+            ("stock.capacity_per_star", ",".join(f"{n}:{v}" for n, v in STOCK_CAPACITY_PER_STAR.items()),
+             "estoque máximo (unidades) por estrela (02 §11.1)"),
+            ("quality.cap_per_star", ",".join(f"{n}:{v}" for n, v in QUALITY_CAP_PER_STAR.items()),
+             "teto de qualidade por estrela (02 §8, §18)"),
+            ("production.setup_seconds", str(SETUP_SECONDS), "setup ao trocar de produto (02 §5.3)"),
+            ("production.cooldown_seconds", str(COOLDOWN_SECONDS), "cooldown entre trocas (02 §5.3)"),
+            ("production.change_cost_cents", str(PRODUCTION_CHANGE_COST_CENTS), "custo fixo da troca (02 §5.3); > 0 exige natureza no 24")):
+        rows.append(ProvisionalRow("companies", name, value, rule, SOURCE))
     for kind in PositionKind:
         rows.append(ProvisionalRow("companies", f"relevant_skill.{kind.value}", RELEVANT_SKILL[kind].value,
                                    "skill relevante do cargo para S (01 §1.7-1.8): distribuição refinada em Empresas", SOURCE))

@@ -15,6 +15,9 @@ Cargos e mural (P1.04b; `jobs`): só o Dono abre/fecha vaga, aprova, rejeita e d
   reject_application    Rejeitar candidato   alvo = {"application": id}
   dismiss_employee      Demitir funcionário  alvo = {"position": id}
   resign                Pedir demissão       sem alvo
+
+Produção (P1.04c; `production`): só o Dono escolhe/troca o produto.
+  set_production        Definir produção     alvo = {"company": id, "product": chave do catálogo}
 """
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ from typing import Any, Dict, Optional
 from players.registry import TARGET_PARAMS, ActionDescriptor, TargetSpec, register_action
 from players.services import ActionResult
 
-from . import jobs, services
+from . import jobs, production, services
 
 FOUND_ID = "found_company"
 FUND_ID = "fund_company"
@@ -164,8 +167,39 @@ def _register_jobs() -> None:
         check=_resign_check, execute=_resign_execute, preview=_no_preview)
 
 
+SET_PRODUCTION_ID = "set_production"
+SET_PRODUCTION_KEYS = frozenset({"company", "product"})
+
+
+def _set_production_check(player, now, bal, target) -> Optional[ActionResult]:
+    if target is None:
+        return None
+    p = _params(target, SET_PRODUCTION_KEYS)
+    return _invalid(SET_PRODUCTION_ID, SET_PRODUCTION_KEYS, target) if p is None else production.selection_refusal(
+        player.pk, p["company"], p["product"], now)
+
+
+def _set_production_execute(player_id: int, target: Any) -> ActionResult:
+    p = _params(target, SET_PRODUCTION_KEYS)
+    return _invalid(SET_PRODUCTION_ID, SET_PRODUCTION_KEYS, target) if p is None else production.set_production(
+        player_id, p["company"], p["product"])
+
+
+def _register_production() -> None:
+    register_action(
+        ActionDescriptor(
+            id=SET_PRODUCTION_ID, name="Definir produção da empresa",
+            requirements=("INVALID_PARAMS", "COMPANY_NOT_FOUND", "NOT_OWNER", "COMPANY_TYPE_CANNOT_PRODUCE", "UNKNOWN_PRODUCT",
+                          "PRODUCT_NOT_FOR_COMPANY_TYPE", "MATRIX_SITE_UNDEFINED", "PRODUCT_OUTSIDE_TERRAIN_CATEGORY",
+                          "PRODUCTION_NOT_READY", "STARS_TOO_LOW", "ALREADY_PRODUCING", "COOLDOWN_ACTIVE",
+                          "PRODUCTION_CHANGE_COST_UNDEFINED"),
+            cost=(), target=TargetSpec(TARGET_PARAMS, required=True), effects=("production_selected", "setup_started")),
+        check=_set_production_check, execute=_set_production_execute, preview=_no_preview)
+
+
 def register() -> None:
     _register_jobs()
+    _register_production()
     register_action(
         ActionDescriptor(
             id=FOUND_ID, name="Fundar empresa",
