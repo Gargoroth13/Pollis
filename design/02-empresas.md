@@ -806,3 +806,35 @@ E tem uma mudança de processo importante: **depois de salvar esse no GitHub, eu
 **nova decisão de design** → volta para nós, abrimos o documento novamente como `REVIEW`.
 
 Isso evita exatamente o retrabalho que você estava tentando eliminar desde o começo.
+
+
+---
+
+# 25. Decisões consolidadas do Game Director (2026-10-19)
+
+> Registro das decisões tomadas durante a implementação (P1.04). Elas **completam** lacunas deste documento; não alteram as
+> regras acima. Fonte: mensagem do Game Director de 2026-10-19 (`CHANGELOG_DEV.md`).
+
+## 25.1. Estrelas (complementa §14)
+
+- **Toda empresa nasce com 1★** `[PROV]`.
+- A progressão é feita por **melhorias compradas com o caixa da empresa**, com **custo crescente por estrela**.
+- Os custos, limites por estrela e desbloqueios afetados estão na proposta `design/02a-estrelas-PROPOSTA.md` (status DRAFT).
+  **A progressão só é implementada depois que a proposta estiver documentada e as lacunas que realmente exigem decisão
+  estiverem respondidas**; nenhum parâmetro é inventado em silêncio.
+
+## 25.2. Salário sem caixa suficiente (complementa §16 e `24` §24.12.5)
+
+- Salário de trabalho e salário do Dono usam a política **`PENDING`**: se a conta da empresa não tem caixa, o valor reconhecido
+  vira **obrigação registrada e auditável** até ser paga, sem criar dinheiro e sem permitir pagamento duplicado.
+
+## 25.3. Aprovação de candidatos (complementa §15)
+
+- Quem aprova candidatos no mural é **somente o Dono**. Não há delegação nesta fase ("pessoa autorizada" = o Dono).
+  Delegar é uma extensão futura que exigirá decisão própria.
+
+## 25.4. Interpretações técnicas confirmadas
+
+- O aporte de capital do Dono usa a natureza `DONATION` com categoria `company_capital` (`24`).
+- Localização e ocupação de imóvel pela empresa serão integradas em **P1.07** (`10` §29); **continuam no escopo do Bot Test**.
+
