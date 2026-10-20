@@ -6,7 +6,8 @@ sequências únicas, sem deadlock, auditoria limpa), que vale nos dois.
 from django.test import TransactionTestCase
 
 from accounts.models import Usuario
-from companies import jobs, payroll, services
+from catalog.loader import sync_catalog
+from companies import jobs, payroll, production, services, stock
 from companies.audit import audit_companies
 from companies.models import Application, CapitalContribution, Company, Position, PositionEvent
 from core.models import WorldClock
@@ -89,6 +90,10 @@ class JobsConcurrencyTests(TransactionTestCase):
         self.firm = services.found_company(self.boss.pk, "industrial", "Aço", 1_500).detail["company"]
         self.firm2 = services.found_company(self.boss2.pk, "industrial", "Ferro", 1_500).detail["company"]
         services.fund_company(self.boss.pk, self.firm, 50_000)
+        sync_catalog()
+        self.assertTrue(production.set_production(self.boss.pk, self.firm, "flour").ok)
+        self.assertTrue(stock.credit_stock(self.firm, "wheat", 300, origin="test", key="seed:wheat", reference_kind="test",
+                                           reference_id="1").ok)
 
     def opened(self, company=None, owner=None, salary=2_000):
         return jobs.open_position((owner or self.boss).pk, company or self.firm, "worker", salary, {}).detail["position"]
@@ -181,3 +186,41 @@ class JobsConcurrencyTests(TransactionTestCase):
         for w in (self.w1, self.w2):
             seqs = list(WorkWage.objects.filter(player=w).order_by("sequence").values_list("sequence", flat=True))
             self.assertEqual(seqs, list(range(1, len(seqs) + 1)))
+
+    def test_works_purchases_sales_and_production_changes_together_keep_the_stock_exact_and_within_capacity(self):
+        """Produção (Trabalho), entrada por compra, saída por venda e troca de produto, todos sobre a MESMA empresa: o estoque é a soma
+        dos movimentos, nunca passa da capacidade da estrela nem fica negativo, e a empresa trava sempre antes do estoque."""
+        from decimal import Decimal
+        from companies.models import StockItem, StockMovement
+        from players import registry
+        from players.models import Player
+        for w in (self.w1, self.w2, self.w3):
+            self.assertTrue(jobs.approve_application(self.boss.pk, self.applied(w, self.opened(salary=2_000))).ok)
+
+        def work(player):
+            Player.objects.filter(pk=player.pk).update(energy=Decimal(100), nutrition=Decimal(100), burnout=Decimal(0))
+            return registry.execute_action(player.pk, "work")
+
+        counter = iter(range(10_000))
+
+        def buy():
+            return stock.credit_stock(self.firm, "wheat", 7, origin="test", key=f"buy:{next(counter)}", reference_kind="test",
+                                      reference_id="c")
+
+        def sell():
+            return stock.debit_stock(self.firm, "flour", 1, destination="test", key=f"sell:{next(counter)}", reference_kind="test",
+                                     reference_id="c")
+
+        for _ in range(3):
+            out = run_together(lambda: work(self.w1), lambda: work(self.w2), lambda: work(self.w3), buy, buy, sell, sell,
+                               lambda: production.set_production(self.boss.pk, self.firm, "cheese"))
+            for j in out:
+                self.assertIsNone(getattr(j, "error", None), getattr(j, "error", None))
+                self.assertIn(j.result.code, ("OK", "INSUFFICIENT_STOCK", "COOLDOWN_ACTIVE", "ALREADY_PRODUCING", "COMPANY_IN_SETUP",
+                                              "MISSING_INPUTS", "STOCK_FULL"))
+        capacity = int(stock.capacity_of(Company.objects.get(pk=self.firm).stars).value)
+        self.assertLessEqual(stock.used_of(self.firm), capacity)
+        for item in StockItem.objects.filter(company_id=self.firm):
+            moved = sum(StockMovement.objects.filter(company_id=self.firm, product_id=item.product_id).values_list("delta", flat=True))
+            self.assertEqual(item.quantity, moved)
+        self.assertClean()

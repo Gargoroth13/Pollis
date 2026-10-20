@@ -82,7 +82,10 @@ def activity_for(player: Player, action: Action, now: int) -> Optional[ActivityC
     job = current_job(player.pk)
     if job is None:
         return None
-    return ActivityContext(skills=(relevant_skill(job.kind).value,))
+    from . import production
+    specialization = (production.active_product_key(job.company_id, now)
+                      if job.kind == PositionKind.WORKER.value else None)         # 02 §13: especialização por produto trabalhado
+    return ActivityContext(skills=(relevant_skill(job.kind).value,), specialization_key=specialization)
 
 
 def pay_work_wage(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:

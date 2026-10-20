@@ -11,6 +11,12 @@ Auditoria das Empresas (design/02 §16-17; 24). Só LÊ. Invariantes (numeraçã
      paga do mesmo valor; sequência do jogador sem buracos nem repetição
   7  folha do Dono: exatamente UM pedido `OWNER_SALARY` por empresa e dia de tick diário depois da fundação (sem dia pulado nem
      pagamento duplicado), pago pela conta da empresa ao Dono pelo salário do cargo, sem pedido esquecido em `SUBMITTED`
+  8  estoque: quantidade = soma dos movimentos (nunca negativa em nenhum ponto); qualidade do item = a do último movimento; total em
+     estoque dentro da capacidade da estrela
+  9  produção: todo movimento de produção nasce de uma ação de Trabalhar paga (WorkWage) de um funcionário de produção da própria
+     empresa; os insumos consumidos são exatamente os registrados; nada é produzido sem produto escolhido
+ 10  linha de produção: nº de seleções = histórico; produto atual = último do histórico; só tipos que produzem; trocas respeitam o
+     cooldown; fração acumulada em [0, 1)
 """
 from __future__ import annotations
 
@@ -26,7 +32,8 @@ from ledger.money import competence_day_of
 
 from . import params
 from .constants import ApplicationStatus, CompanyType, EventKind, PositionKind, PositionStatus
-from .models import Application, CapitalContribution, Company, Position, PositionEvent, WorkWage
+from .models import (Application, CapitalContribution, Company, Position, PositionEvent, ProductionChange, ProductionLine,
+                     StockItem, StockMovement, WorkWage)
 
 
 def audit_companies() -> AuditReport:
@@ -61,6 +68,8 @@ def audit_companies() -> AuditReport:
     _audit_applications(report)
     _audit_work_wages(report)
     _audit_owner_payroll(report)
+    _audit_stock(report)
+    _audit_production(report)
     report.stats.update({"companies": companies, "contributions": contributions,
                          "capital": sum(CapitalContribution.objects.values_list("amount", flat=True))})
     return report
@@ -167,3 +176,70 @@ def _audit_owner_payroll(report: AuditReport) -> None:
                     or account is None or r.payer_id != account.pk or r.competence_day != day):
                 report.add(7, "PAYROLL_REQUEST_MISMATCH", company=c.pk, request=r.key)
 
+
+
+def _audit_stock(report: AuditReport) -> None:
+    running = defaultdict(int)
+    last = {}
+    for m in StockMovement.objects.order_by("id").iterator():
+        k = (m.company_id, m.product_id)
+        running[k] += m.delta
+        if running[k] < 0:
+            report.add(8, "STOCK_NEGATIVE", company=m.company_id, product=m.product_id, movement=m.pk)
+        if running[k] != m.quantity_after:
+            report.add(8, "MOVEMENT_BALANCE_MISMATCH", movement=m.pk, expected=running[k], found=m.quantity_after)
+        last[k] = m
+    items = {(i.company_id, i.product_id): i for i in StockItem.objects.order_by("id").iterator()}
+    for k, total in running.items():
+        item = items.get(k)
+        if total > 0 and (item is None or item.quantity != total):
+            report.add(8, "STOCK_ITEM_MISMATCH", company=k[0], product=k[1], movements=total,
+                       item=None if item is None else item.quantity)
+        if total == 0 and item is not None:
+            report.add(8, "STOCK_ITEM_SHOULD_NOT_EXIST", company=k[0], product=k[1])
+        if item is not None and last[k].quality_after != item.quality:
+            report.add(8, "STOCK_QUALITY_MISMATCH", company=k[0], product=k[1])
+    for k in set(items) - set(running):
+        report.add(8, "STOCK_ITEM_WITHOUT_MOVEMENTS", company=k[0], product=k[1])
+    from . import stock
+    used = defaultdict(int)
+    for i in items.values():
+        used[i.company_id] += i.quantity
+    for c in Company.objects.filter(pk__in=list(used)).iterator():
+        capacity = int(stock.capacity_of(c.stars).value)
+        if used[c.pk] > capacity:
+            report.add(8, "STOCK_OVER_CAPACITY", company=c.pk, used=used[c.pk], capacity=capacity)
+
+
+def _audit_production(report: AuditReport) -> None:
+    for m in StockMovement.objects.filter(operation="production").select_related("product").order_by("id").iterator():
+        _, _, sequence = m.reference_id.partition(":")
+        wage = WorkWage.objects.select_related("position").filter(player_id=m.actor, sequence=int(sequence or 0)).first()
+        if (wage is None or wage.company_id != m.company_id or wage.position.kind != PositionKind.WORKER.value
+                or m.reference_kind != "work_production" or m.delta <= 0):
+            report.add(9, "PRODUCTION_WITHOUT_PAID_WORK", movement=m.pk)
+            continue
+        line = ProductionLine.objects.filter(company_id=m.company_id).first()
+        if line is None or not ProductionChange.objects.filter(company_id=m.company_id, to_product_id=m.product_id,
+                                                               at__lte=m.at).exists():
+            report.add(9, "PRODUCTION_WITHOUT_PRODUCT_CHOICE", movement=m.pk)
+        consumed = {k: v for k, v in (m.explained.get("consumed") or {}).items()}
+        booked = {}
+        for i in StockMovement.objects.filter(operation="input_consumption", reference_kind="work_production",
+                                              reference_id=m.reference_id, company_id=m.company_id).select_related("product"):
+            booked[i.product.key] = -i.delta
+        if consumed != booked:
+            report.add(9, "INPUT_CONSUMPTION_MISMATCH", movement=m.pk, registered=consumed, booked=booked)
+
+
+    for line in ProductionLine.objects.select_related("company", "product").order_by("company_id").iterator():
+        changes = list(ProductionChange.objects.filter(company_id=line.company_id).order_by("sequence"))
+        if len(changes) != line.changes or (changes and changes[-1].to_product_id != line.product_id):
+            report.add(10, "PRODUCTION_HISTORY_MISMATCH", company=line.company_id, changes=len(changes), line=line.changes)
+        if CompanyType(line.company.type) not in params.PRODUCING_TYPES:
+            report.add(10, "COMPANY_TYPE_CANNOT_PRODUCE", company=line.company_id, company_type=line.company.type)
+        if not 0 <= line.carry < 1:
+            report.add(10, "CARRY_OUT_OF_RANGE", company=line.company_id, carry=str(line.carry))
+        for before, after in zip(changes, changes[1:]):
+            if before.cooldown_until is not None and after.at < before.cooldown_until:
+                report.add(10, "COOLDOWN_VIOLATED", company=line.company_id, sequence=after.sequence)
