@@ -53,8 +53,8 @@ tipo, saldo da empresa.
 | Parâmetro | 1★ | 2★ | 3★ | 4★ | 5★ | Onde é usado |
 |---|---|---|---|---|---|---|
 | Teto de qualidade (escala de qualidade do `02` §18) | 100 `[PROV]` | 200 | 300 | 400 | 500 | P1.04c (`params.QUALITY_CAP_PER_STAR`) |
-| Engenheiros | 1 | 2 | 3 | 4 | 5 | `02` §9.1 (P1.04d) |
-| Advogados | 1 | 2 | 3 | 4 | 5 | `02` §9.2 (P1.04d) |
+| Engenheiros | 1 | 2 | 3 | 4 | 5 | `02` §9.1 (P1.04d; `params.SUPPORT_LIMIT_PER_STAR`, aplicado em `open_position`) |
+| Advogados | 1 | 2 | 3 | 4 | 5 | `02` §9.2 (P1.04d; idem) |
 | Estoque máximo (unidades) | 500 `[PROV]` | 1.000 | 1.500 | 2.000 | 2.500 | `02` §11.1, P1.04c (`params.STOCK_CAPACITY_PER_STAR`); P1.04e para a venda |
 | Limite de funcionários | a definir | | | | | `02` §14 ("pode influenciar") |
 | Receitas liberadas | receitas com `min_stars ≤ estrela` | | | | | `22`, P1.04c |

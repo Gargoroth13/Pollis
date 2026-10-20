@@ -82,9 +82,11 @@ def activity_for(player: Player, action: Action, now: int) -> Optional[ActivityC
     job = current_job(player.pk)
     if job is None:
         return None
-    from . import production
-    specialization = (production.active_product_key(job.company_id, now)
-                      if job.kind == PositionKind.WORKER.value else None)         # 02 §13: especialização por produto trabalhado
+    from . import production, support
+    if job.kind == PositionKind.WORKER.value:
+        specialization = production.active_product_key(job.company_id, now)      # 02 §13: especialização por produto trabalhado
+    else:
+        specialization = support.specialization_key_of(job.kind, job.company_id, now)    # Engenheiro: produto; Advogado: atividade
     return ActivityContext(skills=(relevant_skill(job.kind).value,), specialization_key=specialization)
 
 

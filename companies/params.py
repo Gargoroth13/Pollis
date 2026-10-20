@@ -63,6 +63,18 @@ COOLDOWN_SECONDS = 7 * 86_400                    # 02 §5.3: "aproximadamente um
 PRODUCTION_CHANGE_COST_CENTS = 0                 # 02 §5.3: "custo fixo"; natureza/destino do dinheiro não definidos no 24 (GAP)
 
 
+# --- cargos de suporte (02 §9, §22) `[PROV]` ------------------------------------------------------------------------------------
+# Engenheiro: cada trabalho soma `ENGINEER_BONUS_PER_WORK × fator de skill × fator de especialização` ao bônus do DIA da empresa;
+# a produção por trabalho de cada funcionário de produção é multiplicada por `1 + bônus do dia` (o bônus reinicia a cada dia).
+# Calibração (alvo de balanceamento do 02 §9.1, "~2,5× da produção base"): empresa 5★ com 5 Engenheiros, 5 trabalhos cada (uma
+# barra de Energia = 100/20), skill no nível máximo (fator 3) e sem especialização → 25 × 0,02 × 3 = 1,5 → 2,5×.
+# Advogado: mesma forma; a soma diária REDUZ o multiplicador de risco de Burnout dos funcionários (1 − redução, piso 1% em `players`).
+ENGINEER_BONUS_PER_WORK = Decimal("0.02")
+LAWYER_REDUCTION_PER_WORK = Decimal("0.02")
+SUPPORT_LIMIT_PER_STAR = {n: n for n in STARS}      # 02 §9: "limitada pela estrela" (02a §2.3: Engenheiros/Advogados = estrela)
+LAWYER_SPECIALIZATION_KEY = "support:lawyer"         # 02 §13: o Advogado se especializa na própria atividade
+
+
 @dataclass(frozen=True)
 class ProvisionalRow:
     scope: str
@@ -95,6 +107,13 @@ def provisional_table() -> List[ProvisionalRow]:
             ("production.setup_seconds", str(SETUP_SECONDS), "setup ao trocar de produto (02 §5.3)"),
             ("production.cooldown_seconds", str(COOLDOWN_SECONDS), "cooldown entre trocas (02 §5.3)"),
             ("production.change_cost_cents", str(PRODUCTION_CHANGE_COST_CENTS), "custo fixo da troca (02 §5.3); > 0 exige natureza no 24")):
+        rows.append(ProvisionalRow("companies", name, value, rule, SOURCE))
+    for name, value, rule in (
+            ("support.engineer_bonus_per_work", str(ENGINEER_BONUS_PER_WORK), "bônus diário de produção por trabalho de Engenheiro (02 §9.1)"),
+            ("support.lawyer_reduction_per_work", str(LAWYER_REDUCTION_PER_WORK), "redução diária do risco de Burnout por trabalho de Advogado (02 §9.2)"),
+            ("support.limit_per_star", ",".join(f"{n}:{v}" for n, v in SUPPORT_LIMIT_PER_STAR.items()),
+             "máximo de vagas de Engenheiro e de Advogado por estrela (02 §9; 02a §2.3)"),
+            ("support.lawyer_specialization_key", LAWYER_SPECIALIZATION_KEY, "chave de especialização do Advogado (02 §13)")):
         rows.append(ProvisionalRow("companies", name, value, rule, SOURCE))
     for kind in PositionKind:
         rows.append(ProvisionalRow("companies", f"relevant_skill.{kind.value}", RELEVANT_SKILL[kind].value,

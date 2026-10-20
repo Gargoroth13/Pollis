@@ -139,7 +139,7 @@ class WorkProducesTests(ProductionBase):
         self.assertEqual((out["produced"], out["consumed"], out["limited_by"], out["product"]), (1, {"wheat": 1}, [], "flour"))
         self.assertEqual((self.units("flour"), self.units("wheat")), (1, 399))
         steps = {s["key"] for s in out["per_work"].to_dict()["steps"]}
-        self.assertEqual(steps, {"units_per_work_base", "skill_production", "specialization_production", "catalog_yield"})
+        self.assertEqual(steps, {"units_per_work_base", "skill_production", "specialization_production", "engineering_bonus", "catalog_yield"})
         kinds = list(StockMovement.objects.filter(company_id=self.firm).values_list("operation", flat=True))
         self.assertEqual(sorted(kinds[-2:]), ["input_consumption", "production"])
         moved = StockMovement.objects.get(operation="production")

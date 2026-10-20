@@ -136,7 +136,7 @@ def _register_jobs() -> None:
         ActionDescriptor(
             id=OPEN_ID, name="Abrir vaga no mural",
             requirements=("INVALID_PARAMS", "COMPANY_NOT_FOUND", "NOT_OWNER", "INVALID_POSITION_KIND",
-                          "POSITION_KIND_NOT_ALLOWED", "INVALID_SALARY", "INVALID_REQUIREMENTS"),
+                          "POSITION_KIND_NOT_ALLOWED", "INVALID_SALARY", "SUPPORT_LIMIT_REACHED", "INVALID_REQUIREMENTS"),
             cost=(), target=TargetSpec(TARGET_PARAMS, required=True), effects=("position_opened",)),
         check=_open_check, execute=_open_execute, preview=_no_preview)
     for action_id, name, keys, field, refusal_fn, execute_fn, reqs, effects in (

@@ -224,3 +224,50 @@ class JobsConcurrencyTests(TransactionTestCase):
             moved = sum(StockMovement.objects.filter(company_id=self.firm, product_id=item.product_id).values_list("delta", flat=True))
             self.assertEqual(item.quantity, moved)
         self.assertClean()
+
+    def test_support_works_production_dismissal_and_vacancy_limit_never_break_the_daily_effect_or_the_limit(self):
+        """Engenheiro, Advogado e funcionário de produção trabalhando juntos, demissão e abertura de vagas de suporte em disputa:
+        o limite da estrela nunca é excedido, cada contribuição tem o seu salário e a auditoria fica limpa."""
+        from decimal import Decimal
+        from companies.models import Position, SupportWork
+        from players import registry
+        from players.models import Player
+        eng = self.opened_kind("engineer")
+        law = self.opened_kind("lawyer")
+        self.assertTrue(jobs.approve_application(self.boss.pk, self.applied(self.w1, eng)).ok)
+        self.assertTrue(jobs.approve_application(self.boss.pk, self.applied(self.w2, law)).ok)
+        self.assertTrue(jobs.approve_application(self.boss.pk, self.applied(self.w3, self.opened())).ok)
+
+        def work(player):
+            Player.objects.filter(pk=player.pk).update(energy=Decimal(100), nutrition=Decimal(100), burnout=Decimal(0))
+            return registry.execute_action(player.pk, "work")
+
+        for _ in range(3):
+            out = run_together(lambda: work(self.w1), lambda: work(self.w2), lambda: work(self.w3), lambda: work(self.w1),
+                               lambda: jobs.open_position(self.boss.pk, self.firm, "engineer", 1_000, {}),
+                               lambda: jobs.open_position(self.boss.pk, self.firm, "engineer", 1_000, {}),
+                               lambda: jobs.open_position(self.boss.pk, self.firm, "lawyer", 1_000, {}))
+            for j in out:
+                self.assertIsNone(getattr(j, "error", None), getattr(j, "error", None))
+        for kind in ("engineer", "lawyer"):
+            self.assertLessEqual(Position.objects.filter(company_id=self.firm, kind=kind).exclude(status="closed").count(), 1)
+        self.assertGreater(SupportWork.objects.count(), 0)
+        out = run_together(lambda: work(self.w1), lambda: jobs.dismiss(self.boss.pk, eng), lambda: work(self.w2))
+        for j in out:
+            self.assertIsNone(getattr(j, "error", None), getattr(j, "error", None))
+        self.assertClean()
+
+    def opened_kind(self, kind, salary=1_000):
+        return jobs.open_position(self.boss.pk, self.firm, kind, salary, {}).detail["position"]
+
+    def test_simultaneous_support_vacancies_never_exceed_the_limit_of_the_star(self):
+        """Quatro requisições do mesmo Dono (a trava do jogador e a da empresa serializam) abrindo vaga de Engenheiro ao mesmo tempo em 1★: sobra exatamente uma, rodada após rodada."""
+        from companies.models import Position
+        for _ in range(6):
+            out = run_together(*[lambda: jobs.open_position(self.boss2.pk, self.firm2, "engineer", 1_000, {}) for _ in range(4)])
+            codes = sorted(j.result.code for j in out)
+            self.assertEqual(codes, ["OK", "SUPPORT_LIMIT_REACHED", "SUPPORT_LIMIT_REACHED", "SUPPORT_LIMIT_REACHED"])
+            open_ids = list(Position.objects.filter(company_id=self.firm2, kind="engineer", status="open").values_list("pk", flat=True))
+            self.assertEqual(len(open_ids), 1)
+            self.assertTrue(jobs.close_position(self.boss2.pk, open_ids[0]).ok)
+        self.assertClean()

@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from core import clock as game_clock
@@ -254,9 +253,10 @@ def _player_action_entry(action: Action) -> RegisteredAction:
         return services.perform_action(player_id, action)
 
     def preview(player, now, bal, target):
-        # Mesmas funções da execução, com os mesmos padrões (risco 1, sem atividade): o que se vê é o que se paga.
+        # Mesmas funções da execução, com os mesmos padrões (risco dos provedores, ex.: Advogado): o que se vê é o que se paga.
+        risk, detail = services.burnout_risk_for(player, action, now)
         return {"energy_cost": rules.energy_cost(action, bal),
-                "burnout_change": rules.burnout_change(action, Decimal(1), bal)}
+                "burnout_change": rules.burnout_change(action, risk, bal, detail)}
 
     descriptor = ActionDescriptor(
         id=action.value, name=_PLAYER_ACTION_NAMES[action], requirements=_PLAYER_REQUIREMENTS[action],
