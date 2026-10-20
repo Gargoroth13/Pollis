@@ -5,6 +5,16 @@ reais usam o mesmo caminho (CLAUDE.md §5.4).
 
   found_company  Fundar empresa   alvo = {"type": tipo, "name": texto, "owner_salary_cents": n}
   fund_company   Aportar capital  alvo = {"company": id, "amount_cents": n}
+
+Cargos e mural (P1.04b; `jobs`): só o Dono abre/fecha vaga, aprova, rejeita e demite (GD 2026-10-19).
+  open_position         Abrir vaga        alvo = {"company": id, "kind": cargo, "salary_cents": n, "requirements": {skill: nível}}
+  close_position        Fechar vaga       alvo = {"position": id}
+  apply_position        Candidatar-se     alvo = {"position": id}
+  withdraw_application  Retirar candidatura  alvo = {"application": id}
+  approve_application   Aprovar candidato    alvo = {"application": id}
+  reject_application    Rejeitar candidato   alvo = {"application": id}
+  dismiss_employee      Demitir funcionário  alvo = {"position": id}
+  resign                Pedir demissão       sem alvo
 """
 from __future__ import annotations
 
@@ -13,7 +23,7 @@ from typing import Any, Dict, Optional
 from players.registry import TARGET_PARAMS, ActionDescriptor, TargetSpec, register_action
 from players.services import ActionResult
 
-from . import services
+from . import jobs, services
 
 FOUND_ID = "found_company"
 FUND_ID = "fund_company"
@@ -69,7 +79,93 @@ def _fund_preview(player, now, bal, target) -> Dict[str, Any]:
     return {}
 
 
+OPEN_ID, CLOSE_ID, APPLY_ID = "open_position", "close_position", "apply_position"
+WITHDRAW_ID, APPROVE_ID, REJECT_ID = "withdraw_application", "approve_application", "reject_application"
+DISMISS_ID, RESIGN_ID = "dismiss_employee", "resign"
+OPEN_KEYS = frozenset({"company", "kind", "salary_cents", "requirements"})
+POSITION_KEYS = frozenset({"position"})
+APPLICATION_KEYS = frozenset({"application"})
+
+
+def _open_check(player, now, bal, target) -> Optional[ActionResult]:
+    if target is None:
+        return None
+    p = _params(target, OPEN_KEYS)
+    return _invalid(OPEN_ID, OPEN_KEYS, target) if p is None else jobs.open_position_refusal(
+        player.pk, p["company"], p["kind"], p["salary_cents"], p["requirements"])
+
+
+def _open_execute(player_id: int, target: Any) -> ActionResult:
+    p = _params(target, OPEN_KEYS)
+    return _invalid(OPEN_ID, OPEN_KEYS, target) if p is None else jobs.open_position(
+        player_id, p["company"], p["kind"], p["salary_cents"], p["requirements"])
+
+
+def _single(action_id: str, keys, field: str, refusal_fn, execute_fn):
+    """Ação de um só parâmetro (`position` ou `application`): disponibilidade e execução usam as mesmas funções do `jobs`."""
+    def check(player, now, bal, target) -> Optional[ActionResult]:
+        if target is None:
+            return None
+        p = _params(target, keys)
+        return _invalid(action_id, keys, target) if p is None else refusal_fn(player.pk, p[field])
+
+    def execute(player_id: int, target: Any) -> ActionResult:
+        p = _params(target, keys)
+        return _invalid(action_id, keys, target) if p is None else execute_fn(player_id, p[field])
+
+    return check, execute
+
+
+def _no_preview(player, now, bal, target) -> Dict[str, Any]:
+    return {}
+
+
+def _resign_check(player, now, bal, target) -> Optional[ActionResult]:
+    return jobs.resign_refusal(player.pk)
+
+
+def _resign_execute(player_id: int, target: Any) -> ActionResult:
+    return jobs.resign(player_id)
+
+
+def _register_jobs() -> None:
+    register_action(
+        ActionDescriptor(
+            id=OPEN_ID, name="Abrir vaga no mural",
+            requirements=("INVALID_PARAMS", "COMPANY_NOT_FOUND", "NOT_OWNER", "INVALID_POSITION_KIND",
+                          "POSITION_KIND_NOT_ALLOWED", "INVALID_SALARY", "INVALID_REQUIREMENTS"),
+            cost=(), target=TargetSpec(TARGET_PARAMS, required=True), effects=("position_opened",)),
+        check=_open_check, execute=_open_execute, preview=_no_preview)
+    for action_id, name, keys, field, refusal_fn, execute_fn, reqs, effects in (
+            (CLOSE_ID, "Fechar vaga", POSITION_KEYS, "position", jobs.close_position_refusal, jobs.close_position,
+             ("INVALID_PARAMS", "POSITION_NOT_FOUND", "NOT_OWNER", "POSITION_NOT_OPEN"), ("position_closed",)),
+            (APPLY_ID, "Candidatar-se a uma vaga", POSITION_KEYS, "position", jobs.apply_refusal, jobs.apply_to_position,
+             ("INVALID_PARAMS", "POSITION_NOT_FOUND", "POSITION_NOT_OPEN", "ALREADY_APPLIED", "REQUIREMENTS_NOT_MET"),
+             ("application_created",)),
+            (WITHDRAW_ID, "Retirar candidatura", APPLICATION_KEYS, "application", jobs.withdraw_refusal,
+             jobs.withdraw_application, ("INVALID_PARAMS", "APPLICATION_NOT_FOUND", "NOT_APPLICANT", "APPLICATION_NOT_PENDING"),
+             ("application_withdrawn",)),
+            (APPROVE_ID, "Aprovar candidato", APPLICATION_KEYS, "application", jobs.approve_refusal, jobs.approve_application,
+             ("INVALID_PARAMS", "APPLICATION_NOT_FOUND", "NOT_OWNER", "APPLICATION_NOT_PENDING", "POSITION_NOT_OPEN",
+              "ALREADY_EMPLOYED", "REQUIREMENTS_NOT_MET"), ("employee_hired",)),
+            (REJECT_ID, "Rejeitar candidato", APPLICATION_KEYS, "application", jobs.reject_refusal, jobs.reject_application,
+             ("INVALID_PARAMS", "APPLICATION_NOT_FOUND", "NOT_OWNER", "APPLICATION_NOT_PENDING"), ("application_rejected",)),
+            (DISMISS_ID, "Demitir funcionário", POSITION_KEYS, "position", jobs.dismiss_refusal, jobs.dismiss,
+             ("INVALID_PARAMS", "POSITION_NOT_FOUND", "NOT_OWNER", "CANNOT_DISMISS_OWNER", "POSITION_NOT_FILLED"),
+             ("employee_dismissed",))):
+        check, execute = _single(action_id, keys, field, refusal_fn, execute_fn)
+        register_action(
+            ActionDescriptor(id=action_id, name=name, requirements=reqs, cost=(), target=TargetSpec(TARGET_PARAMS, required=True),
+                             effects=effects),
+            check=check, execute=execute, preview=_no_preview)
+    register_action(
+        ActionDescriptor(id=RESIGN_ID, name="Pedir demissão", requirements=("NOT_EMPLOYED",), cost=(), target=TargetSpec(),
+                         effects=("employee_resigned",)),
+        check=_resign_check, execute=_resign_execute, preview=_no_preview)
+
+
 def register() -> None:
+    _register_jobs()
     register_action(
         ActionDescriptor(
             id=FOUND_ID, name="Fundar empresa",

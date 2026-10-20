@@ -190,12 +190,15 @@ def perform_action(player_id: int, action: Action, *, burnout_risk=1,
     `burnout_risk`: multiplicador de risco de Burnout (02 §9.2), 1 = 100%.
     `activity`: o que a atividade oferece a OUTROS sistemas (ex.: skills que desenvolve). Os hooks
     registrados (players.hooks) reagem a ela dentro desta mesma transação, depois do sucesso da ação.
+    Se `activity` não for informada, os provedores de atividade (players.hooks; ex.: o emprego do jogador, design/02 §6) a resolvem.
     """
     bal = get_balance()
     risk = D(burnout_risk)
     player = _locked(player_id)
     now = game_clock.now()
     _catch_up(player, now)
+    if activity is None:
+        activity = hooks.resolve_activity(player, action, now)      # o cargo/curso informa a atividade (design/02 §6)
 
     if effect is not None and action is not Action.LEISURE:
         raise ValueError("Só a ação de Lazer aplica efeito de QoL próprio (04 §19).")

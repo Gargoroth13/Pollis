@@ -6,7 +6,8 @@ from companies.audit import audit_companies
 
 
 class Command(BaseCommand):
-    help = "Audita as Empresas (design/02 §16-17): cargo Dono, conta e lançamentos de fundação e aporte. Sai com erro se falhar."
+    help = ("Audita as Empresas (design/02 §15-17): cargo Dono, conta, fundação, aporte, cargos/mural, candidaturas, salário de "
+            "trabalho e folha diária do Dono. Sai com erro se falhar.")
 
     def add_arguments(self, parser):
         parser.add_argument("--json", action="store_true", help="Saída estruturada exportável")

@@ -1,11 +1,12 @@
 from companies import services
+from core.models import WorldClock
 from companies.audit import audit_companies
 from companies.constants import CompanyType
 from ledger import services as ledger
 from ledger.audit import ledger_metrics
 from ledger.models import Account
 from ledger.tests.base import LedgerHelpers, fund_account  # noqa: F401
-from players.tests.base import PlayerTestCase
+from players.tests.base import T0, PlayerTestCase
 
 REAL = 100          # centavos por real
 
@@ -18,6 +19,8 @@ class CompanyTestCase(LedgerHelpers, PlayerTestCase):
     def setUp(self):
         super().setUp()
         self.ledger_setup()
+        WorldClock.load()
+        WorldClock.objects.filter(pk=1).update(anchor_game=T0, world_processed_until=T0)   # o mundo "começa" em T0
         if self.audit_companies_at_end:
             self.addCleanup(self._audit_companies)
         self.other = self.new_player("p2")

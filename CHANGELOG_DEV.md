@@ -4,6 +4,51 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-20 — P1.04b — Cargos, mural e salários (`design/02` §15-16; `24` §24.12-24.13)
+
+Segunda fatia de P1.04. Branch `dev/p1.04b-cargos-mural`, empilhada sobre o PR #15 (P1.04a); PR próprio; **não mergeado**. Nenhuma parte do Bot Test foi removida ou adiada.
+
+### Decisões do Game Director registradas (mensagem de 2026-10-19)
+Gravadas em `design/02-empresas.md` §25 e em `design/24` §24.12.5 (política por tipo):
+1. **Estrelas**: toda empresa nasce com 1★ `[PROV]`; progressão por melhorias compradas com o caixa da empresa, custo crescente por estrela. **Antes de implementar a progressão**, a proposta (custos, limites, desbloqueios, lacunas) está em `design/02a-estrelas-PROPOSTA.md` (DRAFT). A progressão virou a fatia **P1.04f** e só é implementada após as lacunas 1–4 do documento.
+2. **Caixa insuficiente**: salário de trabalho e salário do Dono usam **`PENDING`** (obrigação registrada e auditável, sem criar dinheiro, sem pagamento duplicado).
+3. **Aprovação de candidatos**: **somente o Dono**; sem delegação nesta fase.
+4. Confirmadas: aporte = `DONATION`/`company_capital`; localização e ocupação da empresa entram com P1.07 (continuam no escopo do Bot Test).
+
+### O que foi entregue
+- **Cargos e mural** (`companies/jobs.py`): vagas (`WORKER`, `ENGINEER`, `LAWYER`, `SALESPERSON`) abertas/fechadas só pelo Dono, com salário e requisitos de skill (`01` §1.9, reaproveita `SkillRequirement`); mural público paginado com `requirements_met` e o detalhamento do que falta por observador (None quando não há observador); candidatura, retirada, aprovação e rejeição (só o Dono), pedido de demissão e demissão. Um emprego contratado por jogador (restrição de banco; o Dono não conta). Trilha imutável de eventos (`PositionEvent`).
+- **Salário do funcionário**: devido a **cada ação de Trabalhar** (hook de `perform_action`, mesma transação, mesmo caminho de jogadores e bots), natureza `WAGE`, pagador = conta da empresa, política `PENDING`, IR retido. `WorkWage` liga a ação ao pedido do registro monetário.
+- **Salário do Dono**: devido **por dia**, folha em **um lote** no tick diário do mundo (`OWNER_SALARY`, `PENDING`). Idempotente por (empresa, dia); catch-up de vários dias paga cada dia uma vez; empresa fundada depois do tick não recebe aquele dia.
+- **Quitação de pendências**: no tick diário a empresa quita antes da folha do dia, da competência mais antiga para a mais nova (R4). Obrigações nunca são recriadas nem pagas duas vezes.
+- **Provedor de atividade** (`players.hooks.register_activity_provider`): o cargo informa o `ActivityContext` do Trabalho (a skill relevante cresce); só vale quando o chamador não informou `activity`. Sem emprego, Trabalhar continua livre e sem salário (P0.04).
+- **Limites W/S/T**: `payroll.limits_for` (registrado sob demanda sem sobrepor outro provedor): W = R$ 50/dia e T = sem teto (padrões de `11` §11.1), S = nível da skill relevante do cargo × 1,5 (`skills`).
+- 8 ações no Action Registry (`open_position`, `close_position`, `apply_position`, `withdraw_application`, `approve_application`, `reject_application`, `dismiss_employee`, `resign`), com as mesmas funções de recusa na disponibilidade e na execução.
+- `audit_companies` ganhou as invariantes 4–7 (cargos/vagas, candidaturas, salário de trabalho, folha do Dono sem dia pulado nem duplicado).
+
+### Interpretações técnicas (sem alterar mecânica; para confirmação do GD)
+- **Unidade do salário**: do funcionário = valor **por ação de Trabalhar** (o `01` §1.7 fala em limite diário "e não por clique", o que pressupõe pagamento por clique); do Dono = valor **por dia** (`24` §24.13: folha diária). O `02` não fixa a unidade.
+- **Skill relevante por cargo** `[PROV]` (`01` §1.8 delega a Empresas): Físico = funcionário de produção; Inteligência = Dono, Engenheiro, Advogado; Carisma = Vendedor. Tabela auditável em `companies/params.py`.
+- **Cargos por tipo** `[PROV]`: Varejo contrata vendedores; os demais tipos, funcionários de produção; todos podem ter Engenheiro e Advogado.
+- **IR sobre salário** = 5% (padrão da lei em `11` §11.1) até o sistema de leis (P1.12) existir; território tributário vazio → União.
+- Ao sair (demissão ou pedido), a vaga é **encerrada** (o Dono abre outra); salários já devidos permanecem como obrigação.
+- Candidatura: quem já tem emprego pode se candidatar; a regra de um emprego é aplicada na aprovação; na contratação, as outras candidaturas pendentes do contratado e as da vaga são canceladas (`CANCELLED`, com motivo).
+- Um Trabalho com caixa disponível é pago na hora, sem fila; a ordem "mais antiga primeiro" vale na quitação.
+- O Dono pode se candidatar a vaga da própria empresa (o design não proíbe; nada de dinheiro novo, o limite diário `S` vale para os dois salários).
+- Sem limite de vagas por empresa nem de funcionários: o `02` §14 só diz que estrelas "podem influenciar" (depende da proposta de estrelas).
+
+### Lacunas/dependências encontradas
+- **Lei antitruste** (`11` §11.1: "máximo de empresas do mesmo tipo por proprietário", padrão 1): é lei paramétrica de P1.12 e ainda não limita a fundação (P1.04a); P1.12 precisa de um ponto de recusa em `found_company`.
+- **Estrelas** (`02a`): lacunas 1–8 do documento.
+- Bloqueios por empresa parada/setup e produção chegam em P1.04c; Engenheiro/Advogado têm cargo mas sem efeito até P1.04d; vendedor até P1.04e.
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **1116 testes OK** (1059 + 57 novos: cargos/mural, salários e folha, registro, auditoria, concorrência).
+- SQLite, suíte completa: **1116 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos; `companies` 3× no PostgreSQL (82 testes cada, com a concorrência de cargos/salários).
+
+### Locking (PostgreSQL)
+Protocolo: jogadores em id crescente → empresa → vaga → candidatura → registro monetário. A limpeza de candidaturas de outras empresas só atualiza linhas, e `PositionEvent` usa ids simples (sem FK de jogador) para não tomar `FOR KEY SHARE` fora do protocolo (ciclo possível). A folha do tick trava contadores (jogador, dia) e depois contas em id crescente, a mesma ordem de quem paga um Trabalho. Mutação provou o teste de corrida (remover os travamentos de empresa/vaga faz `applications racing a close` falhar).
+
 ## 2026-10-19 — P1.04a — Empresas: núcleo (`design/02` §16-17)
 
 Primeira fatia de P1.04 (Empresas é grande demais para um PR revisável; a divisão abaixo é de ordem de execução, **nenhuma parte sai do Bot Test**). Branch `dev/p1.04a-empresas-nucleo`, empilhada sobre o PR #14 (P1.02a); PR próprio; **não mergeado**.
