@@ -30,9 +30,46 @@ FOUNDING_COST_CENTS = {t: from_reais(v) for t, v in FOUNDING_COST_REAIS.items()}
 
 
 class PositionKind(str, enum.Enum):
-    """Cargos. Nesta etapa só existe o Dono (02 §16), criado automaticamente na fundação; os demais entram com o mural (P1.04b)."""
+    """
+    Cargos (02). O Dono (§16) nasce com a empresa. Os demais são VAGAS abertas pelo Dono no mural (§15):
+    `WORKER` funcionário de produção; `ENGINEER`/`LAWYER` cargos de suporte (§9; seus efeitos entram em P1.04d);
+    `SALESPERSON` vendedor do Varejo (§11.2; efeito em P1.04e). O que cada cargo FAZ na operação é de etapas seguintes.
+    """
     OWNER = "owner"
+    WORKER = "worker"
+    ENGINEER = "engineer"
+    LAWYER = "lawyer"
+    SALESPERSON = "salesperson"
+
+
+class PositionStatus(str, enum.Enum):
+    OPEN = "open"            # vaga no mural, sem ocupante
+    FILLED = "filled"        # ocupada (o Dono nasce FILLED)
+    CLOSED = "closed"        # encerrada: fora do mural; o histórico fica
+
+
+class ApplicationStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"      # o candidato desistiu
+    CANCELLED = "cancelled"      # sem decisão: vaga fechada/preenchida ou candidato contratado em outro lugar
+
+
+class EventKind(str, enum.Enum):
+    """Trilha imutável do mural e do vínculo (auditoria)."""
+    POSITION_OPENED = "position_opened"
+    POSITION_CLOSED = "position_closed"
+    APPLIED = "applied"
+    WITHDRAWN = "withdrawn"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+    HIRED = "hired"
+    RESIGNED = "resigned"
+    DISMISSED = "dismissed"
 
 
 MAX_NAME_LENGTH = 80
 MAX_SALARY_CENTS = 10 ** 12          # só barra valor absurdo; o teto real do salário é S/T do registro monetário (24 §24.12)
+MAX_REQUIREMENT_LEVEL = 10 ** 6      # só barra valor absurdo; os níveis reais são de Skills (01 §1.9)
+MURAL_PAGE_LIMIT = 200               # técnico: o mural público é paginado (não é regra de jogo)

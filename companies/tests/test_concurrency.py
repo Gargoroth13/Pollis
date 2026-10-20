@@ -6,9 +6,10 @@ sequências únicas, sem deadlock, auditoria limpa), que vale nos dois.
 from django.test import TransactionTestCase
 
 from accounts.models import Usuario
-from companies import services
+from companies import jobs, payroll, services
 from companies.audit import audit_companies
-from companies.models import CapitalContribution, Company
+from companies.models import Application, CapitalContribution, Company, Position, PositionEvent
+from core.models import WorldClock
 from geography.balance import get_scenario
 from geography.generator import generate_world
 from geography.tests.base import SMALL
@@ -25,6 +26,7 @@ class CompanyConcurrencyTests(TransactionTestCase):
     def setUp(self):
         install_test_role(self)
         generate_world(get_scenario(**SMALL))
+        WorldClock.load()                  # o ponteiro do mundo existe ANTES das fundações (a auditoria de folha lê o ponteiro)
         self.a, self.b = (create_player(Usuario.objects.create_user(f"c{n}")) for n in (1, 2))
 
     def money(self, player):
@@ -71,3 +73,111 @@ class CompanyConcurrencyTests(TransactionTestCase):
                                 lambda: services.found_company(self.b.pk, "retail", "B2", 0))
             self.assertTrue(all(j.result.ok for j in jobs), [j.result for j in jobs])
         self.assertClean()
+
+
+class JobsConcurrencyTests(TransactionTestCase):
+    """Protocolo: jogadores (id crescente) → empresa → vaga → candidatura → registro monetário. Sem deadlock, sem violar o banco."""
+
+    def setUp(self):
+        install_test_role(self)
+        generate_world(get_scenario(**SMALL))
+        WorldClock.load()
+        self.boss, self.boss2, self.w1, self.w2, self.w3 = (
+            create_player(Usuario.objects.create_user(f"j{n}")) for n in range(5))
+        for p in (self.boss, self.boss2, self.w1, self.w2, self.w3):
+            fund_account(ledger.player_account(p.pk), 200_000 * REAL)
+        self.firm = services.found_company(self.boss.pk, "industrial", "Aço", 1_500).detail["company"]
+        self.firm2 = services.found_company(self.boss2.pk, "industrial", "Ferro", 1_500).detail["company"]
+        services.fund_company(self.boss.pk, self.firm, 50_000)
+
+    def opened(self, company=None, owner=None, salary=2_000):
+        return jobs.open_position((owner or self.boss).pk, company or self.firm, "worker", salary, {}).detail["position"]
+
+    def applied(self, player, position):
+        res = jobs.apply_to_position(player.pk, position)
+        self.assertTrue(res.ok, res)
+        return res.detail["application"]
+
+    def assertClean(self, companies=True):
+        reports = [audit_ledger()] + ([audit_companies()] if companies else [])
+        for report in reports:
+            self.assertTrue(report.ok, report.findings)
+
+    def test_two_approvals_for_one_vacancy_hire_exactly_one(self):
+        for _ in range(4):
+            position = self.opened()
+            a1, a2 = self.applied(self.w1, position), self.applied(self.w2, position)
+            out = run_together(lambda: jobs.approve_application(self.boss.pk, a1), lambda: jobs.approve_application(self.boss.pk, a2))
+            self.assertEqual(sum(j.result.ok for j in out), 1, [j.result for j in out])
+            self.assertEqual(Position.objects.get(pk=position).status, "filled")
+            jobs.dismiss(self.boss.pk, position)
+        self.assertClean()
+
+    def test_one_candidate_approved_by_two_owners_at_once_gets_one_job(self):
+        for _ in range(4):
+            p1, p2 = self.opened(), self.opened(self.firm2, self.boss2)
+            a1, a2 = self.applied(self.w1, p1), self.applied(self.w1, p2)
+            out = run_together(lambda: jobs.approve_application(self.boss.pk, a1), lambda: jobs.approve_application(self.boss2.pk, a2))
+            self.assertEqual(sum(j.result.ok for j in out), 1, [j.result for j in out])
+            self.assertEqual(Position.objects.filter(holder=self.w1).exclude(kind="owner").count(), 1)
+            jobs.resign(self.w1.pk)
+        self.assertClean()
+
+    def test_applications_racing_a_close_never_leave_a_pending_application_on_a_closed_vacancy(self):
+        for _ in range(6):
+            position = self.opened()
+            out = run_together(lambda: jobs.close_position(self.boss.pk, position),
+                               *[lambda p=p: jobs.apply_to_position(p.pk, position) for p in (self.w1, self.w2, self.w3)])
+            self.assertTrue(out[0].result.ok)
+            self.assertFalse(Application.objects.filter(position_id=position, status="pending").exists())
+        self.assertClean()
+
+    def test_resign_versus_dismiss_ends_the_job_exactly_once(self):
+        for _ in range(4):
+            position = self.opened()
+            a = self.applied(self.w1, position)
+            self.assertTrue(jobs.approve_application(self.boss.pk, a).ok)
+            out = run_together(lambda: jobs.resign(self.w1.pk), lambda: jobs.dismiss(self.boss.pk, position))
+            self.assertEqual(sum(j.result.ok for j in out), 1, [j.result for j in out])
+            ended = PositionEvent.objects.filter(position_id=position, kind__in=["resigned", "dismissed"]).count()
+            self.assertEqual(ended, 1)
+        self.assertClean()
+
+    def test_many_players_applying_at_once_each_gets_one_application(self):
+        position = self.opened()
+        out = run_together(*[lambda p=p: jobs.apply_to_position(p.pk, position) for p in (self.w1, self.w2, self.w3)] * 2)
+        self.assertEqual(sum(j.result.ok for j in out), 3)
+        self.assertTrue(all(j.result.code in ("OK", "ALREADY_APPLIED") for j in out))
+        self.assertEqual(Application.objects.filter(position_id=position).count(), 3)
+        self.assertClean()
+
+    def test_works_funding_dismissal_and_the_payroll_tick_together_never_deadlock_nor_create_money(self):
+        from decimal import Decimal
+        from core import clock as game_clock
+        from players import registry
+        from players.models import Player
+        positions = []
+        for w in (self.w1, self.w2):
+            position = self.opened(salary=3_000)
+            self.assertTrue(jobs.approve_application(self.boss.pk, self.applied(w, position)).ok)
+            positions.append(position)
+        money = ledger_metrics()["in_circulation"]
+        tick_at = game_clock.now() + 86_400 * 400          # o MESMO instante de tick em todas as rodadas (a folha é idempotente)
+
+        def work(player):
+            Player.objects.filter(pk=player.pk).update(energy=Decimal(100), nutrition=Decimal(100), burnout=Decimal(0))
+            return registry.execute_action(player.pk, "work")
+
+        for _ in range(3):
+            out = run_together(lambda: work(self.w1), lambda: work(self.w2), lambda: work(self.w1),
+                               lambda: services.fund_company(self.boss.pk, self.firm, 100),
+                               lambda: payroll.run_daily_payroll(tick_at),
+                               lambda: jobs.open_position(self.boss.pk, self.firm, "worker", 1_000, {}))
+            self.assertTrue(all(j.result.ok for j in out if j.result is not None and hasattr(j.result, "ok")), [j.result for j in out])
+        self.assertEqual(ledger_metrics()["in_circulation"], money)
+        self.assertClean(companies=False)
+        # cada salário de trabalho tem o seu pedido e sequência sem buracos
+        from companies.models import WorkWage
+        for w in (self.w1, self.w2):
+            seqs = list(WorkWage.objects.filter(player=w).order_by("sequence").values_list("sequence", flat=True))
+            self.assertEqual(seqs, list(range(1, len(seqs) + 1)))

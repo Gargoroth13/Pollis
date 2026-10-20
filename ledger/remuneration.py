@@ -45,6 +45,11 @@ def register_limits_provider(fn: LimitsProvider) -> None:
     _limits_provider = fn
 
 
+def limits_provider_registered() -> bool:
+    """Para um sistema pagador registrar o provedor sob demanda sem colidir com outro já registrado."""
+    return _limits_provider is not None
+
+
 def register_political_due_provider(fn: PoliticalDueProvider) -> None:
     global _political_provider
     if _political_provider is not None and _political_provider is not fn:

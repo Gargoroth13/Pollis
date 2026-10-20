@@ -59,11 +59,16 @@ PlayerCreatedHook = Callable[[Player, int], None]
 BlockProvider = Callable[[Player, Action, int, Optional[ActivityContext]], Optional[str]]
 # Hook de acesso (On Access, 04 §22): roda ao FIM do catch-up lazy, com o jogador já processado até `now`.
 AccessHook = Callable[[Player, int], None]
+# Provedor de atividade: quem conhece a atividade (o cargo do jogador, o curso) devolve o `ActivityContext` da ação, ou None.
+# Só é consultado quando quem chamou `perform_action` NÃO informou `activity`: jogadores reais e bots, que pedem a ação pelo
+# Action Registry, nunca informam o contexto; ele vem do sistema dono (design/02 §6; GD 2026-10-12).
+ActivityProvider = Callable[[Player, Action, int], Optional[ActivityContext]]
 
 _action_hooks: Dict[str, ActionHook] = {}
 _created_hooks: Dict[str, PlayerCreatedHook] = {}
 _block_providers: Dict[str, BlockProvider] = {}
 _access_hooks: Dict[str, AccessHook] = {}
+_activity_providers: Dict[str, ActivityProvider] = {}
 
 
 def register_action_hook(name: str, fn: ActionHook) -> None:
@@ -106,6 +111,21 @@ def register_access_hook(name: str, fn: AccessHook) -> None:
     _access_hooks[name] = fn
 
 
+def register_activity_provider(name: str, fn: ActivityProvider) -> None:
+    if name in _activity_providers:
+        raise ValueError(f"Provedor de atividade duplicado: {name}")
+    _activity_providers[name] = fn
+
+
+def resolve_activity(player: Player, action: Action, now: int) -> Optional[ActivityContext]:
+    """Primeiro contexto não vazio, em ordem de nome (determinístico). Sem provedor que responda, a ação segue sem contexto."""
+    for name in sorted(_activity_providers):
+        activity = _activity_providers[name](player, action, now)
+        if activity is not None:
+            return activity
+    return None
+
+
 def run_block_providers(player: Player, action: Action, now: int, activity: Optional[ActivityContext]) -> List[str]:
     """Motivos de bloqueio dos provedores, em ordem de nome (determinístico), sem repetição."""
     reasons: List[str] = []
@@ -123,6 +143,10 @@ def run_access_hooks(player: Player, now: int) -> None:
 
 def unregister_block_provider(name: str) -> None:      # para testes
     _block_providers.pop(name, None)
+
+
+def unregister_activity_provider(name: str) -> None:   # para testes
+    _activity_providers.pop(name, None)
 
 
 def unregister_access_hook(name: str) -> None:         # para testes

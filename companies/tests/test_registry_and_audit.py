@@ -1,6 +1,7 @@
 """Ações no Action Registry (mesmo caminho de jogadores e Bots) e auditoria das Empresas."""
 from companies import params, services
 from companies.audit import audit_companies
+from companies.constants import CompanyType, PositionKind
 from companies.models import Company, Position
 from ledger.models import Entry
 from players import registry
@@ -66,5 +67,46 @@ class AuditTests(CompanyTestCase):
 
     def test_provisional_table_covers_every_parameter(self):
         rows = {r.parameter: r for r in params.provisional_table()}
-        self.assertEqual(set(rows), {"initial_stars"})
+        expected = {"initial_stars", "min_wage_per_day_cents", "wage_ceiling_per_day_cents", "income_tax_rate"}
+        expected |= {f"relevant_skill.{k.value}" for k in PositionKind} | {f"hirable_kinds.{t.value}" for t in CompanyType}
+        self.assertEqual(set(rows), expected)
         self.assertEqual(rows["initial_stars"].status, "PROV")
+        self.assertEqual(rows["wage_ceiling_per_day_cents"].value, "None")      # T sem teto: None, nunca 0
+
+
+class JobsAuditTests(CompanyTestCase):
+    audit_companies_at_end = False
+
+    def setUp(self):
+        super().setUp()
+        from companies import jobs
+        self.company = self.found(self.player, "industrial", "Fábrica", 0)
+        self.position = jobs.open_position(self.player.pk, self.company, "worker", 1_000, {}).detail["position"]
+        application = jobs.apply_to_position(self.other.pk, self.position).detail["application"]
+        self.assertTrue(jobs.approve_application(self.player.pk, application).ok)
+
+    def codes(self):
+        return {f["code"] for f in audit_companies().findings}
+
+    def test_a_clean_hire_passes(self):
+        report = audit_companies()
+        self.assertTrue(report.ok, report.findings)
+
+    def test_the_audit_flags_forbidden_kinds_and_missing_events_and_the_database_refuses_incoherent_status(self):
+        from companies.models import PositionEvent
+        from django.db import IntegrityError, transaction
+        with self.assertRaises(IntegrityError), transaction.atomic():           # o próprio banco recusa status incoerente
+            Position.objects.filter(pk=self.position).update(status="open")
+        Position.objects.filter(pk=self.position).update(kind="salesperson")
+        self.assertIn("POSITION_KIND_NOT_ALLOWED", self.codes())
+        Position.objects.filter(pk=self.position).update(kind="worker")
+        from django.db import connection
+        with connection.cursor() as cursor:                      # o modelo é imutável: apagar só por SQL, de propósito
+            cursor.execute("DELETE FROM companies_positionevent WHERE kind IN ('hired', 'position_opened')")
+        self.assertTrue({"FILLED_POSITION_WITHOUT_HIRE_EVENT", "POSITION_WITHOUT_OPEN_EVENT"} <= self.codes())
+        self.assertEqual(PositionEvent.objects.count(), 1)
+
+    def test_the_audit_flags_a_pending_application_on_a_filled_position(self):
+        from companies.models import Application
+        Application.objects.create(position_id=self.position, applicant=self.player, created_at=1)
+        self.assertIn("PENDING_APPLICATION_ON_CLOSED_POSITION", self.codes())
