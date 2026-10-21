@@ -4,6 +4,39 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-21 — P1.04e — Varejo e Construtora (`design/02` §4, §11, §12; `10` §6)
+
+Quinta fatia de P1.04. Branch `dev/p1.04e-varejo-construtora`, empilhada sobre o PR #18 (P1.04d); PR próprio; **não mergeado**. Nenhuma parte do Bot Test foi removida ou adiada; o que depende de outro sistema (lote/propriedade do imóvel, mercado e preço de venda) tem ponto de integração explícito, nunca valor ou mecânica inventada.
+
+### O que foi entregue
+- **Permissões de compra** (`companies/trade.py`, `02` §4): derivadas do catálogo, sem lista paralela. Produtora (Matriz/Industrial) só compra insumo de receita que **ela** pode produzir (tipo, estrela, receita pronta); Varejo só compra o que revende (canal `retail_sale`); demais tipos ainda sem operação que consuma produtos → `NO_VALID_USE`; o produto precisa do canal `inter_company`. `credit_stock(PURCHASE)` passa a aplicar a regra (o mercado, P1.05, pergunta `purchase_refusal(comprador, produto)` antes de fechar a venda).
+- **Varejo** (`companies/retail.py`, `02` §11): cada Trabalhar do Vendedor soma **capacidade de venda do dia** (mesmo registro `SupportWork`, `kind=salesperson`); capacidade do dia = `floor(soma das contribuições)`, não passa para o dia seguinte. `fulfill_sale` (serviço que o mercado chamará) consome **1 de estoque e 1 de capacidade por venda** (`SALES_CAPACITY_EXCEEDED`, `INSUFFICIENT_STOCK`, idempotente por chave, só o Varejo, só produto `retail_sale`); `SalesCapacityUse` imutável ligado ao movimento de estoque `sale`. Não move dinheiro.
+- **Construtora** (`companies/construction.py`, `02` §12; `10` §6): `start_construction` (ação do Action Registry, só o Dono) inicia **uma obra ativa por vez** (índice único parcial), projeto = os 4 tipos residenciais de `10` §6 com a Construtora mínima do design (1★/2★/3★/4★). Cada Trabalhar de funcionário da Construtora faz a obra andar de 0% a 100% (skill, especialização no projeto, bônus do Engenheiro; `ConstructionWork` imutável ligado ao salário pago); sem obra ativa o Trabalho é bloqueado antes de gastar Energia (`COMPANY_NO_PROJECT`); com 100% a obra é concluída e a Construtora pode iniciar outra. `register_completion_hook` é o ponto onde Imóveis (P1.07) criará o imóvel.
+- `audit_companies`: invariantes 12 (vendas × movimentos de estoque × capacidade) e 13 (obras: progresso = soma dos trabalhos, salário pago, uma ativa, sequências, estrela do projeto). Migração `0005_retail_construction`.
+- **Correção de um bug da P1.04c**: o bloqueio "empresa sem produto" valia para funcionários de qualquer tipo de empresa; agora só Matriz/Industrial produzem (Serviços/Financeira seguem trabalhando; Construtora usa a obra). Teste novo cobre.
+
+### Interpretações técnicas `[PROV]` (sem alterar mecânica; para confirmação do GD) — em `companies/params.py` e `provisional_table()`
+- Capacidade de venda por Trabalhar = 10 × skill (Carisma) × especialização (`retail:sales`); estoque (500×★) fica maior que a capacidade potencial de um vendedor/dia (§11.2).
+- Trabalhos para concluir (a 100%, eficiência base): baixa simples 50, alta simples 400, baixa luxo 100, alta luxo 600. As estrelas mínimas vêm de `10` §6; os números de trabalho são `[PROV]`.
+- O excedente além de 100% no último Trabalhar se perde. A quantidade de funcionários da Construtora não entra como fator próprio (cada funcionário já soma trabalhos).
+- A skill do vendedor/funcionário é a do momento do hook (antes do ganho da própria ação), como em P1.04c/d.
+
+### Lacunas/dependências encontradas (registradas, não decididas)
+- **Lote e contrato da obra**: `10` §5 diz que a obra é contratada pelo dono do lote e `10` §28 que a Construtora é prestadora; `02` §12 diz que o Dono "escolhe e inicia". A obra aqui não tem lote nem cliente; o vínculo (e o pagamento, `PUBLIC_WORKS_PAYMENT` ou contrato privado) é de P1.07/P1.09/`18`.
+- **Cancelar/abandonar obra**: não definido no design; hoje a obra só termina concluindo.
+- **Materiais de obra** e consumo operacional (`02` §10): limitação conhecida (Q10).
+- **Venda entre empresas**: a checagem do comprador existe (`purchase_refusal`); o preço, a oferta e a entrega são do mercado (P1.05). Compra de insumos de Serviços/Construtora/Financeira: sem uso definido.
+- Imóvel concluído, propriedade e QoL do imóvel: P1.07.
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **1203 testes OK** (1175 + 28 novos: permissões de compra, Varejo, Construtora, auditoria, concorrência).
+- SQLite, suíte completa: **1203 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos; `companies` 3× no PostgreSQL (164 testes cada, com a concorrência de vendas e obras).
+- Mutação das travas (empresa e item de estoque; empresa e obra) faz os dois testes de concorrência novos falharem.
+
+### Locking (PostgreSQL)
+Protocolo inalterado: jogador → empresa → (estoque/obra sob a trava da empresa) → registro monetário. Mutações verificadas: sem a trava da empresa e do item de estoque, as vendas simultâneas passam da capacidade (18 > 10); sem a trava da empresa/obra, os construtores simultâneos somam progresso errado. Os testes de concorrência falham nesses casos, logo não são vacuosos.
+
 ## 2026-10-20 — P1.04d — Cargos de suporte: Engenheiro e Advogado (`design/02` §9, §13, §22)
 
 Quarta fatia de P1.04. Branch `dev/p1.04d-suporte`, empilhada sobre o PR #17 (P1.04c); PR próprio; **não mergeado**. Nenhuma parte do Bot Test foi removida ou adiada.

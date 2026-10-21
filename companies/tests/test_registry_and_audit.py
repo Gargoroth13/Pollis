@@ -73,7 +73,9 @@ class AuditTests(CompanyTestCase):
                      "production.specialization_per_point", "production.curve", "stock.capacity_per_star",
                      "quality.cap_per_star", "production.setup_seconds", "production.cooldown_seconds",
                      "production.change_cost_cents", "support.engineer_bonus_per_work", "support.lawyer_reduction_per_work",
-                     "support.limit_per_star", "support.lawyer_specialization_key"}
+                     "support.limit_per_star", "support.lawyer_specialization_key",
+                     "retail.sales_capacity_per_work", "retail.sales_specialization_key"}
+        expected |= {f"construction.{k}" for k in params.CONSTRUCTION_PROJECTS}
         self.assertEqual(set(rows), expected)
         self.assertEqual(rows["initial_stars"].status, "PROV")
         self.assertEqual(rows["wage_ceiling_per_day_cents"].value, "None")      # T sem teto: None, nunca 0

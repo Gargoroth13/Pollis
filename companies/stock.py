@@ -126,6 +126,11 @@ def _external(company_id: Any, product_key: Any, quantity: Any, operation: Stock
         return _refuse("UNKNOWN_PRODUCT", key=repr(product_key)[:40])
     if isinstance(company_id, bool) or not isinstance(company_id, int) or not Company.objects.filter(pk=company_id).exists():
         return _refuse("COMPANY_NOT_FOUND", company=repr(company_id)[:40])
+    if sign > 0 and operation is StockOperation.PURCHASE:
+        from . import trade                                                                   # 02 §4: só compra o que tem uso válido
+        refusal = trade.purchase_refusal(company_id, product_key)
+        if refusal is not None:
+            return refusal
     with transaction.atomic():
         company = Company.objects.select_for_update().get(pk=company_id)                     # protocolo: a empresa primeiro
         return apply_locked(company, product, sign * quantity, operation, origin=origin, destination=destination, key=key,
@@ -140,7 +145,8 @@ def credit_stock(company_id: int, product_key: str, quantity: int, *, operation:
     """
     Entrada por um sistema com origem documentada: hoje só `PURCHASE` (compra; P1.05/P1.08). Idempotente por `key`. NÃO move
     dinheiro: quem compra liga o pagamento à entrada, na mesma transação. Recusas: OPERATION_NOT_ALLOWED, INVALID_QUANTITY,
-    INVALID_PARAMS, INVALID_QUALITY, UNKNOWN_PRODUCT, COMPANY_NOT_FOUND, STOCK_FULL, IDEMPOTENCY_CONFLICT.
+    INVALID_PARAMS, INVALID_QUALITY, UNKNOWN_PRODUCT, COMPANY_NOT_FOUND, STOCK_FULL, IDEMPOTENCY_CONFLICT e as da permissão de compra
+    (02 §4, `trade.purchase_refusal`): PRODUCT_NOT_TRADABLE_BETWEEN_COMPANIES, NO_VALID_USE.
     """
     return _external(company_id, product_key, quantity, operation, EXTERNAL_STOCK_CREDIT, origin=origin,
                      destination=f"company:{company_id}", key=key, reference_kind=reference_kind, reference_id=reference_id,
