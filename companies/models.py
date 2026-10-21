@@ -7,7 +7,8 @@ O dinheiro da empresa NÃO vive aqui: é a conta `COMPANY` do registro monetári
 from django.db import models
 from django.db.models import Q
 
-from .constants import ApplicationStatus, CompanyType, EventKind, PositionKind, PositionStatus, StockOperation
+from .constants import (ApplicationStatus, CompanyType, EventKind, PositionKind, PositionStatus, ProjectStatus,
+                        StockOperation)
 
 
 def _choices(enum_cls):
@@ -179,6 +180,71 @@ class SupportWork(_Immutable):
             models.CheckConstraint(condition=Q(contribution__gte=0), name="supportwork_contribution_gte_0"),
         ]
         indexes = [models.Index(fields=["company", "kind", "competence_day"], name="supportwork_company_day")]
+
+
+class SalesCapacityUse(_Immutable):
+    """
+    Uma venda do Varejo (02 §11.2): consumiu `quantity` unidades de estoque (movimento `sale`, mesma `key`) E `quantity` unidades da
+    capacidade de venda do dia. Imutável. O dinheiro da venda é do mercado (P1.05), não desta camada.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="sales_uses")
+    product = models.ForeignKey("catalog.Product", on_delete=models.PROTECT, related_name="+")
+    quantity = models.IntegerField()
+    competence_day = models.IntegerField()
+    at = models.BigIntegerField()
+    key = models.CharField(max_length=120, unique=True)             # a MESMA chave do movimento de estoque
+    destination = models.CharField(max_length=120)
+    actor = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [models.CheckConstraint(condition=Q(quantity__gt=0), name="salesuse_quantity_positive")]
+        indexes = [models.Index(fields=["company", "competence_day"], name="salesuse_company_day")]
+
+
+class ConstructionJob(models.Model):
+    """
+    A obra da Construtora (02 §12): UMA ativa por vez (índice único parcial). `progress` em [0, 100]; ao chegar a 100 a obra é
+    concluída e a Construtora pode iniciar outra. A propriedade do imóvel e o lote são de Imóveis (P1.07): ela consome o evento de
+    conclusão (`construction.register_completion_hook`).
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="construction_jobs")
+    sequence = models.IntegerField()
+    project = models.CharField(max_length=40)
+    status = models.CharField(max_length=12, choices=_choices(ProjectStatus))
+    progress = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    started_at = models.BigIntegerField()
+    completed_at = models.BigIntegerField(null=True, blank=True)
+    actor = models.BigIntegerField()
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "sequence"], name="constructionjob_unique_sequence"),
+            models.UniqueConstraint(fields=["company"], condition=Q(status="active"), name="constructionjob_one_active_per_company"),
+            models.CheckConstraint(condition=Q(progress__gte=0, progress__lte=100), name="constructionjob_progress_0_100"),
+            models.CheckConstraint(condition=Q(status="active", completed_at__isnull=True)
+                                   | Q(status="completed", completed_at__isnull=False, progress=100),
+                                   name="constructionjob_status_matches_completion"),
+        ]
+
+
+class ConstructionWork(_Immutable):
+    """Uma ação de Trabalhar de funcionário da Construtora que fez a obra andar (ligada ao salário pago pela mesma ação)."""
+
+    job = models.ForeignKey(ConstructionJob, on_delete=models.PROTECT, related_name="works")
+    player = models.ForeignKey("players.Player", on_delete=models.PROTECT, related_name="construction_works")
+    sequence = models.IntegerField()                                # o MESMO nº do salário desta ação (WorkWage)
+    at = models.BigIntegerField()
+    progress_added = models.DecimalField(max_digits=12, decimal_places=6)
+    progress_after = models.DecimalField(max_digits=12, decimal_places=6)
+    explained = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [models.UniqueConstraint(fields=["player", "sequence"], name="constructionwork_unique_player_sequence")]
 
 
 class CapitalContribution(models.Model):

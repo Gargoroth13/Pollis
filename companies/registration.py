@@ -18,6 +18,9 @@ Cargos e mural (P1.04b; `jobs`): só o Dono abre/fecha vaga, aprova, rejeita e d
 
 Produção (P1.04c; `production`): só o Dono escolhe/troca o produto.
   set_production        Definir produção     alvo = {"company": id, "product": chave do catálogo}
+
+Obra da Construtora (P1.04e; `construction`): só o Dono escolhe e inicia a obra.
+  start_construction    Iniciar obra         alvo = {"company": id, "project": chave do projeto}
 """
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ from typing import Any, Dict, Optional
 from players.registry import TARGET_PARAMS, ActionDescriptor, TargetSpec, register_action
 from players.services import ActionResult
 
-from . import jobs, production, services
+from . import construction, jobs, production, services
 
 FOUND_ID = "found_company"
 FUND_ID = "fund_company"
@@ -197,9 +200,38 @@ def _register_production() -> None:
         check=_set_production_check, execute=_set_production_execute, preview=_no_preview)
 
 
+START_CONSTRUCTION_ID = "start_construction"
+START_CONSTRUCTION_KEYS = frozenset({"company", "project"})
+
+
+def _start_construction_check(player, now, bal, target) -> Optional[ActionResult]:
+    if target is None:
+        return None
+    p = _params(target, START_CONSTRUCTION_KEYS)
+    return _invalid(START_CONSTRUCTION_ID, START_CONSTRUCTION_KEYS, target) if p is None else construction.start_refusal(
+        player.pk, p["company"], p["project"])
+
+
+def _start_construction_execute(player_id: int, target: Any) -> ActionResult:
+    p = _params(target, START_CONSTRUCTION_KEYS)
+    return _invalid(START_CONSTRUCTION_ID, START_CONSTRUCTION_KEYS, target) if p is None else construction.start_construction(
+        player_id, p["company"], p["project"])
+
+
+def _register_construction() -> None:
+    register_action(
+        ActionDescriptor(
+            id=START_CONSTRUCTION_ID, name="Iniciar obra da Construtora",
+            requirements=("INVALID_PARAMS", "COMPANY_NOT_FOUND", "NOT_OWNER", "COMPANY_TYPE_CANNOT_BUILD", "UNKNOWN_PROJECT",
+                          "STARS_TOO_LOW", "CONSTRUCTION_ACTIVE"),
+            cost=(), target=TargetSpec(TARGET_PARAMS, required=True), effects=("construction_started",)),
+        check=_start_construction_check, execute=_start_construction_execute, preview=_no_preview)
+
+
 def register() -> None:
     _register_jobs()
     _register_production()
+    _register_construction()
     register_action(
         ActionDescriptor(
             id=FOUND_ID, name="Fundar empresa",

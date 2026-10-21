@@ -43,6 +43,13 @@ class PositionKind(str, enum.Enum):
 
 
 SUPPORT_POSITION_KINDS = frozenset({PositionKind.ENGINEER.value, PositionKind.LAWYER.value})    # cargos de suporte (02 §9)
+# Cargos cujo Trabalhar soma uma contribuição a um efeito DIÁRIO da empresa (`SupportWork`): suporte (§9) e vendedor (§11.2).
+DAILY_EFFECT_KINDS = SUPPORT_POSITION_KINDS | {PositionKind.SALESPERSON.value}
+
+
+class ProjectStatus(str, enum.Enum):
+    ACTIVE = "active"          # obra em andamento (a Construtora tem UMA por vez, 02 §12)
+    COMPLETED = "completed"    # 100%: o imóvel está concluído e a Construtora pode iniciar outra
 
 
 class PositionStatus(str, enum.Enum):

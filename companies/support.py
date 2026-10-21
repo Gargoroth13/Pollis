@@ -1,5 +1,5 @@
 """
-Cargos de suporte (design/02 §9): Engenheiro e Advogado.
+Cargos com efeito DIÁRIO (design/02 §9, §11.2): Engenheiro e Advogado (suporte) e Vendedor do Varejo.
 
 Os dois trabalham (consomem Energia, recebem o salário do cargo, desenvolvem a skill relevante) e cada trabalho soma uma
 contribuição ao efeito DIÁRIO da empresa (§9.1-9.2: "o bônus/efeito é diário e é reiniciado a cada novo ciclo diário"):
@@ -10,6 +10,8 @@ contribuição ao efeito DIÁRIO da empresa (§9.1-9.2: "o bônus/efeito é diá
   - **Advogado** → multiplicador de risco de Burnout dos funcionários da empresa (`1 − redução do dia`; piso de 1% aplicado por
     `players.rules`, §9.2), sobre os ganhos de Trabalhar e Estudar (não sobre o Lazer). Provedor registrado em `players.hooks`: vale
     para jogadores reais e Bots pelo mesmo caminho e aparece no detalhamento do Burnout da ação (20).
+
+O Vendedor (§11.2) usa o mesmo registro: sua contribuição é a CAPACIDADE DE VENDA do dia (`retail.py` a consome).
 
 Cada contribuição é um `SupportWork` imutável; o efeito do dia é a SOMA por (empresa, cargo, dia): reinicia sozinho no dia seguinte.
 `contribution = base × fator de skill × fator de especialização` (mesma curva `[PROV]` da produção; números em `params`).
@@ -35,14 +37,15 @@ from players.models import Player
 from skills.services import get_levels, specialization_value
 
 from . import params, production
-from .constants import SUPPORT_POSITION_KINDS, PositionKind
+from .constants import DAILY_EFFECT_KINDS, PositionKind
 from .jobs import current_job, relevant_skill
 from .models import Company, SupportWork, WorkWage
 
-SUPPORT_VALUES = SUPPORT_POSITION_KINDS
+SUPPORT_VALUES = DAILY_EFFECT_KINDS
 ACTION_HOOK = "companies_support"
 RISK_PROVIDER = "companies_lawyer"
-_BASE = {PositionKind.ENGINEER.value: params.ENGINEER_BONUS_PER_WORK, PositionKind.LAWYER.value: params.LAWYER_REDUCTION_PER_WORK}
+_BASE = {PositionKind.ENGINEER.value: params.ENGINEER_BONUS_PER_WORK, PositionKind.LAWYER.value: params.LAWYER_REDUCTION_PER_WORK,
+         PositionKind.SALESPERSON.value: params.SALES_CAPACITY_PER_WORK}
 
 
 def specialization_key_of(kind: str, company_id: int, now: int) -> Optional[str]:
@@ -51,6 +54,8 @@ def specialization_key_of(kind: str, company_id: int, now: int) -> Optional[str]
         return production.active_product_key(company_id, now)
     if kind == PositionKind.LAWYER.value:
         return params.LAWYER_SPECIALIZATION_KEY
+    if kind == PositionKind.SALESPERSON.value:
+        return params.SALES_SPECIALIZATION_KEY
     return None
 
 

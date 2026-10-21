@@ -17,14 +17,20 @@ Auditoria das Empresas (design/02 §16-17; 24). Só LÊ. Invariantes (numeraçã
      empresa; os insumos consumidos são exatamente os registrados; nada é produzido sem produto escolhido
  10  linha de produção: nº de seleções = histórico; produto atual = último do histórico; só tipos que produzem; trocas respeitam o
      cooldown; fração acumulada em [0, 1)
- 11  cargos de suporte: toda contribuição (`SupportWork`) tem o salário pago da mesma ação (jogador, sequência), da mesma empresa e
-     cargo, de Engenheiro ou Advogado; o dia é o da ação; o valor é o do detalhamento; vagas de suporte (abertas ou ocupadas) dentro
+ 11  cargos com efeito diário: toda contribuição (`SupportWork`) tem o salário pago da mesma ação (jogador, sequência), da mesma
+     empresa e cargo, de Engenheiro, Advogado ou Vendedor; o dia é o da ação; o valor é o do detalhamento; vagas de suporte (abertas ou ocupadas) dentro
      do limite da estrela
+ 12  Varejo: toda venda (`SalesCapacityUse`) tem o movimento de estoque `sale` de mesma chave, empresa, produto e quantidade; só o
+     Varejo vende, só o que tem canal `retail_sale`; as vendas do dia nunca passam da capacidade (soma das contribuições do dia)
+ 13  obras: progresso = soma do que cada Trabalhar somou; cada trabalho tem o salário pago de um funcionário de produção da
+     Construtora; uma ativa por empresa; concluída = 100% com data; projeto conhecido e estrela suficiente; sequências sem buracos
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from decimal import Decimal
+
+from django.db.models import Sum
 
 from core.models import WorldClock
 from core.timeline import TickKind, ticks_between
@@ -35,9 +41,10 @@ from ledger.models import Account, Entry, Obligation, RemunerationRequest
 from ledger.money import competence_day_of
 
 from . import params
-from .constants import SUPPORT_POSITION_KINDS, ApplicationStatus, CompanyType, EventKind, PositionKind, PositionStatus
-from .models import (Application, CapitalContribution, Company, Position, PositionEvent, ProductionChange, ProductionLine,
-                     StockItem, StockMovement, SupportWork, WorkWage)
+from .constants import (DAILY_EFFECT_KINDS, SUPPORT_POSITION_KINDS, ApplicationStatus, CompanyType, EventKind, PositionKind,
+                        PositionStatus, ProjectStatus)
+from .models import (Application, CapitalContribution, Company, ConstructionJob, ConstructionWork, Position, PositionEvent,
+                     ProductionChange, ProductionLine, SalesCapacityUse, StockItem, StockMovement, SupportWork, WorkWage)
 
 
 def audit_companies() -> AuditReport:
@@ -75,6 +82,8 @@ def audit_companies() -> AuditReport:
     _audit_stock(report)
     _audit_production(report)
     _audit_support(report)
+    _audit_retail(report)
+    _audit_construction(report)
     report.stats.update({"companies": companies, "contributions": contributions,
                          "capital": sum(CapitalContribution.objects.values_list("amount", flat=True))})
     return report
@@ -254,7 +263,7 @@ def _audit_support(report: AuditReport) -> None:
     for w in SupportWork.objects.select_related("position").order_by("id").iterator():
         wage = WorkWage.objects.filter(player_id=w.player_id, sequence=w.sequence).first()
         if (wage is None or wage.company_id != w.company_id or wage.position_id != w.position_id or w.kind != w.position.kind
-                or w.kind not in SUPPORT_POSITION_KINDS):
+                or w.kind not in DAILY_EFFECT_KINDS):
             report.add(11, "SUPPORT_WORK_WITHOUT_PAID_WORK", support_work=w.pk)
             continue
         if w.competence_day != competence_day_of(w.at) or wage.at != w.at:
@@ -267,3 +276,46 @@ def _audit_support(report: AuditReport) -> None:
             have = Position.objects.filter(company=company, kind=kind).exclude(status=PositionStatus.CLOSED.value).count()
             if have > limit:
                 report.add(11, "SUPPORT_LIMIT_EXCEEDED", company=company.pk, kind=kind, have=have, limit=limit)
+
+
+def _audit_retail(report: AuditReport) -> None:
+    from catalog import services as catalog
+    from catalog.constants import Channel
+    from decimal import ROUND_FLOOR
+    per_day = defaultdict(int)
+    for u in SalesCapacityUse.objects.select_related("company", "product").order_by("id").iterator():
+        m = StockMovement.objects.filter(key=u.key).first()
+        if (m is None or m.operation != "sale" or m.company_id != u.company_id or m.product_id != u.product_id
+                or m.delta != -u.quantity):
+            report.add(12, "SALE_WITHOUT_STOCK_MOVEMENT", use=u.pk)
+        if u.company.type != CompanyType.RETAIL.value or not catalog.has_channel(u.product.key, Channel.RETAIL_SALE):
+            report.add(12, "SALE_NOT_ALLOWED", use=u.pk, company_type=u.company.type, product=u.product.key)
+        per_day[(u.company_id, u.competence_day)] += u.quantity
+    for (company_id, day), used in sorted(per_day.items()):
+        produced = SupportWork.objects.filter(company_id=company_id, kind=PositionKind.SALESPERSON.value, competence_day=day) \
+            .aggregate(t=Sum("contribution"))["t"] or Decimal(0)
+        if used > int(produced.to_integral_value(rounding=ROUND_FLOOR)):
+            report.add(12, "SALES_CAPACITY_EXCEEDED", company=company_id, day=day, used=used, produced=str(produced))
+
+
+def _audit_construction(report: AuditReport) -> None:
+    for company in Company.objects.filter(type=CompanyType.CONSTRUCTION.value).order_by("id").iterator():
+        jobs_ = list(ConstructionJob.objects.filter(company=company).order_by("sequence"))
+        if [j.sequence for j in jobs_] != list(range(1, len(jobs_) + 1)):
+            report.add(13, "CONSTRUCTION_SEQUENCE_GAP", company=company.pk)
+        if sum(1 for j in jobs_ if j.status == ProjectStatus.ACTIVE.value) > 1:
+            report.add(13, "MORE_THAN_ONE_ACTIVE_CONSTRUCTION", company=company.pk)
+        if any(j.status == ProjectStatus.ACTIVE.value for j in jobs_[:-1]):
+            report.add(13, "NEW_CONSTRUCTION_BEFORE_COMPLETION", company=company.pk)
+        for j in jobs_:
+            project = params.CONSTRUCTION_PROJECTS.get(j.project)
+            if project is None or company.stars < project.min_stars:
+                report.add(13, "CONSTRUCTION_PROJECT_INVALID", job=j.pk, project=j.project)
+            total = sum(ConstructionWork.objects.filter(job=j).values_list("progress_added", flat=True)) or Decimal(0)
+            if abs(total - j.progress) > Decimal("0.000001"):
+                report.add(13, "CONSTRUCTION_PROGRESS_MISMATCH", job=j.pk, progress=str(j.progress), works=str(total))
+    for w in ConstructionWork.objects.select_related("job").order_by("id").iterator():
+        wage = WorkWage.objects.select_related("position").filter(player_id=w.player_id, sequence=w.sequence).first()
+        if (wage is None or wage.company_id != w.job.company_id or wage.position.kind != PositionKind.WORKER.value or wage.at != w.at
+                or w.job.company.type != CompanyType.CONSTRUCTION.value):
+            report.add(13, "CONSTRUCTION_WORK_WITHOUT_PAID_WORK", construction_work=w.pk)

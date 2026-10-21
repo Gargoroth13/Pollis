@@ -271,3 +271,65 @@ class JobsConcurrencyTests(TransactionTestCase):
             self.assertEqual(len(open_ids), 1)
             self.assertTrue(jobs.close_position(self.boss2.pk, open_ids[0]).ok)
         self.assertClean()
+
+    def _work(self, player):
+        from decimal import Decimal
+        from players import registry
+        from players.models import Player
+        Player.objects.filter(pk=player.pk).update(energy=Decimal(100), nutrition=Decimal(100), burnout=Decimal(0))
+        return registry.execute_action(player.pk, "work")
+
+    def test_simultaneous_retail_sales_never_exceed_the_capacity_or_the_stock(self):
+        from companies import retail
+        from companies.models import SalesCapacityUse, StockMovement
+        shop = services.found_company(self.boss2.pk, "retail", "Padaria", 0).detail["company"]
+        services.fund_company(self.boss2.pk, shop, 20_000)
+        self.assertTrue(stock.credit_stock(shop, "bread", 25, origin="test", key="seed:bread", reference_kind="test", reference_id="1").ok)
+        position = jobs.open_position(self.boss2.pk, shop, "salesperson", 1_000, {}).detail["position"]
+        self.assertTrue(jobs.approve_application(self.boss2.pk, self.applied(self.w1, position)).ok)
+        counter = iter(range(10_000))
+
+        def sell():
+            return retail.fulfill_sale(shop, "bread", 3, destination="p", key=f"sale:{next(counter)}", reference_kind="t", reference_id="c")
+
+        for _ in range(3):
+            self.assertTrue(self._work(self.w1).ok)                                        # +10 de capacidade no dia
+            before = retail.capacity_status(shop)["available"]
+            out = run_together(*([sell] * 6))
+            ok = [j for j in out if getattr(j, "error", None) is None and j.result.ok]
+            for j in out:
+                self.assertIsNone(getattr(j, "error", None), getattr(j, "error", None))
+                self.assertIn(j.result.code, ("OK", "SALES_CAPACITY_EXCEEDED", "INSUFFICIENT_STOCK"))
+            self.assertLessEqual(len(ok) * 3, before)                                     # nunca vende mais que a capacidade disponível
+        status = retail.capacity_status(shop)
+        used = sum(SalesCapacityUse.objects.filter(company_id=shop).values_list("quantity", flat=True))
+        self.assertLessEqual(used, status["whole"])
+        self.assertEqual(stock.quantity_of(shop, "bread"), 25 - used)
+        self.assertEqual(sum(StockMovement.objects.filter(company_id=shop, operation="sale").values_list("delta", flat=True)), -used)
+        self.assertClean()
+
+    def test_builders_finishing_the_project_together_complete_it_once_and_never_pass_one_hundred(self):
+        from companies import construction
+        from companies.models import ConstructionJob, ConstructionWork
+        from skills.models import PlayerSkill
+        from skills.services import ensure_skill_rows
+        build = services.found_company(self.boss2.pk, "construction", "Obras", 0).detail["company"]
+        services.fund_company(self.boss2.pk, build, 20_000)
+        for w in (self.w1, self.w2, self.w3):
+            position = jobs.open_position(self.boss2.pk, build, "worker", 1_000, {}).detail["position"]
+            self.assertTrue(jobs.approve_application(self.boss2.pk, self.applied(w, position)).ok)
+            ensure_skill_rows(w)
+            PlayerSkill.objects.filter(player=w, skill="physical").update(level=100)
+        self.assertTrue(construction.start_construction(self.boss2.pk, build, "low_density_simple").ok)
+        for _ in range(7):
+            out = run_together(lambda: self._work(self.w1), lambda: self._work(self.w2), lambda: self._work(self.w3),
+                               lambda: construction.start_construction(self.boss2.pk, build, "low_density_simple"))
+            for j in out:
+                self.assertIsNone(getattr(j, "error", None), getattr(j, "error", None))
+        for job in ConstructionJob.objects.filter(company_id=build):
+            total = sum(ConstructionWork.objects.filter(job=job).values_list("progress_added", flat=True))
+            self.assertEqual(total, job.progress)
+            self.assertLessEqual(job.progress, 100)
+        self.assertLessEqual(ConstructionJob.objects.filter(company_id=build, status="active").count(), 1)
+        self.assertGreaterEqual(ConstructionJob.objects.filter(company_id=build, status="completed").count(), 1)
+        self.assertClean()

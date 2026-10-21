@@ -1,0 +1,205 @@
+"""
+Construtora: a obra (design/02 §12; 10 §5-6, §28).
+
+  - **Uma obra ativa por vez**, escolhida e iniciada só pelo Dono (§12). O projeto é um tipo de imóvel residencial com a Construtora
+    mínima de `10` §6 (estrela). Índice único parcial no banco: nunca duas ativas.
+  - **Cada Trabalhar de funcionário de produção da Construtora faz a obra andar** em percentual (0% → 100%): `100 / trabalhos do
+    projeto × skill (Físico) × especialização (no projeto) × (1 + bônus diário do Engenheiro)` (§12 lista skill, especialização,
+    Engenheiro; a quantidade de funcionários já pesa por somarem trabalhos). Sem obra ativa o Trabalho é BLOQUEADO antes de gastar
+    Energia (como a produção sem produto escolhido); a sobra além de 100% se perde (a obra acaba).
+  - **Conclusão**: com 100% a obra termina e a Construtora pode iniciar outra. O imóvel, o lote e a propriedade (10 §28: a Construtora
+    é prestadora, não recebe o imóvel) são de Imóveis (P1.07) e do contrato com o dono do lote (P1.07/P1.09/18): esta camada só
+    expõe `register_completion_hook` e grava a conclusão. Nada de dinheiro aqui; o pagamento da obra é do contrato.
+  - Não há cancelamento nem abandono de obra no design (lacuna registrada em CHANGELOG_DEV).
+  - Materiais de obra: o design não define consumo de produtos na obra (02 §10 é limitação conhecida).
+
+PROTOCOLO: jogador → empresa (serializa a obra e o progresso) → registro monetário (o salário, depois).
+"""
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Any, Callable, Dict, List, Optional
+
+from django.db import transaction
+
+from core import clock as game_clock
+from core.breakdown import Calc, Explained
+from players.actions import Action
+from players.hooks import ActionHookContext, register_action_hook, register_block_provider
+from players.models import Player
+from players.services import ActionResult
+from skills.services import get_levels, specialization_value
+
+from . import params, production, support
+from .constants import CompanyType, PositionKind, ProjectStatus
+from .jobs import current_job, relevant_skill
+from .models import Company, ConstructionJob, ConstructionWork, WorkWage
+from .services import owner_of
+
+BLOCK_PROVIDER = "companies_construction"
+ACTION_HOOK = "companies_construction"
+_INT64 = 2 ** 63
+_Q = Decimal("0.000001")
+
+CompletionHook = Callable[[ConstructionJob], None]
+_completion_hooks: Dict[str, CompletionHook] = {}
+
+
+def _refuse(code: str, **detail) -> ActionResult:
+    return ActionResult(False, code, detail)
+
+
+def register_completion_hook(name: str, fn: CompletionHook) -> None:
+    """Imóveis (P1.07) reage à obra concluída, na MESMA transação do Trabalhar que a concluiu."""
+    if name in _completion_hooks:
+        raise ValueError(f"Hook de conclusão de obra duplicado: {name}")
+    _completion_hooks[name] = fn
+
+
+def unregister_completion_hook(name: str) -> None:   # para testes
+    _completion_hooks.pop(name, None)
+
+
+def active_job(company_id: int) -> Optional[ConstructionJob]:
+    return ConstructionJob.objects.filter(company_id=company_id, status=ProjectStatus.ACTIVE.value).first()
+
+
+def specialization_key_of(project: str) -> str:
+    return f"construction:{project}"
+
+
+def active_project_key(company_id: int) -> Optional[str]:
+    job = active_job(company_id)
+    return job.project if job is not None else None
+
+
+def progress_per_work(project_key: str, level: Decimal, specialization: Decimal, bonus: Optional[Explained] = None,
+                      at: Optional[int] = None) -> Explained:
+    """Pontos percentuais por trabalho, com os fatores (20)."""
+    project = params.CONSTRUCTION_PROJECTS[project_key]
+    skill = production.skill_factor(level, at)
+    return (Calc("progress_base_per_work", Decimal(100) / project.work_units)
+            .mul("skill_production", skill.value, detail=skill)
+            .mul("specialization_production", 1 + Decimal(specialization) * params.SPECIALIZATION_PRODUCTION_PER_POINT)
+            .mul("engineering_bonus", 1 + (Decimal(0) if bonus is None else bonus.value), detail=bonus)
+            .result(at))
+
+
+def projects() -> List[Dict[str, Any]]:
+    return [{"project": p.key, "name": p.name, "min_stars": p.min_stars, "work_units": p.work_units}
+            for p in params.CONSTRUCTION_PROJECTS.values()]
+
+
+# --- iniciar a obra -----------------------------------------------------------------------------------------------------
+
+def start_refusal(player_id: int, company_id: Any, project_key: Any) -> Optional[ActionResult]:
+    """Recusas que só LEEM (a execução usa as mesmas)."""
+    if isinstance(company_id, bool) or not isinstance(company_id, int) or not -_INT64 <= company_id < _INT64:
+        return _refuse("INVALID_PARAMS", company=repr(company_id)[:40])
+    company = Company.objects.filter(pk=company_id).first()
+    if company is None:
+        return _refuse("COMPANY_NOT_FOUND", company=company_id)
+    if owner_of(company_id) != player_id:
+        return _refuse("NOT_OWNER", company=company_id)
+    if CompanyType(company.type) is not CompanyType.CONSTRUCTION:
+        return _refuse("COMPANY_TYPE_CANNOT_BUILD", company_type=company.type)
+    if not isinstance(project_key, str):
+        return _refuse("INVALID_PARAMS", why="project deve ser texto")
+    project = params.CONSTRUCTION_PROJECTS.get(project_key)
+    if project is None:
+        return _refuse("UNKNOWN_PROJECT", project=project_key[:60], allowed=sorted(params.CONSTRUCTION_PROJECTS))
+    if company.stars < project.min_stars:
+        return _refuse("STARS_TOO_LOW", project=project_key, required=project.min_stars, stars=company.stars)
+    current = active_job(company_id)
+    if current is not None:
+        return _refuse("CONSTRUCTION_ACTIVE", project=current.project, progress=str(current.progress))
+    return None
+
+
+def start_construction(player_id: int, company_id: Any, project_key: Any) -> ActionResult:
+    """
+    O Dono escolhe e inicia a obra (02 §12). Recusas: PLAYER_NOT_FOUND, INVALID_PARAMS, COMPANY_NOT_FOUND, NOT_OWNER,
+    COMPANY_TYPE_CANNOT_BUILD, UNKNOWN_PROJECT, STARS_TOO_LOW, CONSTRUCTION_ACTIVE.
+    """
+    if not Player.objects.filter(pk=player_id).exists():
+        return _refuse("PLAYER_NOT_FOUND", player=player_id)
+    with transaction.atomic():
+        Player.objects.select_for_update().filter(pk=player_id).first()                      # protocolo: jogador → empresa
+        if isinstance(company_id, int) and not isinstance(company_id, bool) and -_INT64 <= company_id < _INT64:
+            Company.objects.select_for_update().filter(pk=company_id).first()
+        refusal = start_refusal(player_id, company_id, project_key)
+        if refusal is not None:
+            return refusal
+        now = game_clock.now()
+        sequence = ConstructionJob.objects.filter(company_id=company_id).count() + 1
+        job = ConstructionJob.objects.create(company_id=company_id, sequence=sequence, project=project_key,
+                                             status=ProjectStatus.ACTIVE.value, progress=0, started_at=now, actor=player_id)
+        project = params.CONSTRUCTION_PROJECTS[project_key]
+        return ActionResult(True, "OK", {"job": job.pk, "company": company_id, "project": project_key, "name": project.name,
+                                         "sequence": sequence, "work_units": project.work_units})
+
+
+def status_of(company_id: int, now: Optional[int] = None) -> Dict[str, Any]:
+    now = game_clock.now() if now is None else now
+    job = active_job(company_id)
+    last = ConstructionJob.objects.filter(company_id=company_id).order_by("-sequence").first()
+    return {"company": company_id, "active": None if job is None else {"project": job.project, "progress": job.progress,
+                                                                       "started_at": job.started_at},
+            "last_completed": (last.project if last is not None and last.status == ProjectStatus.COMPLETED.value else None),
+            "engineering_bonus": support.engineering_bonus(company_id, now)}
+
+
+# --- o Trabalho constrói --------------------------------------------------------------------------------------------------
+
+def _builder_job(player_id: int):
+    job = current_job(player_id)
+    if (job is None or job.kind != PositionKind.WORKER.value or CompanyType(job.company.type) is not CompanyType.CONSTRUCTION):
+        return None
+    return job
+
+
+def block_provider(player: Player, action: Action, now: int, activity) -> Optional[str]:
+    if action is not Action.WORK:
+        return None
+    job = _builder_job(player.pk)
+    if job is None:
+        return None
+    return None if active_job(job.company_id) is not None else "COMPANY_NO_PROJECT"
+
+
+def build_on_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
+    """Hook de `perform_action`: o Trabalho de um funcionário da Construtora faz a obra andar."""
+    if ctx.action is not Action.WORK:
+        return None
+    player_id = ctx.player.pk
+    job = _builder_job(player_id)
+    if job is None:
+        return None
+    Company.objects.select_for_update().get(pk=job.company_id)                              # protocolo: jogador → empresa
+    obra = ConstructionJob.objects.select_for_update().filter(company_id=job.company_id, status=ProjectStatus.ACTIVE.value).first()
+    if obra is None:
+        return {"company": job.company_id, "progress_added": 0, "limited_by": ["COMPANY_NO_PROJECT"]}
+    level = get_levels(player_id)[relevant_skill(PositionKind.WORKER)]
+    spec = specialization_value(player_id, specialization_key_of(obra.project))
+    gain = progress_per_work(obra.project, level, spec, support.engineering_bonus(job.company_id, ctx.now), ctx.now)
+    before = obra.progress
+    after = min(Decimal(100), (before + gain.value).quantize(_Q))
+    added = after - before
+    sequence = WorkWage.objects.filter(player_id=player_id).count() + 1                      # o MESMO nº do salário desta ação
+    ConstructionWork.objects.create(job=obra, player_id=player_id, sequence=sequence, at=ctx.now, progress_added=added,
+                                    progress_after=after, explained=gain.to_dict())
+    obra.progress = after
+    completed = after >= 100
+    if completed:
+        obra.status, obra.completed_at = ProjectStatus.COMPLETED.value, ctx.now
+    obra.save(update_fields=["progress", "status", "completed_at"])
+    if completed:
+        for name in sorted(_completion_hooks):
+            _completion_hooks[name](obra)
+    return {"company": job.company_id, "project": obra.project, "progress_added": added, "progress": after, "completed": completed,
+            "per_work": gain}
+
+
+def register() -> None:
+    register_block_provider(BLOCK_PROVIDER, block_provider)
+    register_action_hook(ACTION_HOOK, build_on_work)

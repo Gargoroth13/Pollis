@@ -316,8 +316,8 @@ def block_provider(player: Player, action: Action, now: int, activity) -> Option
     if action is not Action.WORK:
         return None
     job = current_job(player.pk)
-    if job is None or job.kind != PositionKind.WORKER.value:
-        return None
+    if job is None or job.kind != PositionKind.WORKER.value or CompanyType(job.company.type) not in params.PRODUCING_TYPES:
+        return None                                      # só Matriz e Industrial produzem; os demais tipos têm operação própria
     return work_refusal(job, now)
 
 
@@ -327,7 +327,7 @@ def produce_on_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
         return None
     player_id = ctx.player.pk
     job = current_job(player_id)
-    if job is None or job.kind != PositionKind.WORKER.value:
+    if job is None or job.kind != PositionKind.WORKER.value or CompanyType(job.company.type) not in params.PRODUCING_TYPES:
         return None
     company = Company.objects.select_for_update().get(pk=job.company_id)                      # protocolo: jogador → empresa
     line = ProductionLine.objects.select_for_update(of=("self",)).select_related("product").filter(company=company).first()

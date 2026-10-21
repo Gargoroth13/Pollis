@@ -75,6 +75,34 @@ SUPPORT_LIMIT_PER_STAR = {n: n for n in STARS}      # 02 §9: "limitada pela est
 LAWYER_SPECIALIZATION_KEY = "support:lawyer"         # 02 §13: o Advogado se especializa na própria atividade
 
 
+# --- Varejo: capacidade de venda (02 §11) `[PROV]` ----------------------------------------------------------------------------
+# Cada Trabalhar do vendedor soma `SALES_CAPACITY_PER_WORK × fator de skill (Carisma) × fator de especialização` à capacidade de
+# venda do DIA da empresa (unidades). Uma venda consome 1 unidade de estoque E 1 de capacidade. O estoque (500 × ★) é maior que a
+# capacidade potencial de um vendedor num dia (5 trabalhos × 10 × fator de skill ≤ 3 = 150), como o §11.2 pede.
+SALES_CAPACITY_PER_WORK = Decimal(10)
+SALES_SPECIALIZATION_KEY = "retail:sales"             # 02 §13: o vendedor se especializa na própria atividade
+
+
+# --- Construtora: obra (02 §12; 10 §6) -------------------------------------------------------------------------------------
+# Projetos: tipos de imóvel residencial e a Construtora mínima (10 §6, "parâmetros iniciais para Bot Test"). `work_units` `[PROV]` =
+# quantos Trabalhar de eficiência base completam a obra; o progresso por trabalho é `100 / work_units × skill × especialização ×
+# (1 + bônus do Engenheiro)` (02 §12: "pode depender de skill, especialização, funcionários, Engenheiro").
+@dataclass(frozen=True)
+class ConstructionProject:
+    key: str
+    name: str
+    min_stars: int          # 10 §6
+    work_units: int         # [PROV]
+
+
+CONSTRUCTION_PROJECTS = {p.key: p for p in (
+    ConstructionProject("low_density_simple", "Baixa densidade simples", 1, 50),
+    ConstructionProject("high_density_simple", "Alta densidade simples", 2, 400),
+    ConstructionProject("low_density_luxury", "Baixa densidade luxo", 3, 100),
+    ConstructionProject("high_density_luxury", "Alta densidade luxo", 4, 600),
+)}
+
+
 @dataclass(frozen=True)
 class ProvisionalRow:
     scope: str
@@ -115,6 +143,13 @@ def provisional_table() -> List[ProvisionalRow]:
              "máximo de vagas de Engenheiro e de Advogado por estrela (02 §9; 02a §2.3)"),
             ("support.lawyer_specialization_key", LAWYER_SPECIALIZATION_KEY, "chave de especialização do Advogado (02 §13)")):
         rows.append(ProvisionalRow("companies", name, value, rule, SOURCE))
+    rows.append(ProvisionalRow("companies", "retail.sales_capacity_per_work", str(SALES_CAPACITY_PER_WORK),
+                               "capacidade de venda (unidades) por Trabalhar de vendedor, antes de skill e especialização (02 §11.2)", SOURCE))
+    rows.append(ProvisionalRow("companies", "retail.sales_specialization_key", SALES_SPECIALIZATION_KEY,
+                               "chave de especialização do vendedor (02 §13)", SOURCE))
+    for project in CONSTRUCTION_PROJECTS.values():
+        rows.append(ProvisionalRow("companies", f"construction.{project.key}", f"stars>={project.min_stars};work_units={project.work_units}",
+                                   "estrela mínima: 10 §6 (inicial para Bot Test); trabalhos para concluir: [PROV] (02 §12)", SOURCE))
     for kind in PositionKind:
         rows.append(ProvisionalRow("companies", f"relevant_skill.{kind.value}", RELEVANT_SKILL[kind].value,
                                    "skill relevante do cargo para S (01 §1.7-1.8): distribuição refinada em Empresas", SOURCE))
