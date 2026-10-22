@@ -128,7 +128,8 @@ class InventoryMovement(models.Model):
             models.CheckConstraint(condition=~Q(origin="") & ~Q(destination="") & ~Q(reference_kind="") & ~Q(reference_id=""),
                                    name="movement_origin_destination_reference_required"),
         ]
-        indexes = [models.Index(fields=["player", "product", "id"]), models.Index(fields=["reference_kind", "reference_id"])]
+        indexes = [models.Index(fields=["player", "product", "id"]), models.Index(fields=["reference_kind", "reference_id"]),
+                   models.Index(fields=["operation", "at"], name="invmovement_operation_at")]
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
