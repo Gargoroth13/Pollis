@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "ledger",  # registro monetário: contas, lançamentos, reservas, obrigações, remuneração (design/24)
     "inventory",  # inventário pessoal: posse de produtos, consumo, correio (design/05)
     "companies",  # empresas: núcleo (fundação, cargo Dono, aporte de capital; design/02)
+    "market",  # transparência de mercado: histórico de vendas, agregados, custos da empresa (design/17)
 ]
 
 MIDDLEWARE = [

@@ -354,3 +354,4 @@ class StockMovement(_Immutable):
     class Meta:
         ordering = ["id"]
         constraints = [models.CheckConstraint(condition=~Q(delta=0), name="stockmovement_delta_nonzero")]
+        indexes = [models.Index(fields=["operation", "at"], name="stockmovement_operation_at")]

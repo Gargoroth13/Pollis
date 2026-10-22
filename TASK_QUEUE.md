@@ -249,9 +249,12 @@ Implementar `02` utilizando `22` como fonte de produtos/receitas. **Fatias** (or
 **Decisões do GD (2026-10-19):** estrelas começam em 1★ `[PROV]` e sobem por melhorias pagas pelo caixa (proposta em `design/02a`); salários sem caixa usam `PENDING`; só o Dono aprova candidatos. **Dependência registrada:** a lei antitruste de `11` §11.1 (máximo de empresas do mesmo tipo por proprietário, padrão 1) precisa de um ponto de recusa em `found_company` quando P1.12 existir.
 
 
-## [ ] P1.05 — Mercado e transparência
+## [~] P1.05 — Mercado e transparência
 
 **Depende de P0.07.**
+
+- **[x] P1.05a — Transparência de Mercado** (branch `dev/p1.05a-transparencia-mercado`, PR empilhado sobre o #19; `CHANGELOG_DEV.md`, 2026-10-22): app `market` com histórico imutável (`record_sale`, ponto único de integração), agregados diários, estatísticas, custos da empresa e auditoria (`17`).
+- **[ ] P1.05b — Mecanismo do Mercado** (Varejo/preço, Mercado de Jogadores, compra entre empresas, taxas, oferta): **bloqueada por decisão do GD** — lacunas 1–6 em `design/17a-mercado-PROPOSTA.md` (não definido em nenhum documento; `05` §22). Ao decidir: ligar pagamento + `record_sale` + estoque na mesma transação e registrar o provedor de oferta.
 
 > **Pendências herdadas do P1.01:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED` (`CHANGELOG_DEV.md`, 2026-10-11).
 

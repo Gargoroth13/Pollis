@@ -4,6 +4,20 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-22 — P1.05a — Transparência de Mercado (`design/17`; proposta em `design/17a`)
+
+**Contexto e decisão.** O `17` (FINAL — BOT TEST) define a transparência do mercado, mas nenhum documento define o **mecanismo** que produz vendas (anúncios, quem fixa preço, taxas, matching; `05` §13/§22 lista isso como questão em aberto). Conforme CLAUDE.md §13, o mecanismo **não foi inventado**: implementou-se tudo o que o `17` define, com um único ponto de integração, e a proposta/lacunas foram registradas em `design/17a-mercado-PROPOSTA.md` e levadas às "Decisões necessárias do Game Director". Nada do escopo do Bot Test foi removido: o mecanismo é a etapa **P1.05b**, bloqueada só pela decisão.
+
+**Entregue (app `market`):**
+- `recording.record_sale`: histórico imutável (`MarketTransaction`: produto, quantidade, preço unitário e total em centavos, instante, dia de competência, comprador/vendedor, canal, chave do pagamento). Só registra se existir **um** lançamento `SALE` do comprador ao vendedor pelo valor total, não estornado (sem venda sem dinheiro real movido); idempotente pela chave do pagamento; recusas com código. Não move dinheiro.
+- Agregação (`rollup`): histórico bruto → dia fechado (`DailyProductStat`, `CompanyCostDay`, `RollupMark`) → páginas leem o agregado. Fechamento sob demanda e pelo tick diário (prioridade 90), idempotente e seguro com concorrência (unicidade); dia corrente nunca gravado (calculado ao vivo). Retrato da oferta só em tick processado no próprio dia.
+- `stats`: preço médio ponderado 24 h (ex.: 10×R$10 + 100×R$20 = R$ 19,09), menor/maior preço só de vendas concluídas, produção e consumo **reais** (eventos de estoque/inventário; comprar/vender ≠ consumir), oferta via provedor (sem provedor = "Sem dados"), tendência 7 dias × 7 anteriores ponderada, gráficos de 30 dias, visão geral (altas, quedas, volume). "Sem dados" nunca vira 0 nem `base_price` (17.9/17.20). Cada indicador devolve valor + detalhamento (`20`).
+- `costs.company_cost_report`: últimos 7 dias fechados × 7 anteriores por categoria (insumos `input:<produto>`, salários, impostos), variação %, diferença em R$ e **principal contribuição observada** (maior diferença na direção do total; texto sem causalidade exata). Salário = líquido pago; IR aparece em "impostos" (ambos saem da conta da empresa); lançamentos estornados não contam.
+- `audit_market` (+ `manage.py audit_market [--json]`): invariantes 1 (venda × lançamento `SALE`, aritmética, dia, partes), 2 (agregado = histórico bruto recalculado, marcas, dia fechado antes de terminar), 3 (sem negativos). Acusa `SALE_PAYMENT_REVERSED`.
+- Índices `(operation, at)` em `companies.StockMovement` e `inventory.InventoryMovement` (consultas por janela de tempo); número de consultas de `product_stats` independente do tamanho do histórico (testado).
+
+**Observações técnicas.** `ensure_closed` tem caminho rápido de 1 consulta quando os dias fechados são contíguos. Um evento bruto que chegue com `at` num dia já fechado seria visto pela auditoria como divergência de agregado (o relógio do jogo não retrocede, então não é esperado). Testes de concorrência provados por mutação (remover o tratamento de `IntegrityError` em `record_sale` e `close_day` faz 4 de 5 falharem em PostgreSQL).
+
 ## 2026-10-21 — P1.04e — Varejo e Construtora (`design/02` §4, §11, §12; `10` §6)
 
 Quinta fatia de P1.04. Branch `dev/p1.04e-varejo-construtora`, empilhada sobre o PR #18 (P1.04d); PR próprio; **não mergeado**. Nenhuma parte do Bot Test foi removida ou adiada; o que depende de outro sistema (lote/propriedade do imóvel, mercado e preço de venda) tem ponto de integração explícito, nunca valor ou mecânica inventada.
