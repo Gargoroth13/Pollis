@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "inventory",  # inventário pessoal: posse de produtos, consumo, correio (design/05)
     "companies",  # empresas: núcleo (fundação, cargo Dono, aporte de capital; design/02)
     "market",  # transparência de mercado: histórico de vendas, agregados, custos da empresa (design/17)
+    "schools",  # escolas: matrícula, materiais, qualidade diária (design/03)
 ]
 
 MIDDLEWARE = [

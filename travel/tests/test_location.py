@@ -43,6 +43,8 @@ class InitialLocationTests(TravelTestCase):
         from travel.models import Journey
         Journey.objects.all().delete()
         PlayerLocation.objects.all().delete()
+        from schools.models import Enrollment
+        Enrollment.objects.all().delete()                 # a matrícula escolar (03) referencia o jogador
         Player.objects.all().delete()
         wipe_world()
         generate_world(get_scenario(**{**SMALL, "capital_city_index": 1}))
@@ -110,6 +112,8 @@ class InitialLocationTests(TravelTestCase):
         from travel.models import Journey
         Journey.objects.all().delete()
         PlayerLocation.objects.all().delete()
+        from schools.models import Enrollment
+        Enrollment.objects.all().delete()                 # a matrícula escolar (03) referencia o jogador
         Player.objects.all().delete()
         wipe_world()
         user = Usuario.objects.create_user("no_world")

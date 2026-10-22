@@ -260,11 +260,14 @@ Implementar `02` utilizando `22` como fonte de produtos/receitas. **Fatias** (or
 
 Implementar mercado e estatísticas de `17`.
 
-## [ ] P1.06 — Escolas e universidades
+## [~] P1.06 — Escolas e universidades
 
-**Depende de P0.07 se houver custos.**
+**Depende de P0.07 se houver custos.** Proposta e lacunas: `design/03a-escolas-PROPOSTA.md`.
 
-Implementar `03`.
+- **[x] P1.06a — Núcleo de Escolas** (branch `dev/p1.06a-escolas-nucleo`, PR empilhado sobre o #20; `CHANGELOG_DEV.md`, 2026-10-22): escola pública por bairro, matrícula inicial e troca no bairro, capacidade por provedor, materiais/decaimento/qualidade diária, auditoria.
+- **[ ] P1.06b — Funcionários, professores e mensalidade** (`03` §5.1, §6.1, §10-§12, §24): cargos de escola, salários (remuneração do ledger), trabalho do professor → bônus de qualidade, mensalidade diária e expulsão. Decisões 3–6 da `03a` (valores ausentes entram como `[PROV]`).
+- **[ ] P1.06c — Universidade e diplomas** (`03` §17-§23): cursos, requisitos, matrícula única, estudo, abandono, diploma. Decisões 9–11 da `03a`.
+- **[ ] P1.06d — Ligações**: capacidade ← Imóveis (P1.07), financiamento público ← Orçamento (P1.09), compra de materiais ← Mercado (P1.05b), construção de escolas.
 
 ## [ ] P1.07 — Imóveis e zonas
 

@@ -4,6 +4,21 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-22 — P1.06a — Núcleo de Escolas (`design/03` REVIEW; proposta e lacunas em `design/03a`)
+
+**Decisão de execução.** O `03` está em REVIEW e depende de sistemas ainda não implementados (Imóveis P1.07, Orçamento P1.09, Mercado P1.05b) e tem parâmetros em aberto. P1.06 foi dividido em a–d; nada foi removido do escopo do Bot Test. Valores numéricos ausentes entram como `[PROV]` em `schools/params.py`; estruturas ausentes/ambíguas estão em `design/03a` e nas "Decisões necessárias do Game Director".
+
+**Entregue (app `schools`):**
+- `School` (pública sem dono / particular com dono; estrela; materiais em cache), escola pública de origem por bairro (criada no primeiro uso, índice único parcial), `Enrollment` (uma ativa por jogador; histórico contínuo).
+- Matrícula inicial automática (hook de criação `travel.schools`, depois de `travel`): só públicas; nunca recusada por falta de vaga (registrado em `03a`, decisão 1). Troca de escola (`change_school`, no Action Registry): só no mesmo bairro, recusa `SCHOOL_FULL` quando a capacidade é conhecida; travas jogador → escola.
+- Capacidade = residências do bairro × 1,5 (`Explained`), via provedor (`register_residence_provider`; P1.07). Sem provedor: "Sem dados".
+- Materiais (`school_supplies`): limite por estrela `[PROV]`, trilha imutável, entrada só por compra (pagamento ligado em P1.05b), decaimento `[PROV]` 2%/dia HALF_EVEN.
+- Qualidade diária (tick diário do mundo, prioridade 60): retrato dos materiais da TRILHA antes do início do dia (independe da ordem de compra no segundo exato da virada) → qualidade = base (1:1, limitada pela estrela) + bônus de professores (0 até P1.06b); decaimento depois do retrato; idempotente; `QualityDay` imutável com `Explained`.
+- `audit_schools` (+ `manage.py audit_schools [--json]`): invariantes 1 (escolas), 2 (materiais/cadeia/decaimento), 3 (matrículas contínuas, mesmo bairro, todo jogador com escola), 4 (qualidade recalculada).
+- Concorrência em PostgreSQL provada por mutação: remover a trava da escola em `change_school`, `credit_materials` e `run_cycle` faz os testes correspondentes falharem.
+
+**Fora desta etapa:** professores/diretor/salários e mensalidade (P1.06b), universidade e diplomas (P1.06c), ligações com Imóveis/Orçamento/Mercado (P1.06d). O fator de escola do Estudar continua neutro (1) até o GD definir o mapeamento qualidade → ganho de skill (`03a`, decisão 2).
+
 ## 2026-10-22 — P1.05a — Transparência de Mercado (`design/17`; proposta em `design/17a`)
 
 **Contexto e decisão.** O `17` (FINAL — BOT TEST) define a transparência do mercado, mas nenhum documento define o **mecanismo** que produz vendas (anúncios, quem fixa preço, taxas, matching; `05` §13/§22 lista isso como questão em aberto). Conforme CLAUDE.md §13, o mecanismo **não foi inventado**: implementou-se tudo o que o `17` define, com um único ponto de integração, e a proposta/lacunas foram registradas em `design/17a-mercado-PROPOSTA.md` e levadas às "Decisões necessárias do Game Director". Nada do escopo do Bot Test foi removido: o mecanismo é a etapa **P1.05b**, bloqueada só pela decisão.
