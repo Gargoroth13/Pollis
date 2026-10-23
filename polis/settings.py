@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "companies",  # empresas: núcleo (fundação, cargo Dono, aporte de capital; design/02)
     "market",  # transparência de mercado: histórico de vendas, agregados, custos da empresa (design/17)
     "schools",  # escolas: matrícula, materiais, qualidade diária (design/03)
+    "contracts",  # contratos: fornecimento, empréstimo e o motor dos demais tipos (design/18)
 ]
 
 MIDDLEWARE = [

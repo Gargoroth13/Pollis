@@ -4,6 +4,23 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-23 — P1.08a — Motor de Contratos (`design/18` FINAL — BOT TEST; lacunas em `design/18a`)
+
+**Decisão de execução.** Contratos foi feito antes de Imóveis (P1.07) porque aluguel e obras de P1.07 dependem do motor. P1.08 dividido em a (motor + Fornecimento + Empréstimo), aluguel (P1.07), governamental (P1.09), militar (P1.17); nada saiu do escopo do Bot Test. Cada tipo é um *handler* registrado, o motor não os conhece.
+
+**Antes:** `market.record_sale` e `audit_market` passam a aceitar pagamento tributado (`SALE` líquida + `TAX_SALES` do comprador = total), com testes.
+
+**Entregue (app `contracts`):**
+- `Contract` (termos congelados e selados por `terms_hash`; `save` recusa alteração), `ContractEvent` (histórico imutável e contínuo, `ref` único por tipo de evento) e `ContractExecution` (única por contrato e sequência = idempotência).
+- Proposta/aceite (quem propõe já aceita; ativa com o 2º aceite; efeito do tipo no mesmo instante, desfeito se falhar), recusa, retirada, expiração de proposta vencida, quebra voluntária com multa real (`PENALTY`), quebra por `max_failures`, encerramento normal (`completed` / `completed_with_failures`).
+- Execução no tick diário do mundo (prioridade 70) com catch-up; quitação das dívidas de contratos antes das novas ocorrências; reconciliação do histórico.
+- Fornecimento (empresas): estoque + pagamento tributado (5% retido do valor) + `market.record_sale` (canal `contract`) em um ato tudo-ou-nada. Empréstimo (jogadores): desembolso `LOAN_PRINCIPAL`, parcelas `LOAN_REPAYMENT`/`LOAN_INTEREST`, falha vira obrigação.
+- 5 ações no Action Registry (`propose/accept/decline/withdraw/break_contract`), mesmas recusas em disponibilidade e execução.
+- `audit_contracts` (+ `manage.py audit_contracts [--json]`): invariantes 1 (contrato/termos/contadores/agenda), 2 (histórico), 3 (dinheiro e estoque por ocorrência, multa), 4 (chaves órfãs).
+- Concorrência provada por mutação em PostgreSQL: remover as travas de execução e de aceite faz 5 dos 6 testes de concorrência falharem.
+
+**Pendências / decisões do GD:** 12 itens em `design/18a` (pós-falha, condição de quebra, juros, quebra de empréstimo, imposto do fornecimento, qualidade, limite de multa, calendário, reservas, responsabilidades, ordem de quitação).
+
 ## 2026-10-22 — P1.06a — Núcleo de Escolas (`design/03` REVIEW; proposta e lacunas em `design/03a`)
 
 **Decisão de execução.** O `03` está em REVIEW e depende de sistemas ainda não implementados (Imóveis P1.07, Orçamento P1.09, Mercado P1.05b) e tem parâmetros em aberto. P1.06 foi dividido em a–d; nada foi removido do escopo do Bot Test. Valores numéricos ausentes entram como `[PROV]` em `schools/params.py`; estruturas ausentes/ambíguas estão em `design/03a` e nas "Decisões necessárias do Game Director".

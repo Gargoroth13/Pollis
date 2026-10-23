@@ -277,11 +277,16 @@ Implementar mercado e estatísticas de `17`.
 
 Implementar `10`.
 
-## [ ] P1.08 — Contratos
+## [~] P1.08 — Contratos
 
 **Depende de P0.07.** Adendo de partes militares (milícia anônima; governo federal comprador): `18` 18.14.
 
 Implementar `18`.
+
+- **[x] P1.08a — Motor, Fornecimento e Empréstimo** (branch `dev/p1.08a-contratos`, PR empilhado sobre o #21; `CHANGELOG_DEV.md`, 2026-10-23; lacunas em `design/18a`).
+- **[ ] P1.08b — Aluguel** (handler; chega com P1.07) e contratos de obra da Construtora.
+- **[ ] P1.08c — Governamental** (handler; chega com P1.09).
+- **[ ] P1.08d — Fluxos militares A e B** (`18` 18.14; chega com P1.17).
 
 ---
 
