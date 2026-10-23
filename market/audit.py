@@ -20,6 +20,7 @@ from core import clock as game_clock
 
 from . import rollup
 from .constants import Channel, PartyKind
+from .recording import find_payment
 from .models import CompanyCostDay, DailyProductStat, MarketTransaction, RollupMark
 
 
@@ -44,11 +45,11 @@ def audit_market() -> AuditReport:
         if buyer is None or seller is None:
             report.add(1, "PARTY_MISSING", tx=tx.pk, buyer=buyer is not None, seller=seller is not None)
             continue
-        sale = [e for e in Entry.objects.filter(transaction__key=tx.ledger_key, nature=Nature.SALE.value)
-                if e.from_account_id == buyer and e.to_account_id == seller and e.amount == tx.total_cents and e.at == tx.at]
-        if len(sale) != 1:
+        sale = find_payment(tx.ledger_key, buyer, seller, tx.total_cents, include_reversed=True)
+        if sale is None or sale.at != tx.at:
             report.add(1, "SALE_ENTRY_MISSING", tx=tx.pk, ledger_key=tx.ledger_key)
-        elif Entry.objects.filter(reverses_id=sale[0].pk).exists():
+        elif Entry.objects.filter(reverses_id=sale.pk).exists() or Entry.objects.filter(
+                reverses__transaction__key=tx.ledger_key, reverses__nature=Nature.TAX_SALES.value).exists():
             # estorno técnico do pagamento: o histórico é imutável e a venda continuaria contando nas estatísticas (decisão de design)
             report.add(1, "SALE_PAYMENT_REVERSED", tx=tx.pk, ledger_key=tx.ledger_key)
     report.stats["transactions"] = n
