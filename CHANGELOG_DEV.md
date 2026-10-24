@@ -19,7 +19,7 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 - `audit_contracts` (+ `manage.py audit_contracts [--json]`): invariantes 1 (contrato/termos/contadores/agenda), 2 (histórico), 3 (dinheiro e estoque por ocorrência, multa), 4 (chaves órfãs).
 - Concorrência provada por mutação em PostgreSQL: remover as travas de execução e de aceite faz 5 dos 6 testes de concorrência falharem.
 
-**Pendências / decisões do GD:** 12 itens em `design/18a` (pós-falha, condição de quebra, juros, quebra de empréstimo, imposto do fornecimento, qualidade, limite de multa, calendário, reservas, responsabilidades, ordem de quitação).
+**Decisões do GD (2026-10-24), aplicadas no mesmo PR:** ocorrência falha é perdida (não refeita); `max_failures` = falhas **consecutivas** (cumprida zera, `consecutive_failures`); juros simples com taxa e **total congelados** nos termos (`interest_total_cents`); quebra de empréstimo: principal restante vira obrigação, juros futuros cancelados; fornecimento só entre empresas (SALE líquida + `TAX_SALES`); qualidade entregue congelada na entrega (limitação: o estoque guarda uma qualidade média por produto); multa não paga numa quebra **não impede a quebra** — vira UMA obrigação pendente (`PENALTY_UNPAYABLE` removido); calendário, reserva de fundos (nenhuma; verificação+transferência atômicas), responsabilidade por código (`Handler.RESPONSIBILITY`, auditada) e quitação global confirmados. Detalhes e testes em `design/18a` §5.
 
 ## 2026-10-22 — P1.06a — Núcleo de Escolas (`design/03` REVIEW; proposta e lacunas em `design/03a`)
 

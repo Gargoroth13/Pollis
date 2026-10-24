@@ -94,8 +94,7 @@ def register() -> None:
              ("INVALID_PARAMS", "CONTRACT_NOT_FOUND", "NOT_A_PARTY", "NOT_PARTY_REPRESENTATIVE", "NOT_OWNER", "NOT_PROPOSED", "NOT_PROPOSER"),
              ("contract_withdrawn",)),
             (BREAK_ID, "Quebrar contrato", services.break_refusal, services.break_contract,
-             ("INVALID_PARAMS", "CONTRACT_NOT_FOUND", "NOT_A_PARTY", "NOT_PARTY_REPRESENTATIVE", "NOT_OWNER", "NOT_RUNNING",
-              "PENALTY_UNPAYABLE"), ("contract_broken", "penalty_paid"))):
+             ("INVALID_PARAMS", "CONTRACT_NOT_FOUND", "NOT_A_PARTY", "NOT_PARTY_REPRESENTATIVE", "NOT_OWNER", "NOT_RUNNING"), ("contract_broken", "penalty_paid_or_pending"))):
         check, run, preview = _simple(action_id, refusal, execute)
         register_action(
             ActionDescriptor(id=action_id, name=name, requirements=requirements, cost=("money",) if action_id == BREAK_ID else (),

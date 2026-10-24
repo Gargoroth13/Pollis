@@ -1,6 +1,6 @@
 # 18a — Contratos: o que foi implementado e o que depende de decisão (proposta)
 
-> **Status:** DRAFT — PROPOSTA (nada aqui vira mecânica antes da decisão do Game Director)
+> **Status:** PROPOSTA — **decisões 1–11 respondidas pelo Game Director em 2026-10-24** (seção 5); o que não está na seção 5 segue provisório
 >
 > O `18` está FINAL — BOT TEST e define a **estrutura** (partes, aceite, execução automática, inadimplência, quebra, multa, histórico),
 > mas deixa em aberto detalhes necessários para executar de verdade. Cada lacuna abaixo foi preenchida com a **menor solução
@@ -75,3 +75,22 @@ empresa → jogador) prova que o motor funciona para jogador↔empresa sem mudan
 11. **Pagamentos de dívidas de contratos** seguem a regra global do registro monetário (R4: competência mais antiga, depois id), pelo caixa
     disponível do devedor, no começo de cada tick diário (antes das novas ocorrências).
 12. **Contrato de trabalho**, reputação, arbitragem, cláusulas livres e mercado secundário: fora (18.12), nada implementado.
+
+## 5. Decisões do Game Director (2026-10-24) — aplicadas
+
+| # | Decisão | Como ficou |
+|---|---|---|
+| 1 | Ocorrência que falhou fica **perdida**; não é refeita (evita acúmulo de entregas/pagamentos); o contrato segue o calendário original, salvo quebra por inadimplência | como já estava; testado (`completed_with_failures`) |
+| 2 | `max_failures` = falhas **consecutivas**; ocorrência cumprida **zera** o contador; nulo = sem quebra automática; cada falha vai ao histórico | novo `consecutive_failures` (audita contra a sequência de execuções); testes: sequência falha-cumpre-falha não quebra, duas seguidas quebram |
+| 3 | Juros **simples** sobre o principal original, taxa total do contrato; sem composto/diário/mensal; taxa e **valor total dos juros congelados** nos termos | `terms.interest_total_cents` calculado na proposta, selado pelo `terms_hash`; a auditoria recalcula |
+| 4 | Quebra de empréstimo: principal restante vira **obrigação exigível**; juros futuros deixam de ser cobrados; vencidos continuam; sem criar dinheiro nem duplicar dívida; pagamento pelo registro global | como já estava; chave única `contract:{id}:remaining` |
+| 5 | Fornecimento só entre empresas, preço unitário bruto, bruto = SALE líquida + `TAX_SALES`, venda/estoque/pagamento/imposto atômicos | como já estava |
+| 6 | Qualidade = média **ponderada pela quantidade das unidades efetivamente entregues**, congelada no registro da entrega | `delivered_quality` na execução e nos movimentos de estoque (saída e entrada), conferida pela auditoria. **Limitação registrada:** o estoque guarda UMA qualidade média por produto (`companies.stock`); logo o lote entregue tem essa qualidade — não existe dado por lote mais fino. A mistura no comprador é a média ponderada pela quantidade já existente no estoque |
+| 7 | Multa limitada ao valor total do contrato; sem caixa na quebra voluntária a quebra **acontece** e a multa não paga vira obrigação pendente (auditável, sem perdão, sem cobrança dupla) | `PENALTY_UNPAYABLE` removido; `_charge_penalty` (uma transferência **ou** uma obrigação, mesma chave); vale também para a quebra por inadimplência |
+| 8 | Semanal = 7 dias; mensal = mesmo dia do mês limitado ao último; fornecimento começa em data futura | como já estava; testes de limites de mês e primeira ocorrência |
+| 9 | Sem reserva na proposta; credor precisa ter o principal no 2º aceite; verificação e transferência atômicas | teste de concorrência: aceite × gasto simultâneo do credor (exatamente um vence) |
+| 10 | Falta de estoque = vendedor; estoque cheio / produto sem uso = comprador; mesma classificação em todos os handlers | `Handler.RESPONSIBILITY` por código; a auditoria acusa `RESPONSIBILITY_MISMATCH` |
+| 11 | Quitação: regra global, mais antigas primeiro, antes das novas ocorrências do dia, sem passar do saldo, sem duplicidade no catch-up | teste de catch-up de vários dias: pago = caixa disponível, nada a mais |
+
+Pendente apenas o que o GD não respondeu: nada nesta lista. Os `[PROV]` que restam em `contracts/params.py` são o teto de juros
+(100%, não decidido) e o limite técnico de 1000 ocorrências por contrato.

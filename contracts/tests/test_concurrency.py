@@ -123,3 +123,20 @@ class ContractConcurrencyTests(TransactionTestCase):
         self.assertTrue(all(j.result.code == "NOT_RUNNING" for j in jobs if not j.result.ok))
         self.assertEqual(Entry.objects.filter(transaction__key=f"contract:{cid}:penalty").count(), 1)
         self.assertClean()
+
+    def test_the_lender_s_cash_is_checked_and_moved_atomically_against_a_concurrent_spend(self):
+        from ledger.constants import Nature
+        lender = create_player(Usuario.objects.create_user("c9"))
+        fund_account(ledger.player_account(lender.pk), 100_000)                      # exatamente o principal
+        loan = {"type": "loan", "role": "lender", "proposer": {"kind": "player", "id": lender.pk},
+                "counterparty": {"kind": "player", "id": self.worker.pk},
+                "terms": {"principal_cents": 100_000, "interest_rate": "0.02", "installments": 2}, "frequency": "daily"}
+        cid = services.propose(lender.pk, loan).detail["contract"]
+        party = {"kind": "player", "id": self.worker.pk}
+        spend = lambda: ledger.transfer(ledger.player_account(lender.pk).pk, ledger.player_account(self.boss.pk).pk, 100_000,
+                                        Nature.DONATION, key="spend:1", reference_kind="t", reference_id="1")
+        jobs = run_together(lambda: services.accept(self.worker.pk, cid, party), spend)
+        self.assertEqual(sum(1 for j in jobs if j.result.ok), 1, [j.result for j in jobs])         # um só dos dois gasta os mesmos R$ 1.000
+        self.assertGreaterEqual(ledger.balance_of(ledger.player_account(lender.pk).pk), 0)
+        self.assertEqual(Contract.objects.get(pk=cid).status, "active" if jobs[0].result.ok else "proposed")
+        self.assertClean()

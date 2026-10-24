@@ -357,9 +357,9 @@ def break_refusal(actor_id: Any, contract_id: Any, party: Any):
 
 def break_contract(actor_id: int, contract_id: Any, party: Any) -> ActionResult:
     """
-    Qualquer parte pede o encerramento antecipado. A multa prevista (se houver) é paga, de verdade, à outra parte ANTES de o contrato
-    mudar de estado: sem caixa para ela a quebra é recusada (PENALTY_UNPAYABLE) e nada muda. Depois o tipo resolve o que restava
-    (`on_terminated`) e o contrato fica QUEBRADO. Recusas: ver `break_refusal` + PENALTY_UNPAYABLE.
+    Qualquer parte pede o encerramento antecipado. A multa prevista (se houver) é transferida, de verdade, à outra parte; sem caixa
+    para pagá-la a quebra ACONTECE e a multa vira obrigação pendente, registrada e auditável (GD 2026-10-24, decisão 7). Depois o tipo
+    resolve o que restava (`on_terminated`) e o contrato fica QUEBRADO. Recusas: ver `break_refusal`.
     """
     first = break_refusal(actor_id, contract_id, party)
     if isinstance(first, ActionResult):
@@ -375,15 +375,7 @@ def break_contract(actor_id: int, contract_id: Any, party: Any) -> ActionResult:
                 return refuse("NOT_RUNNING", contract=c.pk, status=c.status)
             side, now = again[1], game_clock.now()
             _event(c, EventKind.BREAK_REQUESTED, now, actor=c.party(side), data={"side": side.value, "acted_by_player": actor_id})
-            if c.penalty_cents > 0:
-                paid = ledger.transfer(_account(c, side), _account(c, _other(side)), c.penalty_cents, Nature.PENALTY,
-                                       key=f"{KEY_PREFIX}{c.pk}:penalty", reference_kind=REFERENCE_KIND, reference_id=f"{c.pk}:penalty",
-                                       at=now, operation="contract_penalty", explained={"contract": c.pk, "cause": "voluntary_break",
-                                                                                          "responsible": side.value})
-                if not paid.ok:
-                    raise _Rollback(refuse("PENALTY_UNPAYABLE", contract=c.pk, penalty_cents=c.penalty_cents, why=paid.code))
-                _event(c, EventKind.PENALTY_APPLIED, now, ledger_key=f"{KEY_PREFIX}{c.pk}:penalty",
-                       data={"responsible": side.value, "to": _other(side).value, "amount_cents": c.penalty_cents, "paid": True})
+            _charge_penalty(c, now, side, "voluntary_break")
             _terminate_broken(c, now, f"voluntary_break_by_{side.value}", "voluntary_break")
             c.save()
             return ActionResult(True, "OK", {"contract": c.pk, "status": c.status, "reason": c.end_reason, "penalty_cents": c.penalty_cents})
@@ -444,6 +436,7 @@ def _record(c: Contract, handler: handlers.Handler, sequence: int, due: int, at:
     c.next_sequence = sequence + 1
     c.next_due_day = handler.due_day(c, sequence + 1) if c.next_sequence < c.occurrences else None
     if out.ok:
+        c.consecutive_failures = 0
         _event(c, EventKind.EXECUTED, at, ref=str(sequence), ledger_key=out.ledger_key,
                data={"sequence": sequence, "due_day": due, **out.detail})
         if c.status == Status.DEFAULTED.value and not handler.obligation_backed and not _open_obligations(c.pk).exists():
@@ -451,13 +444,14 @@ def _record(c: Contract, handler: handlers.Handler, sequence: int, due: int, at:
             _event(c, EventKind.DEFAULT_CURED, at, data={"sequence": sequence})
     else:
         c.failures += 1
+        c.consecutive_failures += 1
         _event(c, EventKind.FAILED, at, ref=str(sequence),
                data={"sequence": sequence, "due_day": due, "code": out.code, "responsible": out.responsible.value if out.responsible else "",
                      "pending_quantity": out.pending_quantity, "pending_cents": out.pending_cents, **out.detail})
         if c.status == Status.ACTIVE.value:
             c.status = Status.DEFAULTED.value
             _event(c, EventKind.DEFAULT_ENTERED, at, data={"sequence": sequence, "code": out.code})
-        if (c.max_failures is not None and c.failures >= c.max_failures
+        if (c.max_failures is not None and c.consecutive_failures >= c.max_failures
                 and out.responsible in (Responsible.A, Responsible.B)):
             _break_by_default(c, at, Side(out.responsible.value))
     c.save()
@@ -466,22 +460,34 @@ def _record(c: Contract, handler: handlers.Handler, sequence: int, due: int, at:
         c.save()
 
 
+def _charge_penalty(c: Contract, now: int, responsible: Side, cause: str) -> None:
+    """
+    Multa (18.8) do responsável à outra parte: UMA transferência `PENALTY`; sem caixa, UMA obrigação pendente (mesma chave, nunca as
+    duas; nada é perdoado e nada é cobrado duas vezes). O que aconteceu fica no evento `PENALTY_APPLIED` (`paid`).
+    """
+    if c.penalty_cents <= 0:
+        return
+    key = f"{KEY_PREFIX}{c.pk}:penalty"
+    payer, payee = _account(c, responsible), _account(c, _other(responsible))
+    paid = ledger.transfer(payer, payee, c.penalty_cents, Nature.PENALTY, key=key, reference_kind=REFERENCE_KIND,
+                           reference_id=f"{c.pk}:penalty", at=now, operation="contract_penalty",
+                           explained={"contract": c.pk, "cause": cause, "responsible": responsible.value})
+    pending = not paid.ok
+    if pending:
+        if paid.code != "INSUFFICIENT_FUNDS":
+            raise RuntimeError(f"multa do contrato {c.pk}: {paid.code} {paid.detail}")
+        ob = ledger_obligations.open_obligation(payer, payee, c.penalty_cents, Nature.PENALTY, key=key, reference_kind=REFERENCE_KIND,
+                                                reference_id=f"{c.pk}:penalty", at=now)
+        if not ob.ok:
+            raise RuntimeError(f"multa do contrato {c.pk}: {ob.code} {ob.detail}")
+    _event(c, EventKind.PENALTY_APPLIED, now, ledger_key=key,
+           data={"responsible": responsible.value, "to": _other(responsible).value, "amount_cents": c.penalty_cents, "paid": not pending,
+                 "cause": cause})
+
+
 def _break_by_default(c: Contract, now: int, responsible: Side) -> None:
-    """Condição `max_failures` atingida (18.6): a multa vai do responsável à outra parte; sem caixa ela vira obrigação pendente."""
-    if c.penalty_cents > 0:
-        key = f"{KEY_PREFIX}{c.pk}:penalty"
-        paid = ledger.transfer(_account(c, responsible), _account(c, _other(responsible)), c.penalty_cents, Nature.PENALTY, key=key,
-                               reference_kind=REFERENCE_KIND, reference_id=f"{c.pk}:penalty", at=now, operation="contract_penalty",
-                               explained={"contract": c.pk, "cause": "default", "responsible": responsible.value})
-        pending = not paid.ok
-        if pending:
-            ob = ledger_obligations.open_obligation(_account(c, responsible), _account(c, _other(responsible)), c.penalty_cents,
-                                                    Nature.PENALTY, key=key, reference_kind=REFERENCE_KIND,
-                                                    reference_id=f"{c.pk}:penalty", at=now)
-            if not ob.ok:
-                raise RuntimeError(f"multa do contrato {c.pk}: {ob.code} {ob.detail}")
-        _event(c, EventKind.PENALTY_APPLIED, now, ledger_key=key,
-               data={"responsible": responsible.value, "to": _other(responsible).value, "amount_cents": c.penalty_cents, "paid": not pending})
+    """`max_failures` falhas CONSECUTIVAS (18.6): o responsável paga a multa (ou fica devendo) e o contrato fica quebrado."""
+    _charge_penalty(c, now, responsible, "default")
     _terminate_broken(c, now, f"default_by_{responsible.value}", "default")
 
 
@@ -594,6 +600,7 @@ def contract_view(contract_id: int) -> Optional[Dict[str, Any]]:
         "proposed_by": c.proposed_by, "terms": c.terms, "frequency": c.frequency, "starts_on": c.starts_on, "ends_on": c.ends_on,
         "anchor_day": c.anchor_day, "last_due_day": c.last_due_day, "penalty_cents": c.penalty_cents, "max_failures": c.max_failures,
         "occurrences": c.occurrences, "next_sequence": c.next_sequence, "next_due_day": c.next_due_day, "failures": c.failures,
+        "consecutive_failures": c.consecutive_failures,
         "accepted": {"a": c.accepted_a_at, "b": c.accepted_b_at}, "end_reason": c.end_reason,
         "executions": [{"sequence": e.sequence, "due_day": e.due_day, "status": e.status, "failure_code": e.failure_code,
                         "responsible": e.responsible, "pending_quantity": e.pending_quantity, "pending_cents": e.pending_cents,

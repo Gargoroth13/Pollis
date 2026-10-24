@@ -66,6 +66,8 @@ class Handler:
     type: ContractType
     role_a: str = "a"
     role_b: str = "b"
+    # Responsabilidade por código de falha (GD 2026-10-24, decisão 10): a MESMA classificação para todos os handlers; a auditoria confere.
+    RESPONSIBILITY: Dict[str, "Responsible"] = {}
     obligation_backed: bool = False            # a falha vira dívida no registro monetário e a inadimplência cessa quando ela é quitada
     kinds_a: FrozenSet[PartyKind] = frozenset({PartyKind.PLAYER, PartyKind.COMPANY})
     kinds_b: FrozenSet[PartyKind] = frozenset({PartyKind.PLAYER, PartyKind.COMPANY})
@@ -141,6 +143,8 @@ class SupplyHandler(Handler):
     kinds_a = kinds_b = frozenset({PartyKind.COMPANY})
 
     TERM_KEYS = frozenset({"product", "quantity", "unit_price_cents"})
+    RESPONSIBILITY = {"INSUFFICIENT_STOCK": Responsible.A, "INSUFFICIENT_FUNDS": Responsible.B, "STOCK_FULL": Responsible.B,
+                      "NO_VALID_USE": Responsible.B, "PRODUCT_NOT_TRADABLE_BETWEEN_COMPANIES": Responsible.B}
 
     def prepare(self, p, today, a, b):
         terms = p.get("terms")
@@ -204,14 +208,19 @@ class SupplyHandler(Handler):
                     return fail("INSUFFICIENT_STOCK", Responsible.A, have=0 if item is None else item.quantity, required=qty)
                 if ledger.available_of(buyer_acc) < gross:
                     return fail("INSUFFICIENT_FUNDS", Responsible.B, required=gross, available=ledger.available_of(buyer_acc))
+                # Qualidade ENTREGUE (GD 2026-10-24, decisão 6): a das unidades efetivamente entregues, congelada na entrega. O estoque
+                # guarda UMA qualidade média por produto, então o lote entregue tem exatamente essa qualidade (não há dado mais fino);
+                # no comprador ela se mistura por média ponderada pela quantidade (`companies.stock._blend`).
+                quality = item.quality
+                frozen = {"contract": contract.pk, "sequence": sequence, "delivered_quality": None if quality is None else str(quality)}
                 out = company_stock.debit_stock(contract.party_a_id, product, qty, operation=StockOperation.SALE,
                                                 destination=f"company:{contract.party_b_id}", key=f"{key}:out",
-                                                reference_kind=REFERENCE_KIND, reference_id=contract.pk, at=at)
+                                                reference_kind=REFERENCE_KIND, reference_id=contract.pk, at=at, explained=frozen)
                 if not out.ok:
                     raise _Step(out.code, Responsible.A, out.detail)
                 inc = company_stock.credit_stock(contract.party_b_id, product, qty, operation=StockOperation.PURCHASE,
                                                  origin=f"company:{contract.party_a_id}", key=f"{key}:in",
-                                                 reference_kind=REFERENCE_KIND, reference_id=contract.pk, quality=item.quality, at=at)
+                                                 reference_kind=REFERENCE_KIND, reference_id=contract.pk, quality=quality, at=at, explained=frozen)
                 if not inc.ok:
                     raise _Step(inc.code, Responsible.B, inc.detail)
                 pay = ledger.post_taxed_payment(
@@ -226,7 +235,8 @@ class SupplyHandler(Handler):
                 if not rec.ok:
                     raise _Step("RECORDING_" + rec.code, Responsible.SYSTEM, rec.detail)
                 return Outcome(True, ledger_key=key, detail={"quantity": qty, "gross_cents": gross, "tax_cents": pay.detail["tax"],
-                                                             "net_cents": pay.detail["net"], "product": product})
+                                                             "net_cents": pay.detail["net"], "product": product,
+                                                             "delivered_quality": frozen["delivered_quality"]})
         except _Step as s:
             return fail(s.code, s.responsible, **s.detail)
 
@@ -248,6 +258,7 @@ class LoanHandler(Handler):
     role_a, role_b = "lender", "borrower"
     kinds_a = kinds_b = frozenset({PartyKind.PLAYER})
     obligation_backed = True
+    RESPONSIBILITY = {"INSUFFICIENT_FUNDS": Responsible.B}
 
     def prepare(self, p, today, a, b):
         terms = p.get("terms")
@@ -269,7 +280,10 @@ class LoanHandler(Handler):
                 raise InvalidOperation
         except InvalidOperation:
             return refuse("INVALID_INTEREST_RATE", interest_rate=repr(rate)[:40], max=str(params.MAX_INTEREST_RATE))
-        norm = {"principal_cents": principal, "interest_rate": format(rate_d.quantize(Decimal("0.000001")), "f"), "installments": n}
+        rate_norm = rate_d.quantize(Decimal("0.000001"))
+        # taxa E valor total dos juros ficam congelados nos termos aceitos (GD 2026-10-24, decisão 3)
+        norm = {"principal_cents": principal, "interest_rate": format(rate_norm, "f"), "installments": n,
+                "interest_total_cents": percent_of(principal, rate_norm)}
         if freq is Frequency.ONCE:
             term_days = terms["term_days"]
             if n != 1 or not is_int(term_days) or not 1 <= term_days <= 36500:
@@ -280,8 +294,7 @@ class LoanHandler(Handler):
         return Prepared(norm, None, None, n, principal)
 
     def interest_total(self, contract) -> int:
-        t = contract.terms
-        return percent_of(t["principal_cents"], Decimal(t["interest_rate"]))
+        return contract.terms["interest_total_cents"]
 
     def parts(self, contract, sequence: int) -> tuple:
         """(principal, juros) da parcela: iguais; a última fecha o resto (arredondamento só no fim, nada se perde)."""

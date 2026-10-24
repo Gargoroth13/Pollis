@@ -9,6 +9,8 @@ Auditoria dos Contratos (design/18). Só LÊ. Invariantes (numeração própria 
      líquida + TAX_SALES = bruto, vendas registradas no mercado com canal `contract`, estoque saindo do vendedor e entrando no
      comprador; empréstimo: desembolso do principal, parcela = principal + juros); cada ocorrência falha tem a pendência registrada
      (dívida no registro monetário quando o tipo a usa); a multa é UMA transferência (ou dívida) pelo valor dos termos, do responsável
+     (GD 2026-10-24) a classificação de responsabilidade por código de falha é a do handler; a qualidade entregue é a congelada na
+     entrega (execução = saída do vendedor = entrada do comprador); os juros totais dos termos são os da taxa
   4  nenhuma chave de execução órfã: todo lançamento/estoque `contract:{id}:exec:{n}` tem a ocorrência registrada
 """
 from __future__ import annotations
@@ -71,6 +73,13 @@ def _audit_contract(report: AuditReport, c: Contract) -> None:
         report.add(1, "ENDED_WITHOUT_START", contract=c.pk)
     if [e.sequence for e in executions] != list(range(len(executions))):
         report.add(1, "EXECUTION_SEQUENCE_GAP", contract=c.pk)
+    trailing = 0
+    for e in reversed(executions):
+        if e.status != ExecutionStatus.FAILED.value:
+            break
+        trailing += 1
+    if c.consecutive_failures != trailing:
+        report.add(1, "CONSECUTIVE_FAILURES_MISMATCH", contract=c.pk, stored=c.consecutive_failures, recomputed=trailing)
     if c.next_sequence != len(executions):
         report.add(1, "NEXT_SEQUENCE_MISMATCH", contract=c.pk, next=c.next_sequence, executions=len(executions))
     if c.failures != sum(1 for e in executions if e.status == ExecutionStatus.FAILED.value):
@@ -150,6 +159,10 @@ def _audit_money(report: AuditReport, c: Contract, handler, executions, events) 
         else:
             if e.responsible not in {r.value for r in Responsible}:
                 report.add(3, "FAILURE_WITHOUT_RESPONSIBLE", contract=c.pk, sequence=e.sequence)
+            expected = handler.RESPONSIBILITY.get(e.failure_code)
+            if expected is not None and e.responsible != expected.value:
+                report.add(3, "RESPONSIBILITY_MISMATCH", contract=c.pk, sequence=e.sequence, failure=e.failure_code, responsible=e.responsible,
+                           expected=expected.value)
             if e.pending_cents is None and e.pending_quantity is None:
                 report.add(3, "FAILURE_WITHOUT_PENDING", contract=c.pk, sequence=e.sequence)
             if Transaction.objects.filter(key=key).exists() or StockMovement.objects.filter(key__startswith=f"{key}:").exists():
@@ -161,6 +174,10 @@ def _audit_money(report: AuditReport, c: Contract, handler, executions, events) 
     if c.type == ContractType.LOAN.value:
         disb = Entry.objects.filter(transaction__key=f"{KEY_PREFIX}{c.pk}:disburse", nature=Nature.LOAN_PRINCIPAL.value)
         want = c.terms.get("principal_cents")
+        from decimal import Decimal
+        from ledger.money import percent_of
+        if c.terms.get("interest_total_cents") != percent_of(want, Decimal(c.terms.get("interest_rate", "0"))):
+            report.add(3, "LOAN_INTEREST_TERMS_MISMATCH", contract=c.pk)
         if disb.count() != 1 or disb[0].amount != want:
             report.add(3, "DISBURSEMENT_MISMATCH", contract=c.pk)
     if penalties:
@@ -195,6 +212,8 @@ def _audit_supply_success(report, c, e, key) -> None:
     if (out is None or (out.company_id, out.delta, out.product.key) != (c.party_a_id, -t["quantity"], t["product"])
             or inc is None or (inc.company_id, inc.delta, inc.product.key) != (c.party_b_id, t["quantity"], t["product"])):
         report.add(3, "SUPPLY_STOCK_MISMATCH", contract=c.pk, sequence=e.sequence)
+    elif not (out.explained.get("delivered_quality") == inc.explained.get("delivered_quality") == e.detail.get("delivered_quality")):
+        report.add(3, "SUPPLY_QUALITY_NOT_FROZEN", contract=c.pk, sequence=e.sequence)
 
 
 def _audit_loan_success(report, c, handler, e, key) -> None:

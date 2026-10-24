@@ -37,6 +37,32 @@ class LoanTests(ContractBase):
                                    ("loan_repayment", 50_000), ("loan_interest", 1_000)])
         self.assertEqual(self.events(cid), ["created", "accepted", "accepted", "activated", "disbursed", "executed", "executed", "closed"])
 
+    def test_the_rate_and_the_total_interest_are_frozen_in_the_accepted_terms(self):
+        cid = self.active_loan(terms={"principal_cents": 100_001, "interest_rate": "0.025", "installments": 3})
+        terms = self.c(cid).terms
+        self.assertEqual((terms["interest_rate"], terms["interest_total_cents"]), ("0.025000", 2_500))
+        self.assertEqual(self.c(cid).terms_hash, self.c(cid).frozen_digest())
+        from contracts.audit import audit_contracts
+        from contracts.models import Contract
+        Contract.objects.filter(pk=cid).update(terms={**terms, "interest_total_cents": 9_999})
+        self.assertIn("TERMS_CHANGED", {f["code"] for f in audit_contracts().findings})
+        Contract.objects.filter(pk=cid).update(terms=terms)
+
+    def test_catching_up_several_days_settles_each_debt_once_and_never_above_the_available_cash(self):
+        cid = self.active_loan()
+        self.drain(self.borrower)
+        self.tick(1)
+        self.tick(2)
+        self.fund(self.borrower, 1_000)                                   # 100.000: cobre só parte do devido (204.000 no total)
+        lender = self.money(self.lender)
+        self.tick(5)                                                      # dias 3-5 de uma vez
+        paid = sum(o.amount_paid for o in Obligation.objects.filter(reference_kind="contract"))
+        self.assertEqual(self.money(self.lender) - lender, paid)
+        self.assertEqual(paid, 100_000)                                   # tudo o que o devedor tinha, nem um centavo a mais
+        self.assertEqual(ledger.balance_of(ledger.player_account(self.borrower.pk).pk), 0)
+        self.assertEqual(Obligation.objects.filter(reference_kind="contract", status="open").count(), 2)       # a 1ª parcela inteira e parte do principal da 2ª
+        self.assertEqual(self.c(cid).status, Status.DEFAULTED.value)
+
     def test_the_last_installment_closes_the_rounding_remainder(self):
         cid = self.active_loan(terms={"principal_cents": 100_001, "interest_rate": "0.025", "installments": 3})
         handler = __import__("contracts.handlers", fromlist=["x"]).get_handler("loan")

@@ -60,7 +60,7 @@ class Contract(models.Model):
     starts_on = models.IntegerField(null=True, blank=True)         # dia de competência da proposta (fornecimento); empréstimo: nulo
     ends_on = models.IntegerField(null=True, blank=True)
     penalty_cents = models.BigIntegerField(default=0)
-    max_failures = models.PositiveIntegerField(null=True, blank=True)    # condição (18.6): falhas até a quebra por inadimplência
+    max_failures = models.PositiveIntegerField(null=True, blank=True)    # condição (18.6): falhas CONSECUTIVAS até a quebra por inadimplência
     terms_hash = models.CharField(max_length=64)
     occurrences = models.PositiveIntegerField()                    # nº total de ocorrências previstas
     # --- estado de execução (muda; os termos acima não) ---
@@ -68,7 +68,8 @@ class Contract(models.Model):
     last_due_day = models.IntegerField(null=True, blank=True)      # dia da última ocorrência (derivado na ativação)
     next_sequence = models.PositiveIntegerField(default=0)         # próxima ocorrência a executar
     next_due_day = models.IntegerField(null=True, blank=True)      # dia dela (None = nada a executar)
-    failures = models.PositiveIntegerField(default=0)
+    failures = models.PositiveIntegerField(default=0)              # total de ocorrências falhas (histórico)
+    consecutive_failures = models.PositiveIntegerField(default=0)  # falhas seguidas; uma ocorrência cumprida zera (GD 2026-10-24)
     accepted_a_at = models.BigIntegerField(null=True, blank=True)
     accepted_b_at = models.BigIntegerField(null=True, blank=True)
     created_at = models.BigIntegerField()
