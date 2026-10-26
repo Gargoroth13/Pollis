@@ -140,3 +140,21 @@ class ContractConcurrencyTests(TransactionTestCase):
         self.assertGreaterEqual(ledger.balance_of(ledger.player_account(lender.pk).pk), 0)
         self.assertEqual(Contract.objects.get(pk=cid).status, "active" if jobs[0].result.ok else "proposed")
         self.assertClean()
+
+    def test_a_cession_versus_the_daily_execution_pays_exactly_one_holder_and_audits_clean(self):
+        from contracts.constants import PartyKind, Side
+        from contracts.models import ContractExecution, ContractPartyChange
+        newcomer = create_player(Usuario.objects.create_user("c8"))
+        fund_account(ledger.player_account(newcomer.pk), 500_000 * REAL)
+        loan = {"type": "loan", "role": "lender", "proposer": {"kind": "player", "id": self.third.pk},
+                "counterparty": {"kind": "player", "id": self.worker.pk},
+                "terms": {"principal_cents": 100_000, "interest_rate": "0.02", "installments": 2}, "frequency": "daily"}
+        cid = services.propose(self.third.pk, loan).detail["contract"]
+        self.assertTrue(services.accept(self.worker.pk, cid, {"kind": "player", "id": self.worker.pk}).ok)
+        jobs = run_together(self.due, lambda: services.reassign_party(cid, Side.A, (PartyKind.PLAYER, newcomer.pk), reason="t", ref="t:1"))
+        self.assertEqual(ContractPartyChange.objects.filter(contract_id=cid).count(), 1)
+        execution = ContractExecution.objects.get(contract_id=cid, sequence=0)
+        paid_to = Entry.objects.filter(transaction__key=f"contract:{cid}:exec:0", nature="loan_repayment").first().to_account.owner_id
+        self.assertEqual(execution.parties[1], paid_to)                          # a parte registrada na ocorrência é a que recebeu
+        self.assertIn(paid_to, {self.third.pk, newcomer.pk})
+        self.assertClean()

@@ -62,6 +62,7 @@ class EventKind(str, enum.Enum):
     REMAINING_CANCELLED = "remaining_cancelled"
     CLOSED = "closed"
     BROKEN = "broken"
+    PARTY_CHANGED = "party_changed"            # cessão da posição de uma parte (ex.: venda do imóvel alugado, 10 §13)
 
 
 class ExecutionStatus(str, enum.Enum):

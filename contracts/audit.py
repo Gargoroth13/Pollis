@@ -27,7 +27,7 @@ from market.recording import find_payment
 from . import handlers
 from .constants import (ENDED_STATUSES, KEY_PREFIX, REFERENCE_KIND, RUNNING_STATUSES, ContractType, EventKind, ExecutionStatus,
                         Frequency, PartyKind, Responsible, Side, Status)
-from .models import Contract, ContractEvent, ContractExecution
+from .models import Contract, ContractEvent, ContractExecution, ContractPartyChange
 
 
 def audit_contracts() -> AuditReport:
@@ -96,11 +96,43 @@ def _audit_contract(report: AuditReport, c: Contract) -> None:
         for e in executions:
             if e.due_day != handler.due_day(c, e.sequence):
                 report.add(1, "EXECUTION_DUE_MISMATCH", contract=c.pk, sequence=e.sequence)
-    if status is Status.CLOSED and (c.next_sequence != c.occurrences):
+    if status is Status.CLOSED and (c.next_sequence != c.occurrences) and c.end_reason != "parties_merged":
         report.add(1, "CLOSED_BEFORE_ALL_OCCURRENCES", contract=c.pk)
+    _audit_party_changes(report, c)
     _audit_events(report, c, events, executions, status)
     if handler is not None and started:
         _audit_money(report, c, handler, executions, events)
+
+
+def _audit_party_changes(report: AuditReport, c: Contract) -> None:
+    """Cessões (10 §13): cadeia contínua, cada origem = destino anterior, a de origem = o selo, a última = a parte vigente."""
+    changes = list(c.party_changes.order_by("seq"))
+    if [x.seq for x in changes] != list(range(1, len(changes) + 1)):
+        report.add(1, "PARTY_CHANGE_SEQUENCE_GAP", contract=c.pk)
+    current = {Side.A: (c.sealed_parties[0], c.sealed_parties[1]), Side.B: (c.sealed_parties[2], c.sealed_parties[3])} if len(
+        c.sealed_parties) == 4 else None
+    if current is None:
+        report.add(1, "SEALED_PARTIES_MISSING", contract=c.pk)
+        return
+    for x in changes:
+        side = Side(x.side)
+        if (x.from_kind, x.from_id) != current[side]:
+            report.add(1, "PARTY_CHANGE_CHAIN_BROKEN", contract=c.pk, seq=x.seq)
+        current[side] = (x.to_kind, x.to_id)
+    if current[Side.A] != (c.party_a_kind, c.party_a_id) or current[Side.B] != (c.party_b_kind, c.party_b_id):
+        report.add(1, "CURRENT_PARTY_NOT_LAST_CHANGE", contract=c.pk)
+    states = [list(c.sealed_parties)]                                        # estados sucessivos das partes (origem, 1ª cessão, ...)
+    for x in changes:
+        nxt = list(states[-1])
+        nxt[(0 if x.side == Side.A.value else 2):(2 if x.side == Side.A.value else 4)] = [x.to_kind, x.to_id]
+        states.append(nxt)
+    for e in c.executions.order_by("sequence"):
+        lo, hi = sum(1 for x in changes if x.at < e.at), sum(1 for x in changes if x.at <= e.at)   # mesmo segundo: qualquer das duas ordens
+        if list(e.parties) not in states[lo:hi + 1]:
+            report.add(1, "EXECUTION_PARTIES_MISMATCH", contract=c.pk, sequence=e.sequence)
+    n_events = ContractEvent.objects.filter(contract=c, kind=EventKind.PARTY_CHANGED.value).count()
+    if n_events != len(changes):
+        report.add(2, "PARTY_CHANGE_EVENT_COUNT", contract=c.pk, events=n_events, changes=len(changes))
 
 
 def _kinds(events: List[ContractEvent]) -> Dict[str, List[ContractEvent]]:
@@ -156,6 +188,8 @@ def _audit_money(report: AuditReport, c: Contract, handler, executions, events) 
                 _audit_supply_success(report, c, e, key)
             elif c.type == ContractType.LOAN.value:
                 _audit_loan_success(report, c, handler, e, key)
+            else:
+                handler.audit_success(report, c, e, key)
         else:
             if e.responsible not in {r.value for r in Responsible}:
                 report.add(3, "FAILURE_WITHOUT_RESPONSIBLE", contract=c.pk, sequence=e.sequence)
@@ -200,7 +234,8 @@ def _audit_supply_success(report, c, e, key) -> None:
     from .handlers import account_of
     t = c.terms
     gross = t["quantity"] * t["unit_price_cents"]
-    seller, buyer = account_of(c.party_a_kind, c.party_a_id), account_of(c.party_b_kind, c.party_b_id)
+    a_kind, a_id, b_kind, b_id = e.parties or c.current_parties()          # as partes DA OCORRÊNCIA (uma cessão muda as seguintes)
+    seller, buyer = account_of(a_kind, a_id), account_of(b_kind, b_id)
     if find_payment(key, buyer, seller, gross, include_reversed=True) is None:
         report.add(3, "SUPPLY_PAYMENT_MISMATCH", contract=c.pk, sequence=e.sequence)
     sale = MarketTransaction.objects.filter(ledger_key=key).first()
@@ -209,8 +244,8 @@ def _audit_supply_success(report, c, e, key) -> None:
         report.add(3, "SUPPLY_SALE_NOT_RECORDED", contract=c.pk, sequence=e.sequence)
     out = StockMovement.objects.filter(key=f"{key}:out").first()
     inc = StockMovement.objects.filter(key=f"{key}:in").first()
-    if (out is None or (out.company_id, out.delta, out.product.key) != (c.party_a_id, -t["quantity"], t["product"])
-            or inc is None or (inc.company_id, inc.delta, inc.product.key) != (c.party_b_id, t["quantity"], t["product"])):
+    if (out is None or (out.company_id, out.delta, out.product.key) != (a_id, -t["quantity"], t["product"])
+            or inc is None or (inc.company_id, inc.delta, inc.product.key) != (b_id, t["quantity"], t["product"])):
         report.add(3, "SUPPLY_STOCK_MISMATCH", contract=c.pk, sequence=e.sequence)
     elif not (out.explained.get("delivered_quality") == inc.explained.get("delivered_quality") == e.detail.get("delivered_quality")):
         report.add(3, "SUPPLY_QUALITY_NOT_FROZEN", contract=c.pk, sequence=e.sequence)

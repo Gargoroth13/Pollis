@@ -4,6 +4,14 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-26 — P1.08b-prep — Cessão de parte e gancho de fim de contrato (motor de `design/18`; detalhes em `design/18a` §6)
+
+**Por quê.** `10` §13 manda o aluguel acompanhar a venda do imóvel (o contrato continua e os pagamentos passam ao novo proprietário); o motor não tinha como trocar uma parte. Feito como PR separado para a P1.07b (Aluguel) ficar pequena e revisável.
+
+**Entregue (app `contracts`):** `reassign_party` (cessão registrada em `ContractPartyChange` + evento `party_changed`; selo dos termos sobre as partes de origem; partes vigentes guardadas em cada ocorrência); fusão de partes encerra o contrato (`parties_merged`, sem multa); `Handler.on_ended` e `Handler.audit_success`; a execução diária relê as partes depois de travar o contrato; migração `0002` (preenche `sealed_parties`/`parties` dos contratos existentes); auditoria da cadeia de cessões e das partes de cada ocorrência.
+
+**Prova:** 8 testes novos (+1 de concorrência em PG: cessão × execução diária, mutação sem a trava da cessão falha em 3 de 4 rodadas).
+
 ## 2026-10-25 — P1.07a — Propriedade de lotes, leilões, venda e obra com lote (`design/10` FINAL — BOT TEST; lacunas em `design/10a`)
 
 **Decisão de execução.** P1.07 dividido em a (propriedade, leilão, venda, imóvel residencial, obra com lote), b (unidades, residência ativa, Aluguel como handler do motor de `18`, QoL) e c (localização de empresas, Matriz, mudança de uso). Nada saiu do escopo do Bot Test; só a ordem. A P1.07a vem empilhada sobre o PR #22 (contratos).

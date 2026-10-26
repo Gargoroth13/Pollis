@@ -62,6 +62,9 @@ class Contract(models.Model):
     penalty_cents = models.BigIntegerField(default=0)
     max_failures = models.PositiveIntegerField(null=True, blank=True)    # condição (18.6): falhas CONSECUTIVAS até a quebra por inadimplência
     terms_hash = models.CharField(max_length=64)
+    # Partes DE ORIGEM [a_kind, a_id, b_kind, b_id]: o selo dos termos (18.4) cobre quem contratou; `party_*` é a parte VIGENTE, que só muda
+    # por `services.reassign_party` (cessão registrada em `ContractPartyChange`; ex.: venda do imóvel alugado, 10 §13).
+    sealed_parties = models.JSONField(default=list)
     occurrences = models.PositiveIntegerField()                    # nº total de ocorrências previstas
     # --- estado de execução (muda; os termos acima não) ---
     anchor_day = models.IntegerField(null=True, blank=True)        # dia da ativação em que a série foi ancorada (calendário derivado)
@@ -94,18 +97,34 @@ class Contract(models.Model):
                    models.Index(fields=["party_a_kind", "party_a_id"], name="contract_party_a"),
                    models.Index(fields=["party_b_kind", "party_b_id"], name="contract_party_b")]
 
+    def current_parties(self) -> list:
+        return [self.party_a_kind, self.party_a_id, self.party_b_kind, self.party_b_id]
+
+    @classmethod
+    def from_db(cls, db, field_names, values, *args, **kwargs):
+        instance = super().from_db(db, field_names, values, *args, **kwargs)
+        instance._loaded_parties = instance.current_parties() if "party_a_id" in instance.__dict__ else None
+        return instance
+
     def frozen_digest(self) -> str:
-        return terms_digest(type=self.type, a_kind=self.party_a_kind, a_id=self.party_a_id, b_kind=self.party_b_kind,
-                            b_id=self.party_b_id, proposed_by=self.proposed_by, terms=self.terms, frequency=self.frequency,
+        a_kind, a_id, b_kind, b_id = self.sealed_parties or self.current_parties()
+        return terms_digest(type=self.type, a_kind=a_kind, a_id=a_id, b_kind=b_kind,
+                            b_id=b_id, proposed_by=self.proposed_by, terms=self.terms, frequency=self.frequency,
                             starts_on=self.starts_on, ends_on=self.ends_on, penalty_cents=self.penalty_cents,
                             max_failures=self.max_failures)
 
     def save(self, *args, **kwargs):
         if self._state.adding:
+            self.sealed_parties = self.sealed_parties or self.current_parties()
             self.terms_hash = self.terms_hash or self.frozen_digest()
-        elif self.terms_hash != self.frozen_digest():
-            raise ContractsImmutableError("os termos do contrato são congelados (18.4)")
+        else:
+            if self.terms_hash != self.frozen_digest():
+                raise ContractsImmutableError("os termos do contrato são congelados (18.4)")
+            loaded = getattr(self, "_loaded_parties", None)
+            if loaded is not None and loaded != self.current_parties() and not getattr(self, "_party_change_allowed", False):
+                raise ContractsImmutableError("a parte vigente só muda por cessão registrada (`reassign_party`)")
         super().save(*args, **kwargs)
+        self._loaded_parties = self.current_parties()
 
     def delete(self, *args, **kwargs):
         raise ContractsImmutableError("contratos não são apagados (18.9: o histórico permanece)")
@@ -136,6 +155,25 @@ class ContractEvent(_Immutable):
         ]
 
 
+class ContractPartyChange(_Immutable):
+    """Cessão da posição de uma parte (18.11 histórico): quem saiu, quem entrou, quando e por quê. Cadeia contínua por contrato."""
+
+    contract = models.ForeignKey(Contract, on_delete=models.PROTECT, related_name="party_changes")
+    seq = models.PositiveIntegerField()
+    side = models.CharField(max_length=1, choices=_choices(Side))
+    from_kind = models.CharField(max_length=8, choices=_choices(PartyKind))
+    from_id = models.BigIntegerField()
+    to_kind = models.CharField(max_length=8, choices=_choices(PartyKind))
+    to_id = models.BigIntegerField()
+    at = models.BigIntegerField()
+    reason = models.CharField(max_length=40)
+    ref = models.CharField(max_length=60, blank=True, default="")
+
+    class Meta:
+        ordering = ["contract_id", "seq"]
+        constraints = [models.UniqueConstraint(fields=["contract", "seq"], name="contract_party_change_seq_unique")]
+
+
 class ContractExecution(_Immutable):
     """Uma ocorrência (18.5) com seu resultado auditável. Única por (contrato, sequência): idempotência da execução automática."""
 
@@ -150,6 +188,7 @@ class ContractExecution(_Immutable):
     pending_cents = models.BigIntegerField(null=True, blank=True)
     ledger_key = models.CharField(max_length=200, blank=True, default="")
     detail = models.JSONField(default=dict)
+    parties = models.JSONField(default=list)               # [a_kind, a_id, b_kind, b_id] VIGENTES na ocorrência (uma cessão muda os seguintes)
 
     class Meta:
         ordering = ["contract_id", "sequence"]
