@@ -60,6 +60,34 @@ def unregister_completion_hook(name: str) -> None:   # para testes
     _completion_hooks.pop(name, None)
 
 
+StartValidator = Callable[[int, int, str, Any], Optional[ActionResult]]
+StartHook = Callable[[ConstructionJob, Any], None]
+_start_validators: Dict[str, StartValidator] = {}
+_start_hooks: Dict[str, StartHook] = {}
+
+
+def register_start_validator(name: str, fn: StartValidator) -> None:
+    """Imóveis (P1.07) valida o lote da obra (`fn(player_id, company_id, project_key, lot_id)`: recusa ou None). Só LÊ."""
+    if name in _start_validators:
+        raise ValueError(f"Validador de início de obra duplicado: {name}")
+    _start_validators[name] = fn
+
+
+def unregister_start_validator(name: str) -> None:   # para testes
+    _start_validators.pop(name, None)
+
+
+def register_start_hook(name: str, fn: StartHook) -> None:
+    """Imóveis (P1.07) liga a obra recém-criada ao lote (`fn(job, lot_id)`), na MESMA transação de `start_construction`."""
+    if name in _start_hooks:
+        raise ValueError(f"Hook de início de obra duplicado: {name}")
+    _start_hooks[name] = fn
+
+
+def unregister_start_hook(name: str) -> None:        # para testes
+    _start_hooks.pop(name, None)
+
+
 def active_job(company_id: int) -> Optional[ConstructionJob]:
     return ConstructionJob.objects.filter(company_id=company_id, status=ProjectStatus.ACTIVE.value).first()
 
@@ -92,8 +120,8 @@ def projects() -> List[Dict[str, Any]]:
 
 # --- iniciar a obra -----------------------------------------------------------------------------------------------------
 
-def start_refusal(player_id: int, company_id: Any, project_key: Any) -> Optional[ActionResult]:
-    """Recusas que só LEEM (a execução usa as mesmas)."""
+def start_refusal(player_id: int, company_id: Any, project_key: Any, lot_id: Any = None) -> Optional[ActionResult]:
+    """Recusas que só LEEM (a execução usa as mesmas). `lot_id` (opcional): o lote da obra, validado por Imóveis (P1.07)."""
     if isinstance(company_id, bool) or not isinstance(company_id, int) or not -_INT64 <= company_id < _INT64:
         return _refuse("INVALID_PARAMS", company=repr(company_id)[:40])
     company = Company.objects.filter(pk=company_id).first()
@@ -113,13 +141,22 @@ def start_refusal(player_id: int, company_id: Any, project_key: Any) -> Optional
     current = active_job(company_id)
     if current is not None:
         return _refuse("CONSTRUCTION_ACTIVE", project=current.project, progress=str(current.progress))
+    if lot_id is not None:
+        if not _start_validators:
+            return _refuse("LOT_NOT_SUPPORTED", why="o sistema de Imóveis não está ativo")
+        for name in sorted(_start_validators):
+            refusal = _start_validators[name](player_id, company_id, project_key, lot_id)
+            if refusal is not None:
+                return refusal
     return None
 
 
-def start_construction(player_id: int, company_id: Any, project_key: Any) -> ActionResult:
+def start_construction(player_id: int, company_id: Any, project_key: Any, lot_id: Any = None) -> ActionResult:
     """
-    O Dono escolhe e inicia a obra (02 §12). Recusas: PLAYER_NOT_FOUND, INVALID_PARAMS, COMPANY_NOT_FOUND, NOT_OWNER,
-    COMPANY_TYPE_CANNOT_BUILD, UNKNOWN_PROJECT, STARS_TOO_LOW, CONSTRUCTION_ACTIVE.
+    O Dono escolhe e inicia a obra (02 §12). `lot_id` opcional: com ele a obra tem lote (10 §5, §28) e a conclusão gera o imóvel;
+    sem ele a obra é a "obra sem lote" do P1.04e (lacuna registrada: não gera imóvel). Recusas: PLAYER_NOT_FOUND, INVALID_PARAMS,
+    COMPANY_NOT_FOUND, NOT_OWNER, COMPANY_TYPE_CANNOT_BUILD, UNKNOWN_PROJECT, STARS_TOO_LOW, CONSTRUCTION_ACTIVE, LOT_NOT_SUPPORTED
+    e as do lote (Imóveis).
     """
     if not Player.objects.filter(pk=player_id).exists():
         return _refuse("PLAYER_NOT_FOUND", player=player_id)
@@ -127,16 +164,19 @@ def start_construction(player_id: int, company_id: Any, project_key: Any) -> Act
         Player.objects.select_for_update().filter(pk=player_id).first()                      # protocolo: jogador → empresa
         if isinstance(company_id, int) and not isinstance(company_id, bool) and -_INT64 <= company_id < _INT64:
             Company.objects.select_for_update().filter(pk=company_id).first()
-        refusal = start_refusal(player_id, company_id, project_key)
+        refusal = start_refusal(player_id, company_id, project_key, lot_id)
         if refusal is not None:
             return refusal
         now = game_clock.now()
         sequence = ConstructionJob.objects.filter(company_id=company_id).count() + 1
         job = ConstructionJob.objects.create(company_id=company_id, sequence=sequence, project=project_key,
                                              status=ProjectStatus.ACTIVE.value, progress=0, started_at=now, actor=player_id)
+        if lot_id is not None:
+            for name in sorted(_start_hooks):
+                _start_hooks[name](job, lot_id)
         project = params.CONSTRUCTION_PROJECTS[project_key]
         return ActionResult(True, "OK", {"job": job.pk, "company": company_id, "project": project_key, "name": project.name,
-                                         "sequence": sequence, "work_units": project.work_units})
+                                         "sequence": sequence, "work_units": project.work_units, "lot": lot_id})
 
 
 def status_of(company_id: int, now: Optional[int] = None) -> Dict[str, Any]:

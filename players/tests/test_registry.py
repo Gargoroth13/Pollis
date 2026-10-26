@@ -33,10 +33,11 @@ class DescriptorContractTests(TravelTestCase):
 
     def test_the_actions_are_registered_with_stable_ids(self):
         self.assertEqual([d.id for d in registry.list_descriptors()],
-                         ["accept_contract", "apply_position", "approve_application", "auto_consumption", "break_contract", "change_school",
-                          "close_position", "consume", "decline_contract", "dismiss_employee", "found_company", "fund_company", "leisure",
-                          "open_position", "propose_contract", "reject_application", "resign", "send_item", "set_production",
-                          "start_construction", "study", "travel", "withdraw_application", "withdraw_contract", "work"])
+                         ["accept_contract", "apply_position", "approve_application", "auto_consumption", "bid_auction", "break_contract", "buy_property",
+                          "change_school", "close_position", "consume", "decline_contract", "dismiss_employee", "found_company", "fund_company",
+                          "leisure", "list_property", "open_position", "propose_contract", "reject_application", "resign", "send_item",
+                          "set_production", "start_construction", "study", "travel", "unlist_property", "withdraw_application",
+                          "withdraw_contract", "work"])
         self.assertEqual({d.id: d.name for d in registry.list_descriptors()},
                          {"work": "Trabalhar", "study": "Estudar", "leisure": "Lazer", "travel": "Viajar",
                           "consume": "Consumir", "send_item": "Enviar item pelo Correio",
@@ -48,7 +49,9 @@ class DescriptorContractTests(TravelTestCase):
                           "resign": "Pedir demissão", "change_school": "Trocar de escola", "set_production": "Definir produção da empresa",
                           "start_construction": "Iniciar obra da Construtora", "propose_contract": "Propor contrato",
                           "accept_contract": "Aceitar contrato", "decline_contract": "Recusar proposta de contrato",
-                          "withdraw_contract": "Retirar proposta de contrato", "break_contract": "Quebrar contrato"})
+                          "withdraw_contract": "Retirar proposta de contrato", "break_contract": "Quebrar contrato",
+                          "bid_auction": "Dar lance em leilão", "list_property": "Anunciar imóvel à venda",
+                          "unlist_property": "Retirar anúncio de imóvel", "buy_property": "Comprar imóvel anunciado"})
 
     def test_travel_is_not_added_to_the_energy_action_enum(self):
         """Viajar não tem custo de Energia (04 §2.2): o enum Action continua com as 3 ações de custo fixo."""
@@ -57,7 +60,8 @@ class DescriptorContractTests(TravelTestCase):
             "travel", "consume", "send_item", "auto_consumption", "found_company", "fund_company", "open_position",
             "close_position", "apply_position", "withdraw_application", "approve_application", "reject_application",
             "dismiss_employee", "resign", "set_production", "start_construction", "change_school", "propose_contract",
-        "accept_contract", "decline_contract", "withdraw_contract", "break_contract"})
+        "accept_contract", "decline_contract", "withdraw_contract", "break_contract", "bid_auction", "list_property", "unlist_property",
+            "buy_property"})
 
     def test_every_contract_field_is_present(self):
         for d in registry.list_descriptors():
@@ -79,10 +83,11 @@ class DescriptorContractTests(TravelTestCase):
 
     def test_availability_lists_actions_in_a_deterministic_id_order(self):
         self.assertEqual([a.action_id for a in registry.available_actions(self.player.pk)],
-                         ["accept_contract", "apply_position", "approve_application", "auto_consumption", "break_contract", "change_school",
-                          "close_position", "consume", "decline_contract", "dismiss_employee", "found_company", "fund_company", "leisure",
-                          "open_position", "propose_contract", "reject_application", "resign", "send_item", "set_production",
-                          "start_construction", "study", "travel", "withdraw_application", "withdraw_contract", "work"])
+                         ["accept_contract", "apply_position", "approve_application", "auto_consumption", "bid_auction", "break_contract", "buy_property",
+                          "change_school", "close_position", "consume", "decline_contract", "dismiss_employee", "found_company", "fund_company",
+                          "leisure", "list_property", "open_position", "propose_contract", "reject_application", "resign", "send_item",
+                          "set_production", "start_construction", "study", "travel", "unlist_property", "withdraw_application",
+                          "withdraw_contract", "work"])
 
     def test_descriptors_are_immutable(self):
         with self.assertRaises(Exception):
