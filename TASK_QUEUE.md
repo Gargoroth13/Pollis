@@ -278,7 +278,7 @@ Implementar mercado e estatísticas de `17`.
 Implementar `10`, em etapas (lacunas em `design/10a`):
 
 - **[x] P1.07a — Propriedade, leilões, venda e obra com lote** (branch `dev/p1.07a-propriedade-leiloes`, PR empilhado sobre o #22; `CHANGELOG_DEV.md`, 2026-10-25).
-- **[ ] P1.07b — Unidades, residência ativa, Aluguel e QoL**: ocupação por unidade, residência ativa (`05`), Aluguel como handler `RENT` do motor de contratos (P1.08b), venda de imóvel alugado mantendo o contrato, QoL estrutural, moradia inicial (decisão G9 da `10a`).
+- **[x] P1.07b — Unidades, residência ativa, Aluguel e QoL** (branch `dev/p1.07b-moradia-aluguel`, PR empilhado sobre o #24; `CHANGELOG_DEV.md`, 2026-10-26; lacunas H1–H9 em `design/10a` §7). G9 resolvida pelo texto do design.
 - **[ ] P1.07c — Empresas e Matriz**: localização de empresas, tipos comercial/industrial (G5), terreno da Matriz (`production.register_site_provider`), mudança de uso (G6).
 
 ## [~] P1.08 — Contratos
@@ -288,7 +288,7 @@ Implementar `10`, em etapas (lacunas em `design/10a`):
 Implementar `18`.
 
 - **[x] P1.08a — Motor, Fornecimento e Empréstimo** (branch `dev/p1.08a-contratos`, PR empilhado sobre o #21; `CHANGELOG_DEV.md`, 2026-10-23; lacunas em `design/18a`).
-- **[~] P1.08b — Aluguel** (handler; chega com P1.07b) e contratos de obra da Construtora. **Preparação feita:** cessão de parte e gancho de fim de contrato (`design/18a` §6; branch `dev/p1.08b-cessao-de-parte`).
+- **[~] P1.08b — Aluguel** **feito** (handler residencial, P1.07b; PR #24 traz a cessão de parte e o gancho de fim de contrato, `design/18a` §6). Restam: aluguel comercial/empresa inquilina (P1.07c) e contratos de obra da Construtora.
 - **[ ] P1.08c — Governamental** (handler; chega com P1.09).
 - **[ ] P1.08d — Fluxos militares A e B** (`18` 18.14; chega com P1.17).
 
@@ -462,9 +462,10 @@ Ajustar arquitetura, recompensa, exploração e memória com base nos dados reai
 
 | Etapa | Pendência | Situação |
 |---|---|---|
-| **P1.07b** (próxima) | G9 — moradia inicial (lote OCUPADO sem `Building`: manter, ou criar `Building` inicial) — `design/10a` | Provisória: parte-se de "manter" (sem mecânica nova); a resposta pode mudar a migração dos dados iniciais |
-| P1.07b | Quais residências contam na capacidade de escola (`03a` decisão 1) | Provisória (provedor de residências só é ligado em P1.06d) |
-| P1.07c | G5 tipos comercial/industrial e estrela → nível; G6 mudança de uso e aprovador | **Bloqueia P1.07c**, não a P1.07b |
+| P1.07b (feita) | G9 — moradia inicial | **Resolvida** pelo texto do design (`04` §24, `10` §14): ausência de residência ativa |
+| P1.07b (feita) | H8 — voltar à moradia inicial por escolha (`set_residence` nulo) | Provisória: permitido; GD pode vetar |
+| P1.06d | Quais residências contam na capacidade de escola (`03a` decisão 1) | Provisória (provedor de residências só é ligado em P1.06d) |
+| **P1.07c** (próxima) | G5 tipos comercial/industrial e estrela → nível; G6 mudança de uso e aprovador | **Bloqueia P1.07c** (sem tipos comercial/industrial não há onde localizar empresas) |
 | Antes de ligar os bots | G1 — quem abre leilões e quando; G2 — arrematante sem fundos | Provisória (só ferramenta de sistema; invalida) |
 | P1.09 (Orçamento) | Destino/natureza do custo fixo de troca de produção (`24`); IR 5% até haver leis | Provisória |
 | P1.06b–d (Escolas) | 13 decisões de `03a` (professores, mensalidade, diplomas, capacidade) | Provisória; P1.06b só começa com as decisões 3–6 |

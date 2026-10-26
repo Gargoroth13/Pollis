@@ -10,11 +10,19 @@ Auditoria dos Imóveis (design/10). Só LÊ. Invariantes (numeração própria d
   4  anúncio: vendido ⇒ comprador, título e `SALE` pelo preço; aberto ⇒ o vendedor ainda é o dono e não há obra ativa no lote
   5  imóvel: um por lote, unidades/QoL do tipo, lote OCUPADO, dono não é o governo; obra concluída ⇔ imóvel; obra ativa ⇒ obra da
      Construtora ainda ativa, dona do lote, lote vazio
+  6  unidades: cada imóvel tem exatamente `units` unidades, índices 1..n
+  7  residência ativa: uma unidade por jogador e um jogador por unidade; o morador tem direito à unidade (proprietário jogador com a unidade
+     sem aluguel em vigor, ou inquilino de contrato em vigor); a moradia inicial é a ausência de linha
+  8  aluguel: cada `Tenancy` aponta um contrato `rent` cujos termos (lote, unidade) conferem e cujo inquilino é o registrado; no máximo um
+     contrato em vigor por unidade; o locador VIGENTE do contrato em vigor é o proprietário atual do lote (a venda cede o contrato, 10 §13);
+     anúncio de aluguel aberto: dono do lote, unidade livre; alugado: contrato existente com os termos do anúncio
 """
 from __future__ import annotations
 
 from typing import Dict, Optional
 
+from contracts.constants import RUNNING_STATUSES, ContractType
+from contracts.models import Contract
 from companies.models import ConstructionJob
 from companies.constants import ProjectStatus
 from geography.constants import Occupation
@@ -25,7 +33,8 @@ from ledger.models import Account, Entry, Transaction
 
 from . import params
 from .constants import AuctionStatus, ListingStatus, OwnerKind, SiteStatus, TitleReason
-from .models import Auction, Building, ConstructionSite, Listing, LotTitle, TitleEvent
+from .constants import RentListingStatus
+from .models import (ActiveResidence, Auction, Building, ConstructionSite, Listing, LotTitle, RentListing, Tenancy, TitleEvent, Unit)
 
 
 def _payment(key: str, nature: Nature) -> Optional[Entry]:
@@ -41,6 +50,9 @@ def audit_properties() -> AuditReport:
     _auctions(report)
     _listings(report)
     _buildings(report)
+    _units(report)
+    _residences(report)
+    _rent(report)
     return report
 
 
@@ -194,3 +206,66 @@ def _buildings(report: AuditReport) -> None:
             if job.status != ProjectStatus.COMPLETED.value or not Building.objects.filter(lot_id=s.lot_id, job_id=s.job_id).exists():
                 report.add(5, "COMPLETED_SITE_WITHOUT_BUILDING", site=s.pk)
     report.stats["sites"] = ConstructionSite.objects.count()
+
+
+def _units(report: AuditReport) -> None:
+    n = 0
+    for b in Building.objects.order_by("lot_id"):
+        indexes = list(b.unit_rows.order_by("index").values_list("index", flat=True))
+        n += len(indexes)
+        if indexes != list(range(1, b.units + 1)):
+            report.add(6, "UNITS_DO_NOT_MATCH_BUILDING", lot=b.lot_id, units=b.units, rows=len(indexes))
+    report.stats["units"] = n
+
+
+def _residences(report: AuditReport) -> None:
+    from . import housing
+    n = 0
+    for r in ActiveResidence.objects.select_related("unit__building").order_by("player_id"):
+        n += 1
+        lease = housing.running_lease(r.unit_id)
+        if lease is not None:
+            tenancy = Tenancy.objects.get(contract_id=lease.pk)
+            if (tenancy.tenant_kind, tenancy.tenant_id) != (OwnerKind.PLAYER.value, r.player_id):
+                report.add(7, "RESIDENT_NOT_THE_TENANT", player=r.player_id, unit=r.unit_id)
+        else:
+            title = LotTitle.objects.filter(lot_id=r.unit.building.lot_id).first()
+            if title is None or (title.owner_kind, title.owner_id) != (OwnerKind.PLAYER.value, r.player_id):
+                report.add(7, "RESIDENT_WITHOUT_RIGHT", player=r.player_id, unit=r.unit_id)
+    report.stats["residences"] = n
+
+
+def _rent(report: AuditReport) -> None:
+    running = {}
+    n = 0
+    for t in Tenancy.objects.select_related("unit__building").order_by("id"):
+        n += 1
+        c = Contract.objects.filter(pk=t.contract_id).first()
+        if c is None or c.type != ContractType.RENT.value:
+            report.add(8, "TENANCY_WITHOUT_RENT_CONTRACT", contract=t.contract_id)
+            continue
+        if (c.terms.get("lot"), c.terms.get("unit")) != (t.unit.building.lot_id, t.unit.index):
+            report.add(8, "TENANCY_TERMS_MISMATCH", contract=c.pk)
+        if (c.party_b_kind, c.party_b_id) != (t.tenant_kind, t.tenant_id):
+            report.add(8, "TENANCY_TENANT_MISMATCH", contract=c.pk)
+        if c.status in {s.value for s in RUNNING_STATUSES}:
+            if t.unit_id in running:
+                report.add(8, "TWO_RUNNING_LEASES_ON_UNIT", unit=t.unit_id, contracts=[running[t.unit_id], c.pk])
+            running[t.unit_id] = c.pk
+            title = LotTitle.objects.filter(lot_id=t.unit.building.lot_id).first()
+            if title is None or (title.owner_kind, title.owner_id) != (c.party_a_kind, c.party_a_id):
+                report.add(8, "LANDLORD_IS_NOT_THE_OWNER", contract=c.pk, lot=t.unit.building.lot_id)
+    report.stats["tenancies"] = n
+    for li in RentListing.objects.select_related("unit__building").order_by("id"):
+        status = report.enum(RentListingStatus, li.status, "RentListing", "status", li.pk)
+        if status is RentListingStatus.OPEN:
+            title = LotTitle.objects.filter(lot_id=li.unit.building.lot_id).first()
+            if title is None or (title.owner_kind, title.owner_id) != (li.landlord_kind, li.landlord_id):
+                report.add(8, "OPEN_RENT_LISTING_LANDLORD_NOT_OWNER", listing=li.pk)
+            if li.unit_id in running:
+                report.add(8, "OPEN_RENT_LISTING_ON_LEASED_UNIT", listing=li.pk)
+        elif status is RentListingStatus.RENTED:
+            c = Contract.objects.filter(pk=li.contract_id).first() if li.contract_id else None
+            if c is None or c.type != ContractType.RENT.value or c.terms.get("amount_cents") != li.amount_cents or (
+                    c.terms.get("lot"), c.terms.get("unit")) != (li.unit.building.lot_id, li.unit.index):
+                report.add(8, "RENTED_LISTING_WITHOUT_MATCHING_CONTRACT", listing=li.pk)

@@ -22,8 +22,10 @@ class PartyChangeBase(ContractBase):
     def setUp(self):
         super().setUp()
         EndedProbe.ended = []
+        real = handlers.get_handler(ContractType.RENT)               # o aluguel real vive em `properties`: troca pelo tipo de teste e devolve
+        handlers.unregister_type(ContractType.RENT)
         handlers.register_type(EndedProbe())
-        self.addCleanup(handlers.unregister_type, ContractType.RENT)
+        self.addCleanup(lambda: (handlers.unregister_type(ContractType.RENT), real is None or handlers.register_type(real)))
         self.landlord2 = self.found(self.third, "industrial", "Locadora 2", 0)
         self.tenant = {"kind": "player", "id": self.worker.pk}
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 from django.db import models
 from django.db.models import Q
 
-from .constants import AuctionStatus, ListingStatus, OwnerKind, SiteStatus, TitleReason
+from .constants import AuctionStatus, ListingStatus, OwnerKind, RentListingStatus, SiteStatus, TitleReason
 
 
 def _choices(enum_cls):
@@ -172,3 +172,60 @@ class ConstructionSite(models.Model):
     class Meta:
         ordering = ["id"]
         constraints = [models.UniqueConstraint(fields=["lot"], condition=Q(status="active"), name="constructionsite_one_active_per_lot")]
+
+
+class Unit(models.Model):
+    """Unidade residencial independente de um imóvel (10 §6.1): `Building.units` linhas, índices 1..n. Um morador por unidade (casamento não existe ainda)."""
+
+    building = models.ForeignKey(Building, on_delete=models.PROTECT, related_name="unit_rows")
+    index = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["building_id", "index"]
+        constraints = [models.UniqueConstraint(fields=["building", "index"], name="unit_unique_index_in_building")]
+
+
+class ActiveResidence(models.Model):
+    """Residência ativa do jogador (05 §8, 10 §15). Sem linha = moradia inicial garantida, básica e neutra em QoL (04 §24, 10 §14)."""
+
+    player = models.OneToOneField("players.Player", on_delete=models.PROTECT, related_name="active_residence")
+    unit = models.OneToOneField(Unit, on_delete=models.PROTECT, related_name="resident")
+    since = models.BigIntegerField()
+
+
+class Tenancy(models.Model):
+    """Liga um contrato `rent` do motor de `18` à unidade alugada (10 §10). O estado (em vigor/encerrado) é o do contrato; esta linha não muda."""
+
+    contract_id = models.BigIntegerField(unique=True)
+    unit = models.ForeignKey(Unit, on_delete=models.PROTECT, related_name="tenancies")
+    tenant_kind = models.CharField(max_length=10, choices=_choices(OwnerKind))
+    tenant_id = models.BigIntegerField()
+    created_at = models.BigIntegerField()
+
+    class Meta:
+        ordering = ["id"]
+        indexes = [models.Index(fields=["tenant_kind", "tenant_id"], name="tenancy_tenant")]
+
+
+class RentListing(models.Model):
+    """Anúncio de unidade para aluguel (10 §9: proprietário → anúncio → jogador interessado → contrato). O inquilino escolhe as datas."""
+
+    unit = models.ForeignKey(Unit, on_delete=models.PROTECT, related_name="rent_listings")
+    landlord_kind = models.CharField(max_length=10, choices=_choices(OwnerKind))
+    landlord_id = models.BigIntegerField()
+    amount_cents = models.BigIntegerField()
+    frequency = models.CharField(max_length=8)
+    penalty_cents = models.BigIntegerField(default=0)
+    max_failures = models.PositiveIntegerField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=_choices(RentListingStatus), default=RentListingStatus.OPEN.value)
+    listed_at = models.BigIntegerField()
+    closed_at = models.BigIntegerField(null=True, blank=True)
+    contract_id = models.BigIntegerField(null=True, blank=True)
+    close_reason = models.CharField(max_length=30, blank=True, default="")
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(fields=["unit"], condition=Q(status="open"), name="rentlisting_one_open_per_unit"),
+            models.CheckConstraint(condition=Q(amount_cents__gt=0, penalty_cents__gte=0), name="rentlisting_amounts_valid"),
+        ]

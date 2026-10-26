@@ -31,24 +31,26 @@ from market.recording import party_account_id
 from players.models import Player
 from players.services import ActionResult
 
-from . import params
+from . import housing, params, rent
+from players import qol
 from .constants import AuctionStatus, ListingStatus, OwnerKind, SiteStatus, TitleReason
 from .models import Auction, AuctionBid, Building, ConstructionSite, Listing, LotTitle, TitleEvent
+
+from . import common
+from .common import (PRIVATE_KINDS, acting_player, is_int as _is_int, lock as _lock, parse_party, positive as _positive,
+                     refuse as _refuse)
+from .common import account as _account
+from .common import authority as _authority
+from .titles import owner_of_lot
 
 TICK_NAME = "properties_close_auctions"
 HOOK_NAME = "properties"
 BID_KEYS = frozenset({"auction", "bidder", "amount"})
 LIST_KEYS = frozenset({"lot", "owner", "price"})
 LISTING_KEYS = frozenset({"listing", "party"})
-_INT64 = 2 ** 63
-PRIVATE_KINDS = (OwnerKind.PLAYER, OwnerKind.COMPANY)
 
 Eligibility = Callable[[OwnerKind, int, Lot], Optional[ActionResult]]
 _eligibility: Dict[str, Eligibility] = {}
-
-
-def _refuse(code: str, **detail) -> ActionResult:
-    return ActionResult(False, code, detail)
 
 
 def register_eligibility(name: str, fn: Eligibility) -> None:
@@ -62,65 +64,12 @@ def unregister_eligibility(name: str) -> None:       # para testes
     _eligibility.pop(name, None)
 
 
-# --- identidade e autoridade ---------------------------------------------------------------------------------------------
-
-def _is_int(v: Any) -> bool:
-    return isinstance(v, int) and not isinstance(v, bool) and -_INT64 <= v < _INT64
-
-
-def _positive(v: Any) -> bool:
-    return _is_int(v) and v > 0
-
-
-def parse_party(value: Any) -> Union[Tuple[OwnerKind, int], ActionResult]:
-    if not isinstance(value, dict) or set(value) != {"kind", "id"} or not _positive(value["id"]):
-        return _refuse("INVALID_PARTY", party=repr(value)[:60])
-    try:
-        kind = OwnerKind(value["kind"])
-    except ValueError:
-        return _refuse("INVALID_PARTY", party=repr(value)[:60])
-    if kind not in PRIVATE_KINDS:
-        return _refuse("INVALID_PARTY", party=repr(value)[:60])
-    return kind, value["id"]
-
-
-def _authority(actor_id: int, kind: OwnerKind, entity_id: int) -> Optional[ActionResult]:
-    if kind is OwnerKind.PLAYER:
-        if entity_id != actor_id:
-            return _refuse("NOT_PARTY_REPRESENTATIVE", party=[kind.value, entity_id])
-        return None
-    if not Company.objects.filter(pk=entity_id).exists():
-        return _refuse("COMPANY_NOT_FOUND", company=entity_id)
-    return None if company_services.owner_of(entity_id) == actor_id else _refuse("NOT_OWNER", company=entity_id)
-
-
-def _account(kind: OwnerKind, entity_id: int) -> Optional[int]:
-    return party_account_id(MarketPartyKind(kind.value), entity_id)
-
-
-def _lock(actor_id: int, parties: List[Tuple[OwnerKind, int]]) -> None:
-    """Jogador(es) crescente → empresa(s) crescente."""
-    player_ids = sorted({actor_id} | {i for k, i in parties if k is OwnerKind.PLAYER})
-    list(Player.objects.select_for_update().filter(pk__in=player_ids).order_by("pk"))
-    company_ids = sorted({i for k, i in parties if k is OwnerKind.COMPANY})
-    if company_ids:
-        list(Company.objects.select_for_update().filter(pk__in=company_ids).order_by("pk"))
-
-
 def _eligibility_refusal(kind: OwnerKind, entity_id: int, lot: Lot) -> Optional[ActionResult]:
     for name in sorted(_eligibility):
         res = _eligibility[name](kind, entity_id, lot)
         if res is not None:
             return res
     return None
-
-
-# --- propriedade ---------------------------------------------------------------------------------------------------------
-
-def owner_of_lot(lot_id: int) -> Tuple[OwnerKind, Optional[int]]:
-    """Dono atual do lote; sem título = governo (10 §2)."""
-    row = LotTitle.objects.filter(lot_id=lot_id).values_list("owner_kind", "owner_id").first()
-    return (OwnerKind.GOVERNMENT, None) if row is None else (OwnerKind(row[0]), row[1])
 
 
 def _record_title(lot: Lot, to_kind: OwnerKind, to_id: int, reason: TitleReason, price: int, ledger_key: str, ref_kind: str,
@@ -461,11 +410,12 @@ def buy_property(actor_id: Any, listing_id: Any, buyer: Any) -> ActionResult:
         if not paid.ok:
             return paid
         _record_title(lot, kind, entity_id, TitleReason.SALE, listing.price_cents, key, "listing", listing.pk, now)
+        carried = rent.on_property_sold(lot, (kind, entity_id), "property_sale", f"listing:{listing.pk}", now)    # 10 §13
         listing.status, listing.closed_at, listing.buyer_kind, listing.buyer_id, listing.ledger_key = (
             ListingStatus.SOLD.value, now, kind.value, entity_id, key)
         listing.save(update_fields=["status", "closed_at", "buyer_kind", "buyer_id", "ledger_key"])
         return ActionResult(True, "OK", {"listing": listing.pk, "lot": lot.pk, "price_cents": listing.price_cents,
-                                         "buyer": [kind.value, entity_id], "seller": [listing.seller_kind, listing.seller_id]})
+                                         "buyer": [kind.value, entity_id], "seller": [listing.seller_kind, listing.seller_id], **carried})
 
 
 # --- obra com lote (10 §5, §28) ----------------------------------------------------------------------------------------------
@@ -503,8 +453,9 @@ def _completion_hook(job) -> None:
         return
     Lot.objects.select_for_update().filter(pk=site.lot_id).first()
     kind = params.BUILDING_TYPES[job.project]
-    Building.objects.create(lot_id=site.lot_id, kind=kind.key, units=kind.units, qol_bonus=kind.qol_bonus, builder_company_id=job.company_id,
-                            job_id=job.pk, completed_at=job.completed_at)
+    building = Building.objects.create(lot_id=site.lot_id, kind=kind.key, units=kind.units, qol_bonus=kind.qol_bonus,
+                                       builder_company_id=job.company_id, job_id=job.pk, completed_at=job.completed_at)
+    housing.create_units(building)                                   # 10 §6.1: as unidades independentes do imóvel
     Lot.objects.filter(pk=site.lot_id).update(occupation=Occupation.OCCUPIED.value)
     site.status, site.completed_at = SiteStatus.COMPLETED.value, job.completed_at
     site.save(update_fields=["status", "completed_at"])
@@ -515,6 +466,8 @@ def _close_tick(tick, ctx) -> None:
 
 
 def register() -> None:
+    rent.register()                                                  # tipo `rent` do motor de contratos (10 §9-13)
+    qol.register_qol_base_provider(housing.PROVIDER_NAME, housing.qol_bonus)    # 10 §7: o imóvel da residência ativa soma à QoL Base
     construction.register_start_validator(HOOK_NAME, _start_validator)
     construction.register_start_hook(HOOK_NAME, _start_hook)
     construction.register_completion_hook(HOOK_NAME, _completion_hook)
@@ -547,6 +500,7 @@ def lot_view(lot_id: int) -> Optional[Dict[str, Any]]:
     site = ConstructionSite.objects.filter(lot=lot, status=SiteStatus.ACTIVE.value).first()
     return {"lot": lot.pk, "category": lot.category, "occupation": lot.occupation, "owner": [kind.value, owner],
             "building": None if building is None else {"kind": building.kind, "units": building.units, "qol_bonus": str(building.qol_bonus)},
+            "units": [] if building is None else list(building.unit_rows.order_by("index").values_list("pk", flat=True)),
             "open_auction": None if auction is None else auction.pk,
             "open_listing": None if listing is None else {"id": listing.pk, "price_cents": listing.price_cents},
             "active_site": None if site is None else {"job": site.job_id, "project": site.project},
