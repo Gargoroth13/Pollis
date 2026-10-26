@@ -269,13 +269,17 @@ Implementar mercado e estatísticas de `17`.
 - **[ ] P1.06c — Universidade e diplomas** (`03` §17-§23): cursos, requisitos, matrícula única, estudo, abandono, diploma. Decisões 9–11 da `03a`.
 - **[ ] P1.06d — Ligações**: capacidade ← Imóveis (P1.07), financiamento público ← Orçamento (P1.09), compra de materiais ← Mercado (P1.05b), construção de escolas.
 
-## [ ] P1.07 — Imóveis e zonas
+## [~] P1.07 — Imóveis e zonas
 
 > **Herdado do P0.06/P0.06.1:** a localização do jogador (lote atual) e a viagem já existem (`travel`). Este bloco precisa do vínculo de **residência/moradia** (`05` "Residência ativa"), distinto da localização, de que dependem moradia/QoL estrutural. Ver `CHANGELOG_DEV.md` (2026-10-06).
 
 > **Pendência herdada do P1.01:** `GAP_FINISHINGS_UNDEFINED` (Acabamentos da Construtora; `CHANGELOG_DEV.md`, 2026-10-11).
 
-Implementar `10`.
+Implementar `10`, em etapas (lacunas em `design/10a`):
+
+- **[x] P1.07a — Propriedade, leilões, venda e obra com lote** (branch `dev/p1.07a-propriedade-leiloes`, PR empilhado sobre o #22; `CHANGELOG_DEV.md`, 2026-10-25).
+- **[ ] P1.07b — Unidades, residência ativa, Aluguel e QoL**: ocupação por unidade, residência ativa (`05`), Aluguel como handler `RENT` do motor de contratos (P1.08b), venda de imóvel alugado mantendo o contrato, QoL estrutural, moradia inicial (decisão G9 da `10a`).
+- **[ ] P1.07c — Empresas e Matriz**: localização de empresas, tipos comercial/industrial (G5), terreno da Matriz (`production.register_site_provider`), mudança de uso (G6).
 
 ## [~] P1.08 — Contratos
 
@@ -448,3 +452,22 @@ Ajustar arquitetura, recompensa, exploração e memória com base nos dados reai
 - NPCs econômicos;
 - sistemas judiciais completos;
 - outras extensões explicitamente marcadas como FUTURO nos documentos.
+
+---
+
+## Decisões pendentes do Game Director — organizadas por etapa (2026-10-25)
+
+> Organizadas a pedido do GD (2026-10-24). **Bloqueia** = a próxima implementação da etapa não pode ser concluída sem a resposta;
+> **Provisória** = segue com `[PROV]`/solução técnica registrada, sem comprometer a correção. Nada aqui reduz o escopo do Bot Test.
+
+| Etapa | Pendência | Situação |
+|---|---|---|
+| **P1.07b** (próxima) | G9 — moradia inicial (lote OCUPADO sem `Building`: manter, ou criar `Building` inicial) — `design/10a` | Provisória: parte-se de "manter" (sem mecânica nova); a resposta pode mudar a migração dos dados iniciais |
+| P1.07b | Quais residências contam na capacidade de escola (`03a` decisão 1) | Provisória (provedor de residências só é ligado em P1.06d) |
+| P1.07c | G5 tipos comercial/industrial e estrela → nível; G6 mudança de uso e aprovador | **Bloqueia P1.07c**, não a P1.07b |
+| Antes de ligar os bots | G1 — quem abre leilões e quando; G2 — arrematante sem fundos | Provisória (só ferramenta de sistema; invalida) |
+| P1.09 (Orçamento) | Destino/natureza do custo fixo de troca de produção (`24`); IR 5% até haver leis | Provisória |
+| P1.06b–d (Escolas) | 13 decisões de `03a` (professores, mensalidade, diplomas, capacidade) | Provisória; P1.06b só começa com as decisões 3–6 |
+| P1.05b / P1.04f | Mecanismo do Mercado (`17a`, lacunas 1–6); permissões de compra entre empresas de Serviços/Construtora/Financeira | **Bloqueiam** P1.05b e P1.04f (seguem paradas) |
+| Empresas (geral) | Unidade do salário (por Trabalho × por dia); mapeamentos posição → skill/tipo `[PROV]`; lacunas 1–8 de progressão de estrelas (`02a`); capacidade/qualidade/curva de estoque `[PROV]`; fórmulas de Engenheiro/Advogado e alvo do Advogado; Dono se contratar; obra sem lote/cancelar obra; materiais de construção | Provisórias |
+| P1.12 (Leis) | Gancho de lei antitruste; elegibilidade de lance (`register_eligibility`); imposto de propriedade | Provisórias |

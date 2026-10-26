@@ -20,7 +20,7 @@ Produção (P1.04c; `production`): só o Dono escolhe/troca o produto.
   set_production        Definir produção     alvo = {"company": id, "product": chave do catálogo}
 
 Obra da Construtora (P1.04e; `construction`): só o Dono escolhe e inicia a obra.
-  start_construction    Iniciar obra         alvo = {"company": id, "project": chave do projeto}
+  start_construction    Iniciar obra         alvo = {"company": id, "project": chave do projeto, ["lot": id]}
 """
 from __future__ import annotations
 
@@ -202,20 +202,26 @@ def _register_production() -> None:
 
 START_CONSTRUCTION_ID = "start_construction"
 START_CONSTRUCTION_KEYS = frozenset({"company", "project"})
+START_CONSTRUCTION_OPTIONAL = frozenset({"lot"})             # P1.07: lote da obra (10 §5, §28)
+
+
+def _start_params(target) -> Optional[dict]:
+    ok = isinstance(target, dict) and START_CONSTRUCTION_KEYS <= set(target) <= START_CONSTRUCTION_KEYS | START_CONSTRUCTION_OPTIONAL
+    return None if not ok else {"lot": None, **target}
 
 
 def _start_construction_check(player, now, bal, target) -> Optional[ActionResult]:
     if target is None:
         return None
-    p = _params(target, START_CONSTRUCTION_KEYS)
+    p = _start_params(target)
     return _invalid(START_CONSTRUCTION_ID, START_CONSTRUCTION_KEYS, target) if p is None else construction.start_refusal(
-        player.pk, p["company"], p["project"])
+        player.pk, p["company"], p["project"], p["lot"])
 
 
 def _start_construction_execute(player_id: int, target: Any) -> ActionResult:
-    p = _params(target, START_CONSTRUCTION_KEYS)
+    p = _start_params(target)
     return _invalid(START_CONSTRUCTION_ID, START_CONSTRUCTION_KEYS, target) if p is None else construction.start_construction(
-        player_id, p["company"], p["project"])
+        player_id, p["company"], p["project"], p["lot"])
 
 
 def _register_construction() -> None:
@@ -223,7 +229,8 @@ def _register_construction() -> None:
         ActionDescriptor(
             id=START_CONSTRUCTION_ID, name="Iniciar obra da Construtora",
             requirements=("INVALID_PARAMS", "COMPANY_NOT_FOUND", "NOT_OWNER", "COMPANY_TYPE_CANNOT_BUILD", "UNKNOWN_PROJECT",
-                          "STARS_TOO_LOW", "CONSTRUCTION_ACTIVE"),
+                          "STARS_TOO_LOW", "CONSTRUCTION_ACTIVE", "LOT_NOT_SUPPORTED", "LOT_NOT_FOUND", "LOT_NOT_OWNED_BY_BUILDER",
+                          "LOT_OCCUPIED", "LOT_USE_NOT_ALLOWED", "LOT_RESERVED"),
             cost=(), target=TargetSpec(TARGET_PARAMS, required=True), effects=("construction_started",)),
         check=_start_construction_check, execute=_start_construction_execute, preview=_no_preview)
 

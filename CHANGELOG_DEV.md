@@ -4,6 +4,21 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-25 — P1.07a — Propriedade de lotes, leilões, venda e obra com lote (`design/10` FINAL — BOT TEST; lacunas em `design/10a`)
+
+**Decisão de execução.** P1.07 dividido em a (propriedade, leilão, venda, imóvel residencial, obra com lote), b (unidades, residência ativa, Aluguel como handler do motor de `18`, QoL) e c (localização de empresas, Matriz, mudança de uso). Nada saiu do escopo do Bot Test; só a ordem. A P1.07a vem empilhada sobre o PR #22 (contratos).
+
+**Entregue (app `properties`):**
+- `LotTitle` (dono atual; sem linha = governo), `TitleEvent` (histórico imutável e contínuo, com preço e chave do lançamento), `Auction`/`AuctionBid` (lances imutáveis), `Listing`, `Building`, `ConstructionSite`.
+- Leilão: lance mínimo e crescente, sem reserva de fundos (conferido no lance e no encerramento), extensão por lance na janela final, encerramento no tick de 10 minutos (idempotente), `AUCTION_PAYMENT` ao Município do lote, título no mesmo ato; sem lances = `UNSOLD`; sem fundos = `INVALIDATED` (lacuna G2).
+- Venda de imóvel: `SALE` sem imposto (`24` §24.7) + título; empresa age pelo Dono; recusada durante obra ativa.
+- Obra com lote: `companies.construction` ganhou `lot` opcional com validador/hook de início (`register_start_validator/hook`); Imóveis valida dono = a própria Construtora, lote vazio, zoneamento permite moradia, sem anúncio/obra; a conclusão cria o `Building` e ocupa o lote na mesma transação do Trabalho.
+- Ações no registro: `bid_auction`, `list_property`, `unlist_property`, `buy_property`; `lot` em `start_construction`. Abrir leilão é ferramenta do sistema (`open_auctions`), não ação de jogador (lacuna G1).
+- `audit_properties` (invariantes 1–5) e `manage.py audit_properties [--json]`; `wipe_world` dos testes limpa as tabelas novas.
+- Concorrência (PostgreSQL), provada por mutação: remover as travas de lance, de anúncio/início de obra e de compra faz os testes falharem; o fechamento do leilão resiste mesmo sem as travas porque a chave do lançamento e a unicidade do `TitleEvent` o protegem (as travas são defesa em profundidade).
+
+**Fora desta etapa:** G1–G11 de `design/10a` (a G9, moradia inicial, é a que a P1.07b precisa do GD; há solução padrão sem mecânica nova).
+
 ## 2026-10-23 — P1.08a — Motor de Contratos (`design/18` FINAL — BOT TEST; lacunas em `design/18a`)
 
 **Decisão de execução.** Contratos foi feito antes de Imóveis (P1.07) porque aluguel e obras de P1.07 dependem do motor. P1.08 dividido em a (motor + Fornecimento + Empréstimo), aluguel (P1.07), governamental (P1.09), militar (P1.17); nada saiu do escopo do Bot Test. Cada tipo é um *handler* registrado, o motor não os conhece.
