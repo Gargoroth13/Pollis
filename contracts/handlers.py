@@ -101,6 +101,13 @@ class Handler:
         """Valor total do objeto (para auditoria e limite de multa)."""
         raise NotImplementedError
 
+    def on_ended(self, contract: Contract, at: int, status: str) -> Dict[str, Any]:
+        """O contrato acabou (`closed`/`broken`, inclusive por fusão das partes). Libera o que o tipo mantinha preso (ex.: a moradia)."""
+        return {}
+
+    def audit_success(self, report: Any, contract: Contract, execution: Any, key: str) -> None:
+        """Auditoria do dinheiro/recurso de uma ocorrência cumprida de um tipo que não é nativo do motor. Só LÊ."""
+
 
 _HANDLERS: Dict[ContractType, Handler] = {}
 

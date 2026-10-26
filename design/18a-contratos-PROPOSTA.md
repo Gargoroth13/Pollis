@@ -94,3 +94,20 @@ empresa → jogador) prova que o motor funciona para jogador↔empresa sem mudan
 
 Pendente apenas o que o GD não respondeu: nada nesta lista. Os `[PROV]` que restam em `contracts/params.py` são o teto de juros
 (100%, não decidido) e o limite técnico de 1000 ocorrências por contrato.
+
+## 6. Cessão de parte e fim de contrato (P1.08b-prep, 2026-10-26)
+
+Exigência do `10` §13: "a venda do imóvel alugado não apaga o contrato; os pagamentos futuros passam ao novo proprietário". O motor
+não tinha como trocar uma parte sem refazer o contrato. Solução técnica (nenhuma mecânica nova de design):
+
+- `services.reassign_party(contrato, lado, nova_parte, reason, ref)`: cede a posição de uma parte de contrato **em vigor**. Os termos
+  continuam selados (o selo `terms_hash` cobre as **partes de origem**, `sealed_parties`); a parte vigente (`party_*`) só muda por esta
+  função e a cessão vira registro imutável (`ContractPartyChange`) e evento `party_changed`. Cada ocorrência guarda as partes vigentes
+  nela (`ContractExecution.parties`), então a auditoria confere o dinheiro de cada uma com quem era parte **naquele momento**.
+- Dívidas já geradas (falhas anteriores) ficam com o credor/devedor da época; só as ocorrências futuras passam à nova parte.
+- Se a nova parte é a **contraparte** (ninguém contrata consigo mesmo), o contrato se encerra por fusão (`parties_merged`), sem multa e sem
+  trocar a parte registrada. É consequência técnica, **registrada como lacuna**: o design não diz o que ocorre quando o inquilino compra o imóvel que aluga.
+- `Handler.on_ended(contrato, instante, estado)`: o tipo é avisado quando o contrato acaba (encerrado, quebrado, fusão) para liberar o que
+  mantinha preso (ex.: a moradia do inquilino). `Handler.audit_success`: ponto de auditoria para tipos que não são nativos do motor.
+- Concorrência: a cessão trava o contrato; a execução diária relê as partes depois de travar e recomeça se uma cessão aconteceu no meio.
+  Provado por mutação em PostgreSQL.

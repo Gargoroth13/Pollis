@@ -33,7 +33,7 @@ from . import handlers
 from .constants import (ENDED_STATUSES, KEY_PREFIX, REFERENCE_KIND, RUNNING_STATUSES, EventKind, ExecutionStatus, Frequency,
                         PartyKind, Responsible, Side, Status)
 from .handlers import Outcome, refuse
-from .models import Contract, ContractEvent, ContractExecution, terms_digest
+from .models import Contract, ContractEvent, ContractExecution, ContractPartyChange, terms_digest
 
 TICK_NAME = "contracts_daily_execution"
 PROPOSAL_KEYS = frozenset({"type", "role", "proposer", "counterparty", "terms", "frequency", "starts_on", "ends_on", "penalty_cents",
@@ -383,6 +383,12 @@ def break_contract(actor_id: int, contract_id: Any, party: Any) -> ActionResult:
         return r.result
 
 
+def _ended(c: Contract, handler, now: int) -> Dict[str, Any]:
+    """O contrato acabou: o tipo libera o que mantinha preso (ex.: a moradia do inquilino). O que ele fez vai ao histórico."""
+    done = handler.on_ended(c, now, c.status)
+    return {"on_ended": done} if done else {}
+
+
 def _terminate_broken(c: Contract, now: int, reason: str, cause: str) -> None:
     handler = handlers.get_handler(c.type)
     resolved = handler.on_terminated(c, now, cause)
@@ -390,7 +396,56 @@ def _terminate_broken(c: Contract, now: int, reason: str, cause: str) -> None:
     if left > 0 or resolved:
         _event(c, EventKind.REMAINING_CANCELLED, now, data={"occurrences_cancelled": left, **resolved})
     c.status, c.ended_at, c.end_reason, c.next_due_day = Status.BROKEN.value, now, reason, None
-    _event(c, EventKind.BROKEN, now, data={"reason": reason})
+    _event(c, EventKind.BROKEN, now, data={"reason": reason, **_ended(c, handler, now)})
+
+
+# --- cessão de parte (10 §13: a venda do imóvel alugado não apaga o contrato) ---------------------------------------------------
+
+def reassign_party(contract_id: int, side: Side, new_party: Tuple[PartyKind, int], *, reason: str, ref: str,
+                   at: Optional[int] = None) -> ActionResult:
+    """
+    Cede a posição da parte `side` de um contrato EM VIGOR a outra entidade, sem apagar nem refazer o contrato: os termos continuam
+    selados (o selo cobre as partes de origem), a cessão vira registro imutável (`ContractPartyChange`) e evento do histórico, e as
+    ocorrências futuras passam à nova parte. O que já foi devido (dívidas de falhas anteriores) fica com quem era credor/devedor
+    na época. O chamador (ex.: a venda do imóvel) já está numa transação, com jogador(es) e empresa(s) travados antes do contrato.
+    Se a nova parte é a CONTRAPARTE (ninguém contrata consigo mesmo), o contrato se encerra por fusão (`parties_merged`), sem multa e
+    sem trocar a parte registrada.
+    Recusas: CONTRACT_NOT_FOUND, NOT_RUNNING, PARTY_KIND_NOT_ALLOWED, PARTY_NOT_FOUND, SAME_PARTY_CHANGE.
+    """
+    at = game_clock.now() if at is None else at
+    kind, entity = new_party
+    with transaction.atomic():
+        c = Contract.objects.select_for_update().filter(pk=contract_id).first()
+        if c is None:
+            return refuse("CONTRACT_NOT_FOUND", contract=contract_id)
+        if Status(c.status) not in RUNNING_STATUSES:
+            return refuse("NOT_RUNNING", contract=c.pk, status=c.status)
+        handler = handlers.get_handler(c.type)
+        if kind not in (handler.kinds_a if side is Side.A else handler.kinds_b):
+            return refuse("PARTY_KIND_NOT_ALLOWED", party=[kind.value, entity], side=side.value)
+        if not party_exists(kind, entity):
+            return refuse("PARTY_NOT_FOUND", party=[kind.value, entity])
+        old = c.party(side)
+        if old == (kind.value, entity):
+            return refuse("SAME_PARTY_CHANGE", party=list(old))
+        if (kind.value, entity) == c.party(_other(side)):          # a nova parte já é a outra: ninguém contrata consigo mesmo
+            c.status, c.ended_at, c.end_reason, c.next_due_day = Status.CLOSED.value, at, "parties_merged", None
+            _event(c, EventKind.CLOSED, at, data={"reason": c.end_reason, "failures": c.failures, "merged_into": [kind.value, entity],
+                                                  "ref": ref, **_ended(c, handler, at)})
+            c.save()
+            return ActionResult(True, "OK", {"contract": c.pk, "side": side.value, "from": list(old), "to": [kind.value, entity],
+                                             "closed": True, "sequence": None})
+        seq = (ContractPartyChange.objects.filter(contract=c).aggregate(m=Max("seq"))["m"] or 0) + 1
+        ContractPartyChange.objects.create(contract=c, seq=seq, side=side.value, from_kind=old[0], from_id=old[1], to_kind=kind.value,
+                                           to_id=entity, at=at, reason=reason[:40], ref=ref[:60])
+        setattr(c, f"party_{side.value}_kind", kind.value)
+        setattr(c, f"party_{side.value}_id", entity)
+        _event(c, EventKind.PARTY_CHANGED, at, ref=str(seq), data={"side": side.value, "from": list(old), "to": [kind.value, entity],
+                                                                   "reason": reason, "ref": ref})
+        c._party_change_allowed = True
+        c.save()
+        return ActionResult(True, "OK", {"contract": c.pk, "side": side.value, "from": list(old), "to": [kind.value, entity],
+                                         "closed": False, "sequence": seq})
 
 
 # --- execução automática (18.5), inadimplência (18.6) -----------------------------------------------------------------------
@@ -402,21 +457,25 @@ def _open_obligations(contract_id: int):
 
 def _run_occurrence(contract_id: int, day: int, at: int) -> bool:
     """Executa a PRÓXIMA ocorrência devida do contrato (se houver). Devolve se executou. Idempotente."""
-    c0 = Contract.objects.filter(pk=contract_id).first()
-    if c0 is None:
-        return False
-    with transaction.atomic():
-        _lock_parties_only(c0)
-        c = Contract.objects.select_for_update().get(pk=contract_id)
-        if Status(c.status) not in RUNNING_STATUSES or c.next_due_day is None or c.next_due_day > day:
+    for _ in range(5):
+        c0 = Contract.objects.filter(pk=contract_id).first()
+        if c0 is None:
             return False
-        handler = handlers.get_handler(c.type)
-        sequence, due = c.next_sequence, c.next_due_day
-        if ContractExecution.objects.filter(contract=c, sequence=sequence).exists():
-            raise RuntimeError(f"contrato {c.pk}: ocorrência {sequence} já registrada mas não avançada")
-        outcome = handler.execute(c, sequence, due, at)
-        _record(c, handler, sequence, due, at, outcome)
-        return True
+        with transaction.atomic():
+            _lock_parties_only(c0)
+            c = Contract.objects.select_for_update().get(pk=contract_id)
+            if c.current_parties() != c0.current_parties():        # uma cessão aconteceu entre a leitura e a trava: recomeça com as partes novas
+                continue
+            if Status(c.status) not in RUNNING_STATUSES or c.next_due_day is None or c.next_due_day > day:
+                return False
+            handler = handlers.get_handler(c.type)
+            sequence, due = c.next_sequence, c.next_due_day
+            if ContractExecution.objects.filter(contract=c, sequence=sequence).exists():
+                raise RuntimeError(f"contrato {c.pk}: ocorrência {sequence} já registrada mas não avançada")
+            outcome = handler.execute(c, sequence, due, at)
+            _record(c, handler, sequence, due, at, outcome)
+            return True
+    raise RuntimeError(f"contrato {contract_id}: partes mudando sem parar durante a execução")
 
 
 def _lock_parties_only(c: Contract) -> None:
@@ -432,7 +491,8 @@ def _record(c: Contract, handler: handlers.Handler, sequence: int, due: int, at:
         contract=c, sequence=sequence, due_day=due, at=at,
         status=ExecutionStatus.SUCCESS.value if out.ok else ExecutionStatus.FAILED.value,
         failure_code=out.code if not out.ok else "", responsible=out.responsible.value if (not out.ok and out.responsible) else "",
-        pending_quantity=out.pending_quantity, pending_cents=out.pending_cents, ledger_key=out.ledger_key, detail=out.detail)
+        pending_quantity=out.pending_quantity, pending_cents=out.pending_cents, ledger_key=out.ledger_key, detail=out.detail,
+        parties=c.current_parties())
     c.next_sequence = sequence + 1
     c.next_due_day = handler.due_day(c, sequence + 1) if c.next_sequence < c.occurrences else None
     if out.ok:
@@ -497,7 +557,8 @@ def _maybe_close(c: Contract, now: int) -> None:
         return
     c.status, c.ended_at, c.next_due_day = Status.CLOSED.value, now, None
     c.end_reason = "completed" if c.failures == 0 else "completed_with_failures"
-    _event(c, EventKind.CLOSED, now, data={"reason": c.end_reason, "failures": c.failures})
+    _event(c, EventKind.CLOSED, now, data={"reason": c.end_reason, "failures": c.failures,
+                                           **_ended(c, handlers.get_handler(c.type), now)})
 
 
 def run_due(day: int, at: int) -> Dict[str, Any]:
