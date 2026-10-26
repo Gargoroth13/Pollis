@@ -56,7 +56,7 @@ Cada lacuna diz se **bloqueia a próxima etapa** (P1.07b) ou pode ficar provisó
 
 Para **P1.07c** (empresas e Matriz): **G5** — tipos de imóvel comercial/industrial e a relação estrela → nível comercial (`10` §16-17 não dão números); **G6** — mudança de uso do lote e quem aprova (`10` §33 "[ABERTO]"). A P1.07c não começa a implementação desses tipos sem essa resposta.
 
-Da P1.07b nenhuma decisão **bloqueia** a próxima etapa; as lacunas H1–H9 (§7) seguem provisórias. G1 precisa ser decidida antes de o Bot Test ligar os bots.
+Da P1.07b nenhuma decisão **bloqueia** a próxima etapa; as lacunas H1–H10 (§7) seguem provisórias. G1 precisa ser decidida antes de o Bot Test ligar os bots.
 
 ## 6. O que a P1.07b entrega
 
@@ -78,6 +78,7 @@ Da P1.07b nenhuma decisão **bloqueia** a próxima etapa; as lacunas H1–H9 (§
 | H6 | Inquilino compra o imóvel alugado | Contrato `closed` com `parties_merged`, sem multa (o design não prevê) |
 | H7 | Uma pessoa por unidade (casais dependem de casamento, não definido) | Um residente por unidade |
 | H8 | Voltar à moradia inicial por escolha (`set_residence` com `unit` nulo) | Permitido (sem custo); **marcado para o GD** se não for desejado |
+| H10 | Dono quer morar numa unidade que anunciou para aluguel | Recusa `UNIT_LISTED_FOR_RENT` (simétrica a `list_rent` × `UNIT_OCCUPIED`): retira o anúncio antes |
 | H9 | Dívidas de aluguel na venda; propostas abertas na venda | Dívidas ficam com o antigo locador; propostas abertas falham no aceite com `LANDLORD_NOT_OWNER` |
 
 Seguem abertos (fora da P1.07b): limite de propriedade por jogador (lei), imposto de propriedade (G11), aluguel comercial, empresa inquilina.

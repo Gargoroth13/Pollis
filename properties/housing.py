@@ -24,7 +24,8 @@ from players.services import ActionResult
 
 from .common import positive, refuse
 from .constants import OwnerKind
-from .models import ActiveResidence, Building, Tenancy, Unit
+from .constants import RentListingStatus
+from .models import ActiveResidence, Building, RentListing, Tenancy, Unit
 from .titles import owner_of_lot
 
 PROVIDER_NAME = "residence_building"
@@ -71,15 +72,18 @@ def residence_refusal(player_id: Any, unit_id: Any) -> Optional[ActionResult]:
     other = ActiveResidence.objects.filter(unit=unit).exclude(player_id=player_id).first()
     if other is not None:
         return refuse("UNIT_OCCUPIED", unit=unit.pk)
-    if entitlement(player_id, unit) is None:
+    right = entitlement(player_id, unit)
+    if right is None:
         return refuse("NOT_ENTITLED_TO_UNIT", unit=unit.pk)
+    if right == "owner" and RentListing.objects.filter(unit=unit, status=RentListingStatus.OPEN.value).exists():
+        return refuse("UNIT_LISTED_FOR_RENT", unit=unit.pk)                     # simétrico a list_rent × UNIT_OCCUPIED: retire o anúncio antes
     return None
 
 
 def set_residence(player_id: Any, unit_id: Any) -> ActionResult:
     """
     Define a residência ativa (05 §8): uma unidade que o jogador possui sem aluguel em vigor, ou alugou e já começou; `unit` nulo = volta à
-    moradia inicial. Recusas: PLAYER_NOT_FOUND, INVALID_PARAMS, UNIT_NOT_FOUND, ALREADY_RESIDENT, UNIT_OCCUPIED, NOT_ENTITLED_TO_UNIT.
+    moradia inicial. Recusas: PLAYER_NOT_FOUND, INVALID_PARAMS, UNIT_NOT_FOUND, ALREADY_RESIDENT, UNIT_OCCUPIED, UNIT_LISTED_FOR_RENT, NOT_ENTITLED_TO_UNIT.
     """
     if not positive(player_id) or not Player.objects.filter(pk=player_id).exists():
         return refuse("PLAYER_NOT_FOUND", player=repr(player_id)[:40])
@@ -124,7 +128,6 @@ def unit_view(unit_id: int) -> Optional[Dict[str, Any]]:
     kind, owner = owner_of_lot(unit.building.lot_id)
     lease = running_lease(unit.pk)
     resident = ActiveResidence.objects.filter(unit=unit).values_list("player_id", flat=True).first()
-    from .models import RentListing
     listing = RentListing.objects.filter(unit=unit, status="open").first()
     return {"unit": unit.pk, "index": unit.index, "building": unit.building_id, "lot": unit.building.lot_id, "kind": unit.building.kind,
             "qol_bonus": str(unit.building.qol_bonus), "owner": [kind.value, owner], "resident": resident,

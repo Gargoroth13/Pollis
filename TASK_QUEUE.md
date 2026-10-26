@@ -278,7 +278,7 @@ Implementar mercado e estatísticas de `17`.
 Implementar `10`, em etapas (lacunas em `design/10a`):
 
 - **[x] P1.07a — Propriedade, leilões, venda e obra com lote** (branch `dev/p1.07a-propriedade-leiloes`, PR empilhado sobre o #22; `CHANGELOG_DEV.md`, 2026-10-25).
-- **[x] P1.07b — Unidades, residência ativa, Aluguel e QoL** (branch `dev/p1.07b-moradia-aluguel`, PR empilhado sobre o #24; `CHANGELOG_DEV.md`, 2026-10-26; lacunas H1–H9 em `design/10a` §7). G9 resolvida pelo texto do design.
+- **[x] P1.07b — Unidades, residência ativa, Aluguel e QoL** (branch `dev/p1.07b-moradia-aluguel`, PR empilhado sobre o #24; `CHANGELOG_DEV.md`, 2026-10-26; lacunas H1–H10 em `design/10a` §7). G9 resolvida pelo texto do design.
 - **[ ] P1.07c — Empresas e Matriz**: localização de empresas, tipos comercial/industrial (G5), terreno da Matriz (`production.register_site_provider`), mudança de uso (G6).
 
 ## [~] P1.08 — Contratos

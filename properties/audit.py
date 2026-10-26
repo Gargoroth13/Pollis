@@ -264,6 +264,8 @@ def _rent(report: AuditReport) -> None:
                 report.add(8, "OPEN_RENT_LISTING_LANDLORD_NOT_OWNER", listing=li.pk)
             if li.unit_id in running:
                 report.add(8, "OPEN_RENT_LISTING_ON_LEASED_UNIT", listing=li.pk)
+            if ActiveResidence.objects.filter(unit_id=li.unit_id).exists():
+                report.add(8, "OPEN_RENT_LISTING_ON_OCCUPIED_UNIT", listing=li.pk)
         elif status is RentListingStatus.RENTED:
             c = Contract.objects.filter(pk=li.contract_id).first() if li.contract_id else None
             if c is None or c.type != ContractType.RENT.value or c.terms.get("amount_cents") != li.amount_cents or (

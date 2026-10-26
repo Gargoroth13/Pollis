@@ -80,6 +80,13 @@ class ListingTests(RentBase):
         self.assertTrue(housing.set_residence(self.worker.pk, None).ok)
         self.assertTrue(self.rent_listing(self.u1, self.owner, self.worker).ok)
 
+    def test_the_owner_cannot_move_into_a_unit_that_is_listed_for_rent_until_he_withdraws_it(self):
+        li = self.listing()
+        self.assertEqual(housing.set_residence(self.worker.pk, self.u1.pk).code, "UNIT_LISTED_FOR_RENT")
+        self.assertEqual(ActiveResidence.objects.count(), 0)
+        self.assertTrue(rent.unlist_rent(self.worker.pk, {"listing": li, "owner": self.owner}).ok)
+        self.assertTrue(housing.set_residence(self.worker.pk, self.u1.pk).ok)
+
     def test_the_owner_withdraws_the_listing(self):
         li = self.listing()
         self.assertEqual(rent.unlist_rent(self.third.pk, {"listing": li, "owner": self.player_ref(self.third)}).code, "NOT_SELLER")
@@ -422,6 +429,11 @@ class AuditTests(RentBase):
         self.rented(starts=1, ends=5)
         Tenancy.objects.update(unit=self.u2)
         self.assertIn("TENANCY_TERMS_MISMATCH", self.findings())
+
+    def test_an_open_rent_listing_on_an_occupied_unit_is_found(self):
+        self.listing(self.u1)
+        ActiveResidence.objects.create(player=self.worker, unit=self.u1, since=0)
+        self.assertIn("OPEN_RENT_LISTING_ON_OCCUPIED_UNIT", self.findings())
 
     def test_an_open_rent_listing_on_a_leased_unit_is_found(self):
         self.rented(starts=1, ends=5)
