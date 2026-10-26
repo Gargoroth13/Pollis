@@ -2,6 +2,9 @@
 Concorrência dos Imóveis: lances simultâneos, encerramento repetido, vencedor gastando enquanto o leilão fecha, compra disputada,
 compra × retirada do anúncio, anúncio × início de obra. Vale em PostgreSQL e em SQLite (o banco serializa); em PG nada mascara deadlock.
 """
+import unittest
+
+from django.db import connection
 from django.test import TransactionTestCase
 
 from accounts.models import Usuario
@@ -32,6 +35,8 @@ from ledger.money import competence_day_of
 from properties import params
 
 REAL = 100
+ON_PG = connection.vendor == "postgresql"
+CROSS_ROW = unittest.skipUnless(ON_PG, "invariante entre linhas de tabelas diferentes: só o SELECT ... FOR UPDATE do lote a garante (PostgreSQL); em SQLite não há trava de linha")
 
 
 class ConcurrencyBase(TransactionTestCase):
@@ -258,6 +263,7 @@ class RentConcurrencyTests(ConcurrencyBase):
         self.assertEqual(Tenancy.objects.filter(unit=unit).count(), 1)
         self.assertAllClean()
 
+    @CROSS_ROW
     def test_selling_the_house_versus_accepting_a_lease_never_leaves_a_lease_with_the_old_owner(self):
         b = self.house(self.third)
         res = contract_services.propose(self.third.pk, {
@@ -278,6 +284,7 @@ class RentConcurrencyTests(ConcurrencyBase):
             self.assertEqual(Tenancy.objects.count(), 0)
         self.assertAllClean()
 
+    @CROSS_ROW
     def test_selling_the_house_versus_the_owner_moving_in_leaves_no_resident_owner_behind(self):
         b = self.house(self.third)
         unit = Unit.objects.get(building=b, index=1)
@@ -288,6 +295,7 @@ class RentConcurrencyTests(ConcurrencyBase):
         self.assertFalse(ActiveResidence.objects.filter(player=self.third).exists())      # o ex-dono não pode ficar morando
         self.assertAllClean()
 
+    @CROSS_ROW
     def test_listing_for_rent_versus_the_owner_moving_in_never_does_both(self):
         b = self.house(self.third)
         unit = Unit.objects.get(building=b, index=1)
