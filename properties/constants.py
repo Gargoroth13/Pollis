@@ -33,3 +33,13 @@ class SiteStatus(str, enum.Enum):
 
 
 # Natureza do pagamento do leilão: `AUCTION_PAYMENT` (arrematante → Município do lote; 24 Q2). Venda de imóvel: `SALE` sem imposto (24 §24.7).
+
+
+class RentListingStatus(str, enum.Enum):
+    OPEN = "open"
+    RENTED = "rented"
+    CANCELLED = "cancelled"
+
+
+# Aluguel (10 §9-13): natureza `RENT` do inquilino ao proprietário, via contrato do tipo `rent` do motor de `18`.
+RENT_FREQUENCIES = ("daily", "weekly", "monthly")                 # periodicidade (10 §10); "única" não faz sentido para uso contínuo

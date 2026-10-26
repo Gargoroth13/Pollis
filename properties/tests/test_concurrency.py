@@ -2,6 +2,9 @@
 Concorrência dos Imóveis: lances simultâneos, encerramento repetido, vencedor gastando enquanto o leilão fecha, compra disputada,
 compra × retirada do anúncio, anúncio × início de obra. Vale em PostgreSQL e em SQLite (o banco serializa); em PG nada mascara deadlock.
 """
+import unittest
+
+from django.db import connection
 from django.test import TransactionTestCase
 
 from accounts.models import Usuario
@@ -21,14 +24,22 @@ from ledger.models import Entry
 from ledger.tests.base import fund_account, install_test_role
 from ledger.tests.test_scenario_concurrency import run_together
 from players.services import create_player
-from properties import services
+from properties import housing, rent, services
 from properties.audit import audit_properties
-from properties.models import Auction, AuctionBid, Listing, TitleEvent
+from properties.models import ActiveResidence, Auction, AuctionBid, Building, Listing, RentListing, Tenancy, TitleEvent, Unit
+from contracts import services as contract_services
+from contracts.audit import audit_contracts
+from contracts.models import Contract
+from geography.constants import Occupation
+from ledger.money import competence_day_of
+from properties import params
 
 REAL = 100
+ON_PG = connection.vendor == "postgresql"
+CROSS_ROW = unittest.skipUnless(ON_PG, "invariante entre linhas de tabelas diferentes: só o SELECT ... FOR UPDATE do lote a garante (PostgreSQL); em SQLite não há trava de linha")
 
 
-class PropertiesConcurrencyTests(TransactionTestCase):
+class ConcurrencyBase(TransactionTestCase):
     def setUp(self):
         install_test_role(self)
         generate_world(get_scenario(**SMALL))
@@ -72,6 +83,8 @@ class PropertiesConcurrencyTests(TransactionTestCase):
         for report in (audit_properties(), audit_ledger()):
             self.assertTrue(report.ok, report.findings)
 
+
+class PropertiesConcurrencyTests(ConcurrencyBase):
     # --- leilão ---------------------------------------------------------------------------------------------------------
     def test_two_equal_bids_at_once_have_exactly_one_leader(self):
         a = self.open_one(self.lots[0])
@@ -183,3 +196,119 @@ class PropertiesConcurrencyTests(TransactionTestCase):
         self.assertEqual(sum(1 for j in jobs if j.result.ok), 1, [j.result for j in jobs])
         self.assertEqual(Listing.objects.filter(status="open").count(), 1)
         self.assertClean()
+
+
+class RentConcurrencyTests(ConcurrencyBase):
+    """Aluguel e moradia: a unidade tem no máximo um contrato em curso e um morador; a venda do imóvel cede os contratos sem corrida."""
+
+    def house(self, owner):
+        """Imóvel pronto (com unidades) no primeiro lote livre, de propriedade do jogador `owner`."""
+        lot = self.lots.pop(0)
+        self.own(lot, "player", owner.pk, owner)
+        k = params.BUILDING_TYPES["high_density_simple"]
+        b = Building.objects.create(lot=lot, kind=k.key, units=k.units, qol_bonus=k.qol_bonus, completed_at=game_clock.now())
+        housing.create_units(b)
+        Lot.objects.filter(pk=lot.pk).update(occupation=Occupation.OCCUPIED.value)
+        return b
+
+    def day(self, plus):
+        return competence_day_of(game_clock.now()) + plus
+
+    def list_unit(self, owner, building, index=1):
+        unit = Unit.objects.get(building=building, index=index)
+        res = rent.list_rent(owner.pk, {"unit": unit.pk, "owner": self.player_ref(owner), "amount": 1_000, "frequency": "daily"})
+        self.assertTrue(res.ok, res)
+        return unit, res.detail["rent_listing"]
+
+    def rent_args(self, tenant, listing):
+        return {"listing": listing, "tenant": self.player_ref(tenant), "starts_on": self.day(1), "ends_on": self.day(3)}
+
+    def assertAllClean(self):
+        self.assertClean()
+        report = audit_contracts()
+        self.assertTrue(report.ok, report.findings)
+
+    def test_two_tenants_for_one_listing_make_exactly_one_lease(self):
+        b = self.house(self.third)
+        unit, li = self.list_unit(self.third, b)
+        jobs = run_together(lambda: rent.rent_unit(self.worker.pk, self.rent_args(self.worker, li)),
+                            lambda: rent.rent_unit(self.fourth.pk, self.rent_args(self.fourth, li)))
+        self.assertEqual(sum(1 for j in jobs if j.result.ok), 1, [j.result for j in jobs])
+        self.assertEqual(next(j.result.code for j in jobs if not j.result.ok), "RENT_LISTING_NOT_OPEN")
+        self.assertEqual((Tenancy.objects.count(), Contract.objects.filter(type="rent", status="active").count()), (1, 1))
+        self.assertAllClean()
+
+    def test_the_same_tenant_renting_twice_at_once_makes_one_lease(self):
+        b = self.house(self.third)
+        unit, li = self.list_unit(self.third, b)
+        jobs = run_together(*[lambda: rent.rent_unit(self.worker.pk, self.rent_args(self.worker, li)) for _ in range(3)])
+        self.assertEqual(sum(1 for j in jobs if j.result.ok), 1, [j.result for j in jobs])
+        self.assertEqual(Tenancy.objects.count(), 1)
+        self.assertAllClean()
+
+    def test_two_direct_proposals_accepted_at_once_lease_the_unit_once(self):
+        b = self.house(self.third)
+        unit = Unit.objects.get(building=b, index=1)
+        ids = []
+        for tenant in (self.worker, self.fourth):
+            res = contract_services.propose(self.third.pk, {
+                "type": "rent", "role": "landlord", "proposer": self.player_ref(self.third), "counterparty": self.player_ref(tenant),
+                "terms": {"lot": b.lot_id, "unit": 1, "amount_cents": 500}, "frequency": "daily", "starts_on": self.day(1),
+                "ends_on": self.day(2)})
+            self.assertTrue(res.ok, res)
+            ids.append((tenant, res.detail["contract"]))
+        jobs = run_together(*[(lambda t=t, c=c: contract_services.accept(t.pk, c, self.player_ref(t))) for t, c in ids])
+        self.assertEqual(sum(1 for j in jobs if j.result.ok), 1, [j.result for j in jobs])
+        self.assertEqual(next(j.result.code for j in jobs if not j.result.ok), "UNIT_LEASED")
+        self.assertEqual(Tenancy.objects.filter(unit=unit).count(), 1)
+        self.assertAllClean()
+
+    @CROSS_ROW
+    def test_selling_the_house_versus_accepting_a_lease_never_leaves_a_lease_with_the_old_owner(self):
+        b = self.house(self.third)
+        res = contract_services.propose(self.third.pk, {
+            "type": "rent", "role": "landlord", "proposer": self.player_ref(self.third), "counterparty": self.player_ref(self.worker),
+            "terms": {"lot": b.lot_id, "unit": 1, "amount_cents": 500}, "frequency": "daily", "starts_on": self.day(1), "ends_on": self.day(2)})
+        cid = res.detail["contract"]
+        li = services.list_property(self.third.pk, b.lot_id, self.player_ref(self.third), 9_000).detail["listing"]
+        jobs = run_together(lambda: services.buy_property(self.fourth.pk, li, self.player_ref(self.fourth)),
+                            lambda: contract_services.accept(self.worker.pk, cid, self.player_ref(self.worker)))
+        self.assertTrue(jobs[0].result.ok, jobs[0].result)
+        c = Contract.objects.get(pk=cid)
+        if jobs[1].result.ok:                       # aceite antes da venda: o contrato foi cedido ao comprador
+            self.assertEqual((c.status, c.party_a_id), ("active", self.fourth.pk))
+            self.assertEqual(jobs[0].result.detail["leases_ceded"], [cid])
+        else:                                      # aceite depois da venda: o locador deixou de ser o dono
+            self.assertEqual(jobs[1].result.code, "LANDLORD_NOT_OWNER")
+            self.assertEqual(c.status, "proposed")
+            self.assertEqual(Tenancy.objects.count(), 0)
+        self.assertAllClean()
+
+    @CROSS_ROW
+    def test_selling_the_house_versus_the_owner_moving_in_leaves_no_resident_owner_behind(self):
+        b = self.house(self.third)
+        unit = Unit.objects.get(building=b, index=1)
+        li = services.list_property(self.third.pk, b.lot_id, self.player_ref(self.third), 9_000).detail["listing"]
+        jobs = run_together(lambda: services.buy_property(self.fourth.pk, li, self.player_ref(self.fourth)),
+                            lambda: housing.set_residence(self.third.pk, unit.pk))
+        self.assertTrue(jobs[0].result.ok, jobs[0].result)
+        self.assertFalse(ActiveResidence.objects.filter(player=self.third).exists())      # o ex-dono não pode ficar morando
+        self.assertAllClean()
+
+    @CROSS_ROW
+    def test_listing_for_rent_versus_the_owner_moving_in_never_does_both(self):
+        b = self.house(self.third)
+        unit = Unit.objects.get(building=b, index=1)
+        jobs = run_together(lambda: rent.list_rent(self.third.pk, {"unit": unit.pk, "owner": self.player_ref(self.third), "amount": 100,
+                                                                   "frequency": "daily"}),
+                            lambda: housing.set_residence(self.third.pk, unit.pk))
+        both = RentListing.objects.filter(unit=unit, status="open").exists() and ActiveResidence.objects.filter(unit=unit).exists()
+        self.assertFalse(both, [j.result for j in jobs])
+        self.assertAllClean()
+
+    def test_two_players_moving_into_one_owned_unit_at_once_leave_one_resident(self):
+        b = self.house(self.third)
+        unit = Unit.objects.get(building=b, index=1)
+        jobs = run_together(*[lambda: housing.set_residence(self.third.pk, unit.pk) for _ in range(3)])
+        self.assertEqual(ActiveResidence.objects.filter(unit=unit).count(), 1)
+        self.assertAllClean()

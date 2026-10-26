@@ -4,6 +4,18 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-26 — P1.07b — Unidades, residência ativa, Aluguel e QoL do imóvel (`design/10` FINAL — BOT TEST §6.1, §9–§15; lacunas em `design/10a` §6–§7)
+
+**Decisão de execução.** Segue a ordem da P1.07 (a, b, c). A P1.07b vem empilhada sobre o PR de preparo do motor (#24: cessão de parte), que por sua vez está sobre a P1.07a (#23). Nada saiu do escopo do Bot Test.
+
+**Entregue (app `properties`):** `Unit`, `ActiveResidence`, `Tenancy`, `RentListing`; `housing` (direito de morar, `set_residence`, QoL do prédio como provedor `residence_building`); `rent` (handler `RentHandler` do tipo `rent` do motor de `18`, `list_rent`/`unlist_rent`/`rent_unit`, venda do imóvel alugado cedendo os contratos via `reassign_party`); invariantes 6–8 em `audit_properties`; migração `0002` (cria unidades dos imóveis existentes). Aluguel pago do inquilino ao locador com natureza `RENT`, sem imposto; inadimplência e quebra seguem o motor (obrigação, `defaulted`, `max_failures`). Ações novas no registro: `set_residence`, `list_rent`, `unlist_rent`, `rent_unit`.
+
+**G9 resolvida pelo texto do design** (`04` §24, `10` §14): moradia inicial = ausência de `ActiveResidence`. Não foi necessário perguntar ao GD.
+
+**Lacunas H1–H10** em `design/10a` §7 (prazo fixo; sem reajuste; inquilino jogador; ocupação a partir de `starts_on`; despejo = quebra por `max_failures`; `parties_merged` se o inquilino compra; um residente por unidade; volta voluntária à moradia inicial **para decisão do GD se indesejada**; dívidas ficam com o antigo locador).
+
+**Prova:** 14 testes de moradia + 32 de aluguel + 7 de concorrência PG (inquilinos simultâneos, aceites simultâneos, venda × aceite, venda × morar, anúncio × morar, moradores simultâneos). Mutação dos locks (remover `select_for_update` num ponto por vez, 3–4 rodadas de `RentConcurrencyTests`): `rent.py` ativação 1/3, fechamento da venda 2/3, anúncio 2/3, `rent_unit` 2/4; `housing.py` trava do lote 1/4, trava do jogador 4/4. Os testes de corrida **não** detectam toda mutação em toda rodada (dependem de temporização); as unicidades do banco (`Tenancy.contract_id`, `ActiveResidence.unit/player`) são a segunda linha de defesa. Três testes de corrida entre tabelas (venda × aceite, venda × morar, anúncio × morar) só valem em PostgreSQL (`skipUnless`, como em `ledger/tests/test_scenario_concurrency.py`), porque dependem do `FOR UPDATE` do lote. **Bug real achado por esses testes:** `set_residence` não recusava morar numa unidade com anúncio de aluguel aberto (anúncio aberto + morador, até em sequência, e em PG em 1 de ~4 rodadas); corrigido com a recusa `UNIT_LISTED_FOR_RENT` (o dono retira o anúncio antes), invariante `OPEN_RENT_LISTING_ON_OCCUPIED_UNIT` na auditoria e testes.
+
 ## 2026-10-26 — P1.08b-prep — Cessão de parte e gancho de fim de contrato (motor de `design/18`; detalhes em `design/18a` §6)
 
 **Por quê.** `10` §13 manda o aluguel acompanhar a venda do imóvel (o contrato continua e os pagamentos passam ao novo proprietário); o motor não tinha como trocar uma parte. Feito como PR separado para a P1.07b (Aluguel) ficar pequena e revisável.

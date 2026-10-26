@@ -10,8 +10,10 @@ from .base import ContractBase, TestRentHandler
 class CreationAndAcceptanceTests(ContractBase):
     def setUp(self):
         super().setUp()
+        real = handlers.get_handler(ContractType.RENT)               # o aluguel real vive em `properties`: troca pelo tipo de teste e devolve
+        handlers.unregister_type(ContractType.RENT)
         handlers.register_type(TestRentHandler())
-        self.addCleanup(handlers.unregister_type, ContractType.RENT)
+        self.addCleanup(lambda: (handlers.unregister_type(ContractType.RENT), real is None or handlers.register_type(real)))
 
     def test_contracts_are_created_between_player_and_player_player_and_company_and_company_and_company(self):
         loan = self.propose_loan()                                                                       # jogador ↔ jogador
@@ -103,7 +105,7 @@ class ProposalValidationTests(ContractBase):
         self.assertRefused(services.propose(10 ** 9, self.supply_proposal()), "PLAYER_NOT_FOUND")
         self.refused("INVALID_PARAMS", extra=1)
         self.refused("TYPE_NOT_AVAILABLE", type="government")
-        self.refused("TYPE_NOT_AVAILABLE", type="rent")                       # sem handler registrado (P1.07)
+        self.refused("TYPE_NOT_AVAILABLE", type="military")                   # sem handler registrado (P1.17)
         self.refused("TYPE_NOT_AVAILABLE", type="nope")
         self.refused("INVALID_ROLE", role="lender")
         self.refused("INVALID_PARTY", counterparty={"kind": "company"})
