@@ -51,6 +51,14 @@ class SitesBase(PropertiesBase):
 
 
 class LocationTests(SitesBase):
+    def test_the_lot_view_shows_which_company_operates_there(self):
+        lot = self.own(self.rural(0, ["iron"]), self.matrix)
+        self.assertIsNone(services.lot_view(lot.pk)["company"])
+        self.assertTrue(self.locate(self.matrix, lot).ok)
+        self.assertEqual(services.lot_view(lot.pk)["company"], self.matrix)
+        self.assertTrue(self.locate(self.matrix, None).ok)
+        self.assertIsNone(services.lot_view(lot.pk)["company"])
+
     def test_the_company_locates_on_its_own_lot_with_the_use_its_type_requires(self):
         lot = self.own(self.rural(0, ["iron"]), self.matrix)
         res = self.locate(self.matrix, lot)
