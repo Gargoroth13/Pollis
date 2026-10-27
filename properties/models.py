@@ -229,3 +229,15 @@ class RentListing(models.Model):
             models.UniqueConstraint(fields=["unit"], condition=Q(status="open"), name="rentlisting_one_open_per_unit"),
             models.CheckConstraint(condition=Q(amount_cents__gt=0, penalty_cents__gte=0), name="rentlisting_amounts_valid"),
         ]
+
+
+class CompanyLocation(models.Model):
+    """
+    Onde a empresa opera (10 §29; 02 §2.1: a categoria da Matriz vem do terreno em que ela está). A empresa ocupa UM lote que ela mesma possui
+    e o lote abriga UMA empresa (lacunas J1/J3 em `design/10a`). A venda do lote encerra a localização. O terreno de lote rural tem a categoria
+    derivada dos seus depósitos (`properties.sites`).
+    """
+
+    company = models.OneToOneField("companies.Company", on_delete=models.PROTECT, related_name="location")
+    lot = models.OneToOneField("geography.Lot", on_delete=models.PROTECT, related_name="company_location")
+    since = models.BigIntegerField()

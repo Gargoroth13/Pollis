@@ -4,6 +4,18 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-27 — P1.07c (parcial) — Localização de empresas e terreno da Matriz (`design/10` §16-17, §29; `02` §2.1; `08` §8-§12; lacunas em `design/10a` §8–§10)
+
+**Decisão de execução (instrução do GD, 2026-10-26).** G5 e G6 não podem parar a etapa: foi implementado tudo o que o design define sem elas; nenhum valor ou regra permanente foi inventado para contornar os bloqueios. A P1.07c vem empilhada sobre a P1.07b (#25).
+
+**Entregue (app `properties`, `companies.production`):** `CompanyLocation` (uma empresa ↔ um lote **da própria empresa**; migração `0003`); ação `set_company_location` (só o Dono; `lot` nulo = sai do lote); o **uso** do lote exigido pelo tipo vem do zoneamento (`geography.zoning`): Matriz → rural, Industrial → industrial, Varejo/Serviços → comercial; Construtora e Financeira não são localizáveis; venda do lote encerra a localização (`buy_property`); o lote fica OCUPADO. **Terreno da Matriz:** provedor de terreno (`production.register_site_provider`) derivado dos **depósitos reais** do lote rural (petróleo → Extrativismo; minerais → Mineração; a Matriz produz o produto do recurso do lote) e novo provedor de produtos do terreno; `set_production` ganha `TERRAIN_TYPE_UNDEFINED` e `PRODUCT_NOT_IN_TERRAIN`; o Trabalho da Matriz confere o terreno (`COMPANY_SITE_INVALID`, antes de gastar Energia). `audit_properties` invariante 9.
+
+**Não feito por depender do GD (documentado em `design/10a` §10, com trecho do design, opções, recomendação e impacto):** **G5** tipos de imóvel comercial/industrial e estrela → nível (e, por consequência, **exigir** localização para vender/produzir/trabalhar e aluguel comercial: J4); **G6** mudança de uso e aprovador; **G12** (nova) tipo de terreno de lote rural **sem depósito** — enquanto não houver resposta nenhuma Matriz agro/extrativista não-petróleo pode produzir (`TERRAIN_TYPE_UNDEFINED`); a cadeia de alimentos/madeira do Bot Test fica parada, mineração e petróleo funcionam.
+
+**Lacunas J1–J8** (`design/10a` §9) `[PROV]`/técnicas: só lote da própria empresa; uma empresa por lote; troca de lote imediata e gratuita; Serviços localizáveis em comercial. **H6 e H8 da P1.07b seguem provisórios** (não foram necessários aqui).
+
+**Prova:** testes de localização, venda, terreno, auditoria e registro (`properties/tests/test_sites.py`), concorrência (`SitesConcurrencyTests`; a corrida venda × localizar é só-PG), regressões de `companies.production`. Resultados das suítes completas: ver o PR.
+
 ## 2026-10-26 — P1.07b — Unidades, residência ativa, Aluguel e QoL do imóvel (`design/10` FINAL — BOT TEST §6.1, §9–§15; lacunas em `design/10a` §6–§7)
 
 **Decisão de execução.** Segue a ordem da P1.07 (a, b, c). A P1.07b vem empilhada sobre o PR de preparo do motor (#24: cessão de parte), que por sua vez está sobre a P1.07a (#23). Nada saiu do escopo do Bot Test.

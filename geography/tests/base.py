@@ -25,10 +25,10 @@ class GeoTestCase(TestCase):
 def wipe_world():
     """Apaga o mundo (só nos testes) para regenerar com outro cenário."""
     from geography.models import City, Lot, Neighborhood, ResourceDeposit, State
-    from properties.models import (ActiveResidence, Auction, AuctionBid, Building, ConstructionSite, Listing, LotTitle, RentListing, Tenancy,
+    from properties.models import (ActiveResidence, Auction, AuctionBid, Building, CompanyLocation, ConstructionSite, Listing, LotTitle, RentListing, Tenancy,
                                TitleEvent, Unit)
     from schools.models import Enrollment, MaterialMovement, QualityDay, School
-    for model in (ActiveResidence, RentListing, Tenancy, Unit, AuctionBid, Auction, Listing, TitleEvent, LotTitle, Building, ConstructionSite):   # a propriedade pertence aos lotes (10)
+    for model in (CompanyLocation, ActiveResidence, RentListing, Tenancy, Unit, AuctionBid, Auction, Listing, TitleEvent, LotTitle, Building, ConstructionSite):   # a propriedade pertence aos lotes (10)
         model.objects.all().delete()
     for model in (Enrollment, QualityDay, MaterialMovement, School):       # as escolas pertencem ao território (03)
         model.objects.all().delete()

@@ -12,6 +12,7 @@ funções de recusa que a execução usa. Bots e jogadores usam o mesmo caminho 
                                                        ["penalty": centavos, "max_failures": n]}
   unlist_rent      Retirar anúncio de aluguel   alvo = {"listing": id, "owner": {"kind","id"}}
   rent_unit        Alugar unidade anunciada     alvo = {"listing": id, "tenant": {"kind","id"}, "starts_on": dia, "ends_on": dia}
+  set_company_location  Localizar a empresa num lote dela  alvo = {"company": id, "lot": id | null}  (null = deixa o lote; só o Dono)
   (o contrato `rent` em si usa as ações de contrato: propose/accept/decline/withdraw/break_contract)
 A obra com lote usa a ação de iniciar obra da Construtora (`start_construction`), com o parâmetro opcional `lot`.
 """
@@ -22,7 +23,7 @@ from typing import Any, Callable, Dict, Optional
 from players.registry import TARGET_PARAMS, ActionDescriptor, TargetSpec, register_action
 from players.services import ActionResult
 
-from . import housing, rent, services
+from . import housing, rent, services, sites
 
 BID_ID, LIST_ID, UNLIST_ID, BUY_ID = "bid_auction", "list_property", "unlist_property", "buy_property"
 BID_KEYS, LIST_KEYS, LISTING_KEYS = services.BID_KEYS, services.LIST_KEYS, services.LISTING_KEYS
@@ -77,6 +78,7 @@ def _listing_preview(p) -> Dict[str, Any]:
 
 
 SET_RESIDENCE_ID, LIST_RENT_ID, UNLIST_RENT_ID, RENT_UNIT_ID = "set_residence", "list_rent", "unlist_rent", "rent_unit"
+SET_COMPANY_LOCATION_ID = "set_company_location"
 
 
 def _register_housing() -> None:
@@ -130,8 +132,30 @@ def _register_housing() -> None:
            ("rent_contract_active", "unit_leased"))
 
 
+def _register_sites() -> None:
+    def check(player, now, bal, target):
+        return None if target is None else sites.location_refusal(player.pk, target)
+
+    def run(player_id, target):
+        return sites.set_company_location(player_id, target)
+
+    def preview(player, now, bal, target):
+        company = target.get("company") if isinstance(target, dict) else None
+        view = sites.location_view(company) if isinstance(company, int) and not isinstance(company, bool) else None
+        return {} if view is None else {"location": view}
+
+    register_action(
+        ActionDescriptor(id=SET_COMPANY_LOCATION_ID, name="Localizar empresa num lote",
+                         requirements=("INVALID_PARAMS", "PLAYER_NOT_FOUND", "COMPANY_NOT_FOUND", "NOT_OWNER", "NOT_LOCATED",
+                                       "COMPANY_TYPE_NOT_LOCATED", "LOT_NOT_FOUND", "LOT_NOT_OWNED_BY_COMPANY", "ALREADY_LOCATED_HERE",
+                                       "LOT_HAS_COMPANY", "LOT_HAS_BUILDING", "LOT_RESERVED", "LOT_USE_NOT_ALLOWED"),
+                         cost=(), target=TargetSpec(TARGET_PARAMS, required=True), effects=("company_located",)),
+        check=check, execute=run, preview=preview)
+
+
 def register() -> None:
     _register_housing()
+    _register_sites()
     for action_id, name, keys, refusal, execute, order, view, requirements, effects, cost in (
         (BID_ID, "Dar lance em leilão", BID_KEYS, services.bid_refusal, services.bid, ("auction", "bidder", "amount"), _auction_preview,
          ("INVALID_PARAMS", "PLAYER_NOT_FOUND", "INVALID_PARTY", "AUCTION_NOT_FOUND", "NOT_PARTY_REPRESENTATIVE", "NOT_OWNER",

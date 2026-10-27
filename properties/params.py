@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Dict, FrozenSet, List
 
+from companies.constants import CompanyType
 from companies.params import ProvisionalRow
 from geography.constants import Category
 
@@ -40,6 +41,17 @@ MIN_BID_INCREMENT_CENTS = 1                                # [PROV] "os particip
 # (residencial, comercial, industrial) e rural (terreno da Matriz); institucional é de uso público e especial não tem regra no design.
 AUCTIONABLE_CATEGORIES: FrozenSet[Category] = frozenset({Category.RESIDENTIAL, Category.COMMERCIAL, Category.INDUSTRIAL, Category.RURAL})
 
+# Localização de empresas (10 §29; 08 §8, §9, §12): o uso de lote que cada tipo de empresa exige. Matriz → rural (08 §12), Industrial → industrial
+# (08 §9 "devem utilizar esses lotes"), Varejo → comercial (08 §8; 10 §16 "especialmente o Varejo"), Serviços → comercial (08 §8 "varejo e serviços
+# utilizarão esses lotes quando sua atividade exigir"; o design não diz QUAIS serviços exigem: [PROV] todos podem). Construtora e Financeira: o design
+# não define localização (a Construtora constrói no lote que possui, 10 §28) → não localizáveis nesta etapa. Veja `design/10a` §9, J2.
+COMPANY_SITE_USE: Dict[CompanyType, Category] = {
+    CompanyType.MATRIX: Category.RURAL,
+    CompanyType.INDUSTRIAL: Category.INDUSTRIAL,
+    CompanyType.RETAIL: Category.COMMERCIAL,
+    CompanyType.SERVICES: Category.COMMERCIAL,
+}
+
 SOURCE = "10 FINAL; valores [PROV]"
 
 
@@ -57,4 +69,8 @@ def provisional_table() -> List[ProvisionalRow]:
         *(ProvisionalRow("properties", f"building.{b.key}", f"units={b.units};qol={b.qol_bonus};min_stars={b.min_stars}",
                          "imóvel residencial (10 §6; 'parâmetros iniciais para Bot Test'; ~20 → 20)", "10 §6", status="GD")
           for b in BUILDING_TYPES.values()),
+        *(ProvisionalRow("properties", f"company_site_use.{t.value}", c.value,
+                         "uso de lote exigido para a empresa se localizar (08 §8, §9, §12)" + ("; quais Serviços exigem local é [PROV]" if t is CompanyType.SERVICES else ""),
+                         "08 FINAL; 10 §29", status="PROV" if t is CompanyType.SERVICES else "GD")
+          for t, c in COMPANY_SITE_USE.items()),
     ]

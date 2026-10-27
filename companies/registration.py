@@ -193,7 +193,7 @@ def _register_production() -> None:
         ActionDescriptor(
             id=SET_PRODUCTION_ID, name="Definir produção da empresa",
             requirements=("INVALID_PARAMS", "COMPANY_NOT_FOUND", "NOT_OWNER", "COMPANY_TYPE_CANNOT_PRODUCE", "UNKNOWN_PRODUCT",
-                          "PRODUCT_NOT_FOR_COMPANY_TYPE", "MATRIX_SITE_UNDEFINED", "PRODUCT_OUTSIDE_TERRAIN_CATEGORY",
+                          "PRODUCT_NOT_FOR_COMPANY_TYPE", "MATRIX_SITE_UNDEFINED", "TERRAIN_TYPE_UNDEFINED", "PRODUCT_NOT_IN_TERRAIN", "PRODUCT_OUTSIDE_TERRAIN_CATEGORY",
                           "PRODUCTION_NOT_READY", "STARS_TOO_LOW", "ALREADY_PRODUCING", "COOLDOWN_ACTIVE",
                           "PRODUCTION_CHANGE_COST_UNDEFINED"),
             cost=(), target=TargetSpec(TARGET_PARAMS, required=True), effects=("production_selected", "setup_started")),

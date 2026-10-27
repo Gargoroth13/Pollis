@@ -15,7 +15,8 @@ Auditoria dos Imóveis (design/10). Só LÊ. Invariantes (numeração própria d
      sem aluguel em vigor, ou inquilino de contrato em vigor); a moradia inicial é a ausência de linha
   8  aluguel: cada `Tenancy` aponta um contrato `rent` cujos termos (lote, unidade) conferem e cujo inquilino é o registrado; no máximo um
      contrato em vigor por unidade; o locador VIGENTE do contrato em vigor é o proprietário atual do lote (a venda cede o contrato, 10 §13);
-     anúncio de aluguel aberto: dono do lote, unidade livre; alugado: contrato existente com os termos do anúncio
+     anúncio de aluguel aberto: dono do lote, unidade livre, sem morador; alugado: contrato existente com os termos do anúncio
+  9  localização de empresa: tipo localizável, o lote é DA empresa (título), sem imóvel residencial no lote, lote OCUPADO, sem obra ativa
 """
 from __future__ import annotations
 
@@ -34,7 +35,8 @@ from ledger.models import Account, Entry, Transaction
 from . import params
 from .constants import AuctionStatus, ListingStatus, OwnerKind, SiteStatus, TitleReason
 from .constants import RentListingStatus
-from .models import (ActiveResidence, Auction, Building, ConstructionSite, Listing, LotTitle, RentListing, Tenancy, TitleEvent, Unit)
+from .models import (ActiveResidence, Auction, Building, CompanyLocation, ConstructionSite, Listing, LotTitle, RentListing, Tenancy, TitleEvent,
+                     Unit)
 
 
 def _payment(key: str, nature: Nature) -> Optional[Entry]:
@@ -53,6 +55,7 @@ def audit_properties() -> AuditReport:
     _units(report)
     _residences(report)
     _rent(report)
+    _locations(report)
     return report
 
 
@@ -271,3 +274,21 @@ def _rent(report: AuditReport) -> None:
             if c is None or c.type != ContractType.RENT.value or c.terms.get("amount_cents") != li.amount_cents or (
                     c.terms.get("lot"), c.terms.get("unit")) != (li.unit.building.lot_id, li.unit.index):
                 report.add(8, "RENTED_LISTING_WITHOUT_MATCHING_CONTRACT", listing=li.pk)
+
+
+def _locations(report: AuditReport) -> None:
+    n = 0
+    for loc in CompanyLocation.objects.select_related("company", "lot").order_by("lot_id"):
+        n += 1
+        if loc.company.type not in {t.value for t in params.COMPANY_SITE_USE}:
+            report.add(9, "LOCATED_COMPANY_TYPE_NOT_LOCATABLE", company=loc.company_id, type=loc.company.type)
+        title = LotTitle.objects.filter(lot_id=loc.lot_id).first()
+        if title is None or (title.owner_kind, title.owner_id) != (OwnerKind.COMPANY.value, loc.company_id):
+            report.add(9, "LOCATION_LOT_NOT_OWNED_BY_COMPANY", company=loc.company_id, lot=loc.lot_id)
+        if Building.objects.filter(lot_id=loc.lot_id).exists():
+            report.add(9, "LOCATION_LOT_HAS_BUILDING", company=loc.company_id, lot=loc.lot_id)
+        if loc.lot.occupation != Occupation.OCCUPIED.value:
+            report.add(9, "LOCATION_LOT_NOT_OCCUPIED", company=loc.company_id, lot=loc.lot_id)
+        if ConstructionSite.objects.filter(lot_id=loc.lot_id, status=SiteStatus.ACTIVE.value).exists():
+            report.add(9, "LOCATION_LOT_HAS_ACTIVE_SITE", company=loc.company_id, lot=loc.lot_id)
+    report.stats["company_locations"] = n

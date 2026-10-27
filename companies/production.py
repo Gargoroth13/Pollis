@@ -12,8 +12,10 @@ Produção empresarial (design/02 §5-8, §13, §18-20; 22 como fonte de produto
     Materiais operacionais continuam fora desta etapa (limitação conhecida da primeira implementação, Q10).
   - **Qualidade** (§8): cada unidade entra com a skill relevante de quem trabalhou; o estoque guarda a média por unidade (média
     ponderada pelo trabalho); o teto da estrela se aplica na leitura: `MIN(qualidade, teto da estrela)`.
-  - **Matriz**: a categoria vem do terreno (§2.1), que pertence a Imóveis (P1.07). Enquanto nenhum provedor de terreno estiver
-    registrado, escolher produto de Matriz é recusado (`MATRIX_SITE_UNDEFINED`); nada é inventado.
+  - **Matriz**: a categoria vem do terreno (§2.1), que pertence a Imóveis (P1.07c: localização da empresa num lote rural). Sem terreno,
+    escolher produto de Matriz é recusado (`MATRIX_SITE_UNDEFINED`); terreno sem tipo definido para a categoria: `TERRAIN_TYPE_UNDEFINED`;
+    produto fora dos recursos do lote: `PRODUCT_NOT_IN_TERRAIN`. O Trabalho da Matriz também confere o terreno (`COMPANY_SITE_INVALID`).
+    Nada é inventado.
   - **Troca com custo**: o §5.3 diz "custo fixo", mas o `24` não tem natureza nem destino para esse dinheiro: o valor `[PROV]` é
     0 e qualquer valor > 0 é recusado (`PRODUCTION_CHANGE_COST_UNDEFINED`) até o GD definir (CHANGELOG_DEV, 2026-10-20).
 
@@ -50,7 +52,9 @@ ACTION_HOOK = "companies_production"
 _INT64 = 2 ** 63
 
 SiteProvider = Callable[[int], Optional[FrozenSet[Sector]]]
+SiteProductProvider = Callable[[int], Optional[FrozenSet[str]]]
 _site_providers: Dict[str, SiteProvider] = {}
+_site_product_providers: Dict[str, SiteProductProvider] = {}
 
 
 def _refuse(code: str, **detail) -> ActionResult:
@@ -75,6 +79,46 @@ def site_categories(company_id: int) -> Optional[FrozenSet[Sector]]:
         out = _site_providers[name](company_id)
         if out is not None:
             return out
+    return None
+
+
+def register_site_product_provider(name: str, fn: SiteProductProvider) -> None:
+    """
+    Imóveis informa, além das categorias, os PRODUTOS que o terreno da empresa permite (08 §12: os recursos minerais "não são escolhidos
+    livremente"; o terreno os define). None = o terreno não restringe por produto.
+    """
+    if name in _site_product_providers:
+        raise ValueError(f"Provedor de produtos do terreno duplicado: {name}")
+    _site_product_providers[name] = fn
+
+
+def unregister_site_product_provider(name: str) -> None:      # para testes
+    _site_product_providers.pop(name, None)
+
+
+def site_products(company_id: int) -> Optional[FrozenSet[str]]:
+    for name in sorted(_site_product_providers):
+        out = _site_product_providers[name](company_id)
+        if out is not None:
+            return out
+    return None
+
+
+def site_refusal(company: Company, product_key: str) -> Optional[ActionResult]:
+    """O terreno da Matriz permite este produto (02 §2.1, §5.2)? Só LÊ. None = sim."""
+    producer = catalog.producer_sector_of(product_key)
+    categories = site_categories(company.pk)
+    if categories is None:
+        return _refuse("MATRIX_SITE_UNDEFINED", company=company.pk, why="a Matriz não tem terreno (localização de empresa: Imóveis, 10 §29)")
+    if not categories:
+        return _refuse("TERRAIN_TYPE_UNDEFINED", company=company.pk,
+                       why="o terreno não tem tipo definido para esta categoria de produto (design/10a, G12)")
+    if producer not in categories:
+        return _refuse("PRODUCT_OUTSIDE_TERRAIN_CATEGORY", product=product_key, sector=getattr(producer, "value", None),
+                       allowed=sorted(c.value for c in categories))
+    allowed = site_products(company.pk)
+    if allowed is not None and product_key not in allowed:
+        return _refuse("PRODUCT_NOT_IN_TERRAIN", product=product_key, allowed=sorted(allowed))
     return None
 
 
@@ -157,12 +201,9 @@ def _eligible(company: Company, product_key: Any) -> Optional[ActionResult]:
     if ctype is CompanyType.MATRIX:
         if producer not in RAW_SECTORS:
             return _refuse("PRODUCT_NOT_FOR_COMPANY_TYPE", product=product_key, company_type=company.type)
-        categories = site_categories(company.pk)
-        if categories is None:
-            return _refuse("MATRIX_SITE_UNDEFINED", company=company.pk, why="terreno da Matriz depende de Imóveis (P1.07)")
-        if producer not in categories:
-            return _refuse("PRODUCT_OUTSIDE_TERRAIN_CATEGORY", product=product_key, sector=producer.value,
-                           allowed=sorted(c.value for c in categories))
+        refusal = site_refusal(company, product_key)
+        if refusal is not None:
+            return refusal
     elif ctype is CompanyType.INDUSTRIAL:
         if producer is None or producer in RAW_SECTORS:
             return _refuse("PRODUCT_NOT_FOR_COMPANY_TYPE", product=product_key, company_type=company.type)
@@ -301,6 +342,8 @@ def work_refusal(job: Position, now: int) -> Optional[str]:
         return "COMPANY_NO_PRODUCT"
     if line.setup_until is not None and now < line.setup_until:
         return "COMPANY_IN_SETUP"
+    if CompanyType(job.company.type) is CompanyType.MATRIX and site_refusal(job.company, line.product.key) is not None:
+        return "COMPANY_SITE_INVALID"                    # a Matriz perdeu o terreno (ou mudou para um que não permite o produto)
     inputs, yield_q = _needs(line.product.key)
     cap_left = int(stock.capacity_of(job.company.stars).value) - stock.used_of(job.company_id)
     if cap_left <= 0:
@@ -335,6 +378,8 @@ def produce_on_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
         return {"company": company.pk, "produced": 0, "limited_by": ["COMPANY_NO_PRODUCT"]}
     if line.setup_until is not None and ctx.now < line.setup_until:
         return {"company": company.pk, "produced": 0, "limited_by": ["COMPANY_IN_SETUP"]}
+    if CompanyType(company.type) is CompanyType.MATRIX and site_refusal(company, line.product.key) is not None:
+        return {"company": company.pk, "produced": 0, "limited_by": ["COMPANY_SITE_INVALID"]}
     product = line.product
     level = get_levels(player_id)[relevant_skill(PositionKind.WORKER)]
     spec = specialization_value(player_id, product.key)
