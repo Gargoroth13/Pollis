@@ -52,6 +52,15 @@ COMPANY_SITE_USE: Dict[CompanyType, Category] = {
     CompanyType.SERVICES: Category.COMMERCIAL,
 }
 
+# Terreno rural (02 §2.1; 08 §12; design/10a G12). REGRA A PROVISÓRIA (instrução do GD, 2026-10-27), substituível pela opção B (tipo de terreno gerado
+# por lote) sem mexer nos consumidores: só `properties.sites.terrain_of` muda.
+#   - produto COMUM = matéria-prima de Agropecuária ou Extrativismo SEM recurso espacial (Trigo, Madeira, Pedra...): qualquer lote rural o sustenta;
+#   - produto de DEPÓSITO = o que tem recurso espacial (petróleo e os 9 minerais): só o lote que tem o depósito o sustenta.
+# `DEPOSIT_LOTS_ALSO_COMMON`: o lote COM depósito também sustenta os produtos comuns? [PROV] True: 08 §12 diz que o lote rural permite as três áreas e
+# o depósito apenas define QUAL recurso espacial há (não os escolhe o jogador). Aguarda confirmação do GD (design/10a G12, ponto 3).
+TERRAIN_RULE = "G12-A-PROV"
+DEPOSIT_LOTS_ALSO_COMMON = True
+
 SOURCE = "10 FINAL; valores [PROV]"
 
 
@@ -69,6 +78,10 @@ def provisional_table() -> List[ProvisionalRow]:
         *(ProvisionalRow("properties", f"building.{b.key}", f"units={b.units};qol={b.qol_bonus};min_stars={b.min_stars}",
                          "imóvel residencial (10 §6; 'parâmetros iniciais para Bot Test'; ~20 → 20)", "10 §6", status="GD")
           for b in BUILDING_TYPES.values()),
+        ProvisionalRow("properties", "terrain.rule", TERRAIN_RULE, "lote rural sem depósito sustenta Agro + Extrativismo não-petróleo (G12, opção A); "
+                       "provedor de terreno substituível pela opção B", "02 §2.1; 08 §12; GD 2026-10-27", status="PROV"),
+        ProvisionalRow("properties", "terrain.deposit_lots_also_common", str(DEPOSIT_LOTS_ALSO_COMMON),
+                       "lote com depósito também sustenta os produtos comuns (08 §12: o lote rural permite as três áreas)", "08 §12", status="PROV"),
         *(ProvisionalRow("properties", f"company_site_use.{t.value}", c.value,
                          "uso de lote exigido para a empresa se localizar (08 §8, §9, §12)" + ("; quais Serviços exigem local é [PROV]" if t is CompanyType.SERVICES else ""),
                          "08 FINAL; 10 §29", status="PROV" if t is CompanyType.SERVICES else "GD")

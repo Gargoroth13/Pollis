@@ -4,11 +4,10 @@ Localização de empresas (design/10 §16-17, §29; 02 §2.1, §5.2; 08 §8, §9
 O QUE O DESIGN DEFINE e esta etapa implementa:
   - a empresa opera num lote, e o uso do lote tem de ser o do seu tipo (Matriz rural, Industrial industrial, Varejo/Serviços comercial),
     segundo o ZONEAMENTO (10 §22: consulta `geography.zoning`, não duplica a regra);
-  - a categoria da Matriz é a do TERRENO onde ela está (02 §2.1). Nos dados atuais só há uma informação por lote rural: seus depósitos
-    (`geography.ResourceDeposit`, 08 §12-15). Petróleo é Extrativismo e os minerais são Mineração, e "os recursos minerais não são escolhidos
-    livremente: são definidos pelo sistema geográfico". Logo o terreno com depósitos permite PRODUZIR O PRODUTO daquele recurso (a chave do recurso é a
-    do produto). O que o 08 NÃO define: o tipo de um lote rural SEM depósito (Agropecuária; Extrativismo que não é petróleo). Nada é inventado: para
-    esses produtos a Matriz é recusada com `TERRAIN_TYPE_UNDEFINED` até o GD decidir (design/10a, G12).
+  - a categoria da Matriz é a do TERRENO onde ela está (02 §2.1). O terreno rural é decidido por `terrain_of`, ÚNICO ponto de troca: o 08 não define o
+    tipo de um lote rural SEM depósito, então vale a REGRA A PROVISÓRIA do GD (2026-10-27, design/10a G12): produtos comuns (Agropecuária e Extrativismo
+    não-petróleo) em qualquer lote rural; produtos de depósito (petróleo e os 9 minerais; `Product.resource`) só onde há o depósito. A opção B (tipo
+    de terreno gerado por lote) troca só `terrain_of`;
 
 O QUE ESTA ETAPA NÃO FAZ (depende de G5/G6 ou de regra não definida; ver design/10a §9): tipos de imóvel comercial/industrial e estrela → nível
 (G5), mudança de uso (G6), exigir localização para operar (Varejo/Industrial/Serviços) e aluguel comercial.
@@ -17,11 +16,14 @@ PROTOCOLO de trava: jogador → empresa → lote (o mesmo da venda, que trava o 
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Optional
 
 from django.db import transaction
 
 from catalog import services as catalog
+from catalog.constants import Sector
+from catalog.models import Product
 from companies import production
 from companies.constants import CompanyType
 from companies.models import Company
@@ -44,32 +46,67 @@ KEYS = frozenset({"company", "lot"})
 
 # --- terreno da Matriz -------------------------------------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class Terrain:
+    """O que o terreno rural sustenta (02 §2.1). `products` = chaves permitidas; as categorias saem dos produtos. `why` é o detalhamento (20)."""
+    products: FrozenSet[str]
+    common: FrozenSet[str]
+    deposits: FrozenSet[str]
+    rule: str
+    why: Dict[str, Any]
+
+    @property
+    def categories(self) -> FrozenSet:
+        return frozenset(catalog.producer_sector_of(key) for key in self.products)
+
+
 def deposit_products(lot_id: int) -> FrozenSet[str]:
-    """Produtos que o terreno permite: um por depósito (a chave do recurso é a do produto). Vazio = lote rural sem depósito (G12)."""
+    """Produtos de depósito do lote: um por depósito (a chave do recurso é a do produto)."""
     return frozenset(ResourceDeposit.objects.filter(lot_id=lot_id).values_list("resource", flat=True))
+
+
+def common_products() -> FrozenSet[str]:
+    """Matérias-primas de Agropecuária/Extrativismo SEM recurso espacial (as de depósito são o petróleo e os 9 minerais)."""
+    return frozenset(Product.objects.filter(sector__in=[Sector.AGRO.value, Sector.EXTRACTIVE.value], resource__isnull=True)
+                     .values_list("key", flat=True))
+
+
+def terrain_of(lot_id: int) -> Terrain:
+    """
+    PONTO ÚNICO DE TROCA do terreno rural. Regra A provisória (G12; `params.TERRAIN_RULE`): lote sem depósito sustenta os produtos comuns; lote com
+    depósito sustenta o(s) recurso(s) do depósito e, se `DEPOSIT_LOTS_ALSO_COMMON`, também os comuns. A opção B (tipo de terreno gerado por lote)
+    substitui só esta função; os provedores abaixo e `companies.production` não mudam.
+    """
+    deposits = deposit_products(lot_id)
+    common = common_products()
+    with_common = not deposits or params.DEPOSIT_LOTS_ALSO_COMMON
+    products = deposits | (common if with_common else frozenset())
+    return Terrain(products=products, common=common if with_common else frozenset(), deposits=deposits, rule=params.TERRAIN_RULE,
+                   why={"rule": params.TERRAIN_RULE, "provisional": True, "deposits": sorted(deposits), "common_allowed": with_common,
+                        "deposit_lots_also_common": params.DEPOSIT_LOTS_ALSO_COMMON})
 
 
 def _located_lot(company_id: int) -> Optional[int]:
     return CompanyLocation.objects.filter(company_id=company_id).values_list("lot_id", flat=True).first()
 
 
-def terrain_categories(company_id: int) -> Optional[FrozenSet]:
-    """Provedor de terreno da Matriz (`production.register_site_provider`). None = a empresa não está localizada num lote."""
+def _matrix_terrain(company_id: int) -> Optional[Terrain]:
     company = Company.objects.filter(pk=company_id).first()
     if company is None or CompanyType(company.type) is not CompanyType.MATRIX:
         return None
     lot_id = _located_lot(company_id)
-    if lot_id is None:
-        return None
-    return frozenset(catalog.producer_sector_of(key) for key in deposit_products(lot_id))
+    return None if lot_id is None else terrain_of(lot_id)
+
+
+def terrain_categories(company_id: int) -> Optional[FrozenSet]:
+    """Provedor de terreno da Matriz (`production.register_site_provider`). None = a empresa não está localizada num lote."""
+    terrain = _matrix_terrain(company_id)
+    return None if terrain is None else terrain.categories
 
 
 def terrain_products(company_id: int) -> Optional[FrozenSet[str]]:
-    company = Company.objects.filter(pk=company_id).first()
-    if company is None or CompanyType(company.type) is not CompanyType.MATRIX:
-        return None
-    lot_id = _located_lot(company_id)
-    return None if lot_id is None else deposit_products(lot_id)
+    terrain = _matrix_terrain(company_id)
+    return None if terrain is None else terrain.products
 
 
 # --- localizar a empresa -------------------------------------------------------------------------------------------------------
@@ -170,9 +207,10 @@ def location_view(company_id: int) -> Optional[Dict[str, Any]]:
     row = CompanyLocation.objects.filter(company_id=company_id).select_related("lot").first()
     if row is None:
         return None
-    products = sorted(deposit_products(row.lot_id))
-    return {"company": company_id, "lot": row.lot_id, "category": row.lot.category, "since": row.since, "deposit_products": products,
-            "terrain_defined": bool(products)}
+    terrain = terrain_of(row.lot_id)
+    return {"company": company_id, "lot": row.lot_id, "category": row.lot.category, "since": row.since,
+            "deposit_products": sorted(terrain.deposits), "terrain_products": sorted(terrain.products),
+            "terrain_defined": bool(terrain.products), "terrain": terrain.why}
 
 
 def register() -> None:

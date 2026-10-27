@@ -13,7 +13,7 @@ from geography.models import Lot, ResourceDeposit
 from ledger import services as ledger
 from ledger.tests.base import fund_account
 from players import registry
-from properties import services, sites
+from properties import params, services, sites
 from properties.audit import audit_properties
 from properties.models import CompanyLocation, LotTitle
 
@@ -198,29 +198,77 @@ class TerrainTests(SitesBase):
     def test_a_matrix_without_a_lot_has_no_terrain(self):
         self.assertEqual(production.set_production(self.boss.pk, self.matrix, "iron").code, "MATRIX_SITE_UNDEFINED")
 
-    def test_a_mineral_deposit_allows_that_mineral_and_nothing_else(self):
-        self.located(["iron", "coal"])
-        self.assertEqual(sites.terrain_categories(self.matrix), frozenset({Sector.MINING}))
-        self.assertEqual(production.set_production(self.boss.pk, self.matrix, "gold").code, "PRODUCT_NOT_IN_TERRAIN")
-        self.assertEqual(production.set_production(self.boss.pk, self.matrix, "wheat").code, "PRODUCT_OUTSIDE_TERRAIN_CATEGORY")
-        self.assertEqual(production.set_production(self.boss.pk, self.matrix, "oil").code, "PRODUCT_OUTSIDE_TERRAIN_CATEGORY")
-        res = production.set_production(self.boss.pk, self.matrix, "iron")
-        self.assertTrue(res.ok, res)
+    def produce(self, key):
+        return production.set_production(self.boss.pk, self.matrix, key)
 
-    def test_oil_is_extractive_and_never_mining(self):
-        self.located(["oil"])
-        self.assertEqual(sites.terrain_categories(self.matrix), frozenset({Sector.EXTRACTIVE}))
-        self.assertEqual(production.set_production(self.boss.pk, self.matrix, "iron").code, "PRODUCT_OUTSIDE_TERRAIN_CATEGORY")
-        self.assertEqual(production.set_production(self.boss.pk, self.matrix, "wood").code, "PRODUCT_NOT_IN_TERRAIN")    # extrativismo SEM depósito: G12
-        self.assertTrue(production.set_production(self.boss.pk, self.matrix, "oil").ok)
-
-    def test_a_rural_lot_without_deposit_leaves_the_terrain_type_undefined_and_invents_nothing(self):
+    def test_a_rural_lot_without_deposit_sustains_agro_and_common_extractive_products_provisional_rule_a(self):
         self.located([])
-        for product in ("wheat", "wood", "iron", "oil"):
-            res = production.set_production(self.boss.pk, self.matrix, product)
-            self.assertEqual(res.code, "TERRAIN_TYPE_UNDEFINED", product)
-        self.assertEqual(sites.location_view(self.matrix)["terrain_defined"], False)
-        self.assertFalse(ProductionLine.objects.filter(company_id=self.matrix, product__isnull=False).exists())
+        self.assertEqual(sites.terrain_categories(self.matrix), frozenset({Sector.AGRO, Sector.EXTRACTIVE}))
+        res = self.produce("wood")                                                  # extrativismo comum, sem depósito
+        self.assertTrue(res.ok, res)
+        view = sites.location_view(self.matrix)
+        self.assertTrue(view["terrain_defined"])
+        self.assertEqual((view["terrain"]["rule"], view["terrain"]["provisional"]), ("G12-A-PROV", True))
+
+    def test_no_deposit_never_sustains_oil_or_minerals(self):
+        self.located([])
+        terrain = sites.terrain_of(self.matrix_lot())
+        for key in ("oil", "iron", "gold", "diamond"):
+            self.assertNotIn(key, terrain.products, key)
+            self.assertEqual(self.produce(key).code, "PRODUCT_OUTSIDE_TERRAIN_CATEGORY" if key != "oil" else "PRODUCT_NOT_IN_TERRAIN", key)
+        for key in ("wheat", "meat", "wood", "sand", "rubber"):
+            self.assertIn(key, terrain.products, key)
+
+    def matrix_lot(self):
+        return CompanyLocation.objects.get(company_id=self.matrix).lot_id
+
+    def test_a_mineral_deposit_adds_that_mineral_and_keeps_the_common_products_by_default(self):
+        self.located(["iron", "coal"])
+        self.assertEqual(sites.terrain_categories(self.matrix), frozenset({Sector.MINING, Sector.AGRO, Sector.EXTRACTIVE}))
+        self.assertEqual(self.produce("gold").code, "PRODUCT_NOT_IN_TERRAIN")             # mineral de OUTRO depósito: nunca
+        self.assertEqual(self.produce("oil").code, "PRODUCT_NOT_IN_TERRAIN")
+        self.assertTrue(self.produce("iron").ok)
+
+    def test_oil_deposit_adds_oil_as_extractive_never_mining(self):
+        self.located(["oil"])
+        terrain = sites.terrain_of(self.matrix_lot())
+        self.assertIn("oil", terrain.products)
+        self.assertNotIn(Sector.MINING, terrain.categories)
+        self.assertEqual(self.produce("iron").code, "PRODUCT_OUTSIDE_TERRAIN_CATEGORY")
+        self.assertTrue(self.produce("oil").ok)
+
+    def test_with_the_provisional_switch_off_a_deposit_lot_sustains_only_its_deposits(self):
+        from unittest import mock
+        self.located(["iron"])
+        with mock.patch.object(params, "DEPOSIT_LOTS_ALSO_COMMON", False):
+            self.assertEqual(sites.terrain_categories(self.matrix), frozenset({Sector.MINING}))
+            self.assertEqual(self.produce("wheat").code, "PRODUCT_OUTSIDE_TERRAIN_CATEGORY")
+            self.assertFalse(sites.terrain_of(self.matrix_lot()).why["common_allowed"])
+            self.assertTrue(self.produce("iron").ok)
+
+    def test_the_switch_never_affects_a_lot_without_deposit(self):
+        from unittest import mock
+        self.located([])
+        with mock.patch.object(params, "DEPOSIT_LOTS_ALSO_COMMON", False):
+            self.assertIn("wheat", sites.terrain_of(self.matrix_lot()).products)
+
+    def test_the_terrain_is_replaceable_in_a_single_point_without_touching_the_consumers(self):
+        from unittest import mock
+        self.located([])
+        fake = sites.Terrain(products=frozenset({"stone"}), common=frozenset(), deposits=frozenset(), rule="TEST-B", why={"rule": "TEST-B"})
+        with mock.patch.object(sites, "terrain_of", return_value=fake):
+            self.assertEqual(sites.terrain_products(self.matrix), frozenset({"stone"}))
+            self.assertEqual(self.produce("wheat").code, "PRODUCT_OUTSIDE_TERRAIN_CATEGORY")
+            self.assertEqual(self.produce("wood").code, "PRODUCT_NOT_IN_TERRAIN")             # mesma categoria (Extrativismo), fora do terreno
+            self.assertTrue(self.produce("stone").ok)
+
+    def test_the_terrain_provider_may_still_report_an_undefined_type_to_production(self):
+        """A recusa `TERRAIN_TYPE_UNDEFINED` do `companies.production` continua para provedores que não saibam o tipo (ex.: a opção B sem dado)."""
+        self.located([])
+        fake = sites.Terrain(products=frozenset(), common=frozenset(), deposits=frozenset(), rule="TEST-B", why={})
+        from unittest import mock
+        with mock.patch.object(sites, "terrain_of", return_value=fake):
+            self.assertEqual(self.produce("wheat").code, "TERRAIN_TYPE_UNDEFINED")
 
     def test_every_resource_is_the_product_of_the_matching_sector_so_the_deposit_key_is_the_product_key(self):
         from catalog import services as catalog
