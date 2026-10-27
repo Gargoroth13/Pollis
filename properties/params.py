@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Dict, FrozenSet, List
 
+from companies.constants import CompanyType
 from companies.params import ProvisionalRow
 from geography.constants import Category
 
@@ -40,6 +41,26 @@ MIN_BID_INCREMENT_CENTS = 1                                # [PROV] "os particip
 # (residencial, comercial, industrial) e rural (terreno da Matriz); institucional é de uso público e especial não tem regra no design.
 AUCTIONABLE_CATEGORIES: FrozenSet[Category] = frozenset({Category.RESIDENTIAL, Category.COMMERCIAL, Category.INDUSTRIAL, Category.RURAL})
 
+# Localização de empresas (10 §29; 08 §8, §9, §12): o uso de lote que cada tipo de empresa exige. Matriz → rural (08 §12), Industrial → industrial
+# (08 §9 "devem utilizar esses lotes"), Varejo → comercial (08 §8; 10 §16 "especialmente o Varejo"), Serviços → comercial (08 §8 "varejo e serviços
+# utilizarão esses lotes quando sua atividade exigir"; o design não diz QUAIS serviços exigem: [PROV] todos podem). Construtora e Financeira: o design
+# não define localização (a Construtora constrói no lote que possui, 10 §28) → não localizáveis nesta etapa. Veja `design/10a` §9, J2.
+COMPANY_SITE_USE: Dict[CompanyType, Category] = {
+    CompanyType.MATRIX: Category.RURAL,
+    CompanyType.INDUSTRIAL: Category.INDUSTRIAL,
+    CompanyType.RETAIL: Category.COMMERCIAL,
+    CompanyType.SERVICES: Category.COMMERCIAL,
+}
+
+# Terreno rural (02 §2.1; 08 §12; design/10a G12). REGRA A PROVISÓRIA (instrução do GD, 2026-10-27), substituível pela opção B (tipo de terreno gerado
+# por lote) sem mexer nos consumidores: só `properties.sites.terrain_of` muda.
+#   - produto COMUM = matéria-prima de Agropecuária ou Extrativismo SEM recurso espacial (Trigo, Madeira, Pedra...): qualquer lote rural o sustenta;
+#   - produto de DEPÓSITO = o que tem recurso espacial (petróleo e os 9 minerais): só o lote que tem o depósito o sustenta.
+# `DEPOSIT_LOTS_ALSO_COMMON`: o lote COM depósito também sustenta os produtos comuns? [PROV] True: 08 §12 diz que o lote rural permite as três áreas e
+# o depósito apenas define QUAL recurso espacial há (não os escolhe o jogador). Aguarda confirmação do GD (design/10a G12, ponto 3).
+TERRAIN_RULE = "G12-A-PROV"
+DEPOSIT_LOTS_ALSO_COMMON = True
+
 SOURCE = "10 FINAL; valores [PROV]"
 
 
@@ -57,4 +78,12 @@ def provisional_table() -> List[ProvisionalRow]:
         *(ProvisionalRow("properties", f"building.{b.key}", f"units={b.units};qol={b.qol_bonus};min_stars={b.min_stars}",
                          "imóvel residencial (10 §6; 'parâmetros iniciais para Bot Test'; ~20 → 20)", "10 §6", status="GD")
           for b in BUILDING_TYPES.values()),
+        ProvisionalRow("properties", "terrain.rule", TERRAIN_RULE, "lote rural sem depósito sustenta Agro + Extrativismo não-petróleo (G12, opção A); "
+                       "provedor de terreno substituível pela opção B", "02 §2.1; 08 §12; GD 2026-10-27", status="PROV"),
+        ProvisionalRow("properties", "terrain.deposit_lots_also_common", str(DEPOSIT_LOTS_ALSO_COMMON),
+                       "lote com depósito também sustenta os produtos comuns (08 §12: o lote rural permite as três áreas)", "08 §12", status="PROV"),
+        *(ProvisionalRow("properties", f"company_site_use.{t.value}", c.value,
+                         "uso de lote exigido para a empresa se localizar (08 §8, §9, §12)" + ("; quais Serviços exigem local é [PROV]" if t is CompanyType.SERVICES else ""),
+                         "08 FINAL; 10 §29", status="PROV" if t is CompanyType.SERVICES else "GD")
+          for t, c in COMPANY_SITE_USE.items()),
     ]

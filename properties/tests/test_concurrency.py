@@ -312,3 +312,46 @@ class RentConcurrencyTests(ConcurrencyBase):
         jobs = run_together(*[lambda: housing.set_residence(self.third.pk, unit.pk) for _ in range(3)])
         self.assertEqual(ActiveResidence.objects.filter(unit=unit).count(), 1)
         self.assertAllClean()
+
+
+class SitesConcurrencyTests(ConcurrencyBase):
+    """Localização de empresas: uma empresa, um lote; a venda do lote encerra a localização sem corrida."""
+
+    def matrix_with_lots(self, n=2):
+        from properties import sites
+        self.sites = sites
+        company = company_services.found_company(self.boss.pk, "matrix", "Mina", 0).detail["company"]
+        self.assertTrue(company_services.fund_company(self.boss.pk, company, 2_000_000).ok)
+        rural = list(Lot.objects.filter(category="rural").order_by("pk"))[:n]
+        for lot in rural:
+            self.own(lot, "company", company, self.boss)
+        return company, rural
+
+    def test_one_company_located_on_two_lots_at_once_keeps_exactly_one_location(self):
+        company, (a, b) = self.matrix_with_lots()
+        jobs = run_together(lambda: self.sites.set_company_location(self.boss.pk, {"company": company, "lot": a.pk}),
+                            lambda: self.sites.set_company_location(self.boss.pk, {"company": company, "lot": b.pk}))
+        self.assertTrue(all(j.result.ok for j in jobs), [j.result for j in jobs])
+        from properties.models import CompanyLocation
+        self.assertEqual(CompanyLocation.objects.filter(company_id=company).count(), 1)
+        occupied = Lot.objects.filter(pk__in=[a.pk, b.pk], occupation="occupied").values_list("pk", flat=True)
+        self.assertEqual(list(occupied), [CompanyLocation.objects.get().lot_id])
+        self.assertClean()
+
+    def test_the_same_location_requested_many_times_at_once_succeeds_once(self):
+        company, (a, _) = self.matrix_with_lots()
+        jobs = run_together(*[lambda: self.sites.set_company_location(self.boss.pk, {"company": company, "lot": a.pk}) for _ in range(4)])
+        self.assertEqual(sum(1 for j in jobs if j.result.ok), 1, [j.result for j in jobs])
+        self.assertEqual({j.result.code for j in jobs if not j.result.ok}, {"ALREADY_LOCATED_HERE"})
+        self.assertClean()
+
+    @CROSS_ROW
+    def test_selling_the_lot_versus_locating_on_it_leaves_no_location_of_a_non_owner(self):
+        company, (a, _) = self.matrix_with_lots()
+        li = services.list_property(self.boss.pk, a.pk, self.company_ref(company), 9_000).detail["listing"]
+        jobs = run_together(lambda: services.buy_property(self.third.pk, li, self.player_ref(self.third)),
+                            lambda: self.sites.set_company_location(self.boss.pk, {"company": company, "lot": a.pk}))
+        from properties.models import CompanyLocation
+        self.assertEqual(CompanyLocation.objects.filter(lot=a).count(), 0)           # com o lote vendido, ninguém fica localizado nele
+        self.assertEqual(Lot.objects.get(pk=a.pk).occupation, "empty")
+        self.assertClean()

@@ -279,7 +279,7 @@ Implementar `10`, em etapas (lacunas em `design/10a`):
 
 - **[x] P1.07a — Propriedade, leilões, venda e obra com lote** (branch `dev/p1.07a-propriedade-leiloes`, PR empilhado sobre o #22; `CHANGELOG_DEV.md`, 2026-10-25).
 - **[x] P1.07b — Unidades, residência ativa, Aluguel e QoL** (branch `dev/p1.07b-moradia-aluguel`, PR empilhado sobre o #24; `CHANGELOG_DEV.md`, 2026-10-26; lacunas H1–H10 em `design/10a` §7). G9 resolvida pelo texto do design.
-- **[ ] P1.07c — Empresas e Matriz**: localização de empresas, tipos comercial/industrial (G5), terreno da Matriz (`production.register_site_provider`), mudança de uso (G6).
+- **[~] P1.07c — Empresas e Matriz** (branch `dev/p1.07c-empresas-localizacao`, PR empilhado sobre o #25; `CHANGELOG_DEV.md`, 2026-10-27; `design/10a` §8–§10). **Feito:** localização de empresas, terreno da Matriz (depósitos), invariante 9. **Resta e depende do GD:** tipos comercial/industrial e estrela → nível (G5, direção B; proposta em `design/10a` §11) e exigir localização (J4), mudança de uso (G6, direção B; §12), confirmação de G12 para lote com depósito, aluguel comercial/empresa inquilina (H3, após G5).
 
 ## [~] P1.08 — Contratos
 
@@ -465,7 +465,8 @@ Ajustar arquitetura, recompensa, exploração e memória com base nos dados reai
 | P1.07b (feita) | G9 — moradia inicial | **Resolvida** pelo texto do design (`04` §24, `10` §14): ausência de residência ativa |
 | P1.07b (feita) | H8 — voltar à moradia inicial por escolha (`set_residence` nulo) | Provisória: permitido; GD pode vetar |
 | P1.06d | Quais residências contam na capacidade de escola (`03a` decisão 1) | Provisória (provedor de residências só é ligado em P1.06d) |
-| **P1.07c** (próxima) | G5 tipos comercial/industrial e estrela → nível; G6 mudança de uso e aprovador | **Bloqueia P1.07c** (sem tipos comercial/industrial não há onde localizar empresas) |
+| **P1.07c** (parcial) | G5 (direção B do GD): 8 pontos em `design/10a` §11, começando pela interpretação do `10` §16; G6 (direção B): 3 pontos em §12 (aprova nada no Bot Test com zoneamento padrão; custo sem natureza) | **Bloqueiam o restante da P1.07c**; o que o design define já está feito |
+| P1.07c / Bot Test | **G12** tipo de terreno de lote rural sem depósito | **Regra A provisória implementada (GD 2026-10-27)**: cadeia de alimentos e madeira destravada; **prioridade de desbloqueio**: falta confirmar lote *com* depósito (hoje: depósito acrescenta) e evoluir à opção B quando o GD definir; retomar os pontos dependentes da cadeia agro/madeira (P1.05b, Industrial Alimentícia) agora que há Matriz agro |
 | Antes de ligar os bots | G1 — quem abre leilões e quando; G2 — arrematante sem fundos | Provisória (só ferramenta de sistema; invalida) |
 | P1.09 (Orçamento) | Destino/natureza do custo fixo de troca de produção (`24`); IR 5% até haver leis | Provisória |
 | P1.06b–d (Escolas) | 13 decisões de `03a` (professores, mensalidade, diplomas, capacidade) | Provisória; P1.06b só começa com as decisões 3–6 |

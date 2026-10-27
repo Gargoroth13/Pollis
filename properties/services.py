@@ -31,10 +31,10 @@ from market.recording import party_account_id
 from players.models import Player
 from players.services import ActionResult
 
-from . import housing, params, rent
+from . import housing, params, rent, sites
 from players import qol
 from .constants import AuctionStatus, ListingStatus, OwnerKind, SiteStatus, TitleReason
-from .models import Auction, AuctionBid, Building, ConstructionSite, Listing, LotTitle, TitleEvent
+from .models import Auction, AuctionBid, Building, CompanyLocation, ConstructionSite, Listing, LotTitle, TitleEvent
 
 from . import common
 from .common import (PRIVATE_KINDS, acting_player, is_int as _is_int, lock as _lock, parse_party, positive as _positive,
@@ -411,6 +411,9 @@ def buy_property(actor_id: Any, listing_id: Any, buyer: Any) -> ActionResult:
             return paid
         _record_title(lot, kind, entity_id, TitleReason.SALE, listing.price_cents, key, "listing", listing.pk, now)
         carried = rent.on_property_sold(lot, (kind, entity_id), "property_sale", f"listing:{listing.pk}", now)    # 10 §13
+        dropped_company = sites.drop_location_of_lot(lot.pk)                                                      # a empresa deixa o lote vendido
+        if dropped_company is not None:
+            carried = {**carried, "company_location_dropped": dropped_company}
         listing.status, listing.closed_at, listing.buyer_kind, listing.buyer_id, listing.ledger_key = (
             ListingStatus.SOLD.value, now, kind.value, entity_id, key)
         listing.save(update_fields=["status", "closed_at", "buyer_kind", "buyer_id", "ledger_key"])
@@ -467,6 +470,7 @@ def _close_tick(tick, ctx) -> None:
 
 def register() -> None:
     rent.register()                                                  # tipo `rent` do motor de contratos (10 §9-13)
+    sites.register()                                                 # terreno da Matriz (02 §2.1; 10 §29)
     qol.register_qol_base_provider(housing.PROVIDER_NAME, housing.qol_bonus)    # 10 §7: o imóvel da residência ativa soma à QoL Base
     construction.register_start_validator(HOOK_NAME, _start_validator)
     construction.register_start_hook(HOOK_NAME, _start_hook)
@@ -498,7 +502,8 @@ def lot_view(lot_id: int) -> Optional[Dict[str, Any]]:
     auction = Auction.objects.filter(lot=lot, status=AuctionStatus.OPEN.value).first()
     listing = Listing.objects.filter(lot=lot, status=ListingStatus.OPEN.value).first()
     site = ConstructionSite.objects.filter(lot=lot, status=SiteStatus.ACTIVE.value).first()
-    return {"lot": lot.pk, "category": lot.category, "occupation": lot.occupation, "owner": [kind.value, owner],
+    located = CompanyLocation.objects.filter(lot=lot).values_list("company_id", flat=True).first()
+    return {"lot": lot.pk, "category": lot.category, "occupation": lot.occupation, "owner": [kind.value, owner], "company": located,
             "building": None if building is None else {"kind": building.kind, "units": building.units, "qol_bonus": str(building.qol_bonus)},
             "units": [] if building is None else list(building.unit_rows.order_by("index").values_list("pk", flat=True)),
             "open_auction": None if auction is None else auction.pk,
