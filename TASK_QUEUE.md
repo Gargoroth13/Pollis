@@ -296,7 +296,9 @@ Implementar `18`.
 
 # P1 — Governo e política
 
-## [ ] P1.09 — Orçamento público
+## [~] P1.09 — Orçamento público
+
+**P1.09a feita** (branch `dev/p1.09a-orcamento-nucleo`, PR empilhado sobre o #26; `design/09a`): visão fiscal, teto de déficit, repasses, plano municipal com pisos, auditoria, ações. **Restam:** P1.09b (projetos e contratos governamentais com Construtoras; depende de P1.08c), P1.09c (dívida pública e bloqueio fiscal), P1.09d (subsídios, campanhas). **K1** (quem ocupa os cargos) vem da P1.11/cenário: obrigatório antes de ligar o Bot Test.
 
 **Depende de P0.07.** Não pode criar dinheiro por emissão de dívida; deve declarar a origem dos recursos. Pisos setoriais só no orçamento municipal, base de 30 dias para os três pisos (`11` 11.2.1); teto de déficit sem proposta até o P0.07a. Atribuição territorial da arrecadação e retenção: `09` §45.
 

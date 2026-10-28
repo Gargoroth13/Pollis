@@ -4,6 +4,16 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-28 — P1.09a — Núcleo do Orçamento Público (`design/09` FINAL — BOT TEST; lacunas K1–K5 em `design/09a`)
+
+**Decisão de execução.** Instrução do GD (2026-10-27): prosseguir com a P1.09 se não comprometer dependências. A P1.09a vem empilhada sobre a P1.07c (#26). P1.09b (projetos/contratos governamentais, depende de P1.08c), P1.09c (dívida) e P1.09d (subsídios/campanhas) ficam para as próximas etapas; nada saiu do escopo do Bot Test.
+
+**Entregue (app `budget`, migração `0001`):** visão fiscal e log financeiro públicos; classificação de receita/despesa e **teto de déficit** (`24` §24.16: janela de 360 dias, mínimo 30, borda exata, `Explained`); **repasses** União→Estado e Estado→Município (`GOV_TRANSFER`, decisão registrada e pública); **plano orçamentário municipal** por período de 30 dias com **pisos** sobre a receita dos últimos 30 dias, soma dos pisos ≤ 100% e total ≤ disponível; `area_headroom`; `audit_budget`; ações `budget_transfer`, `set_budget_plan`, `confirm_budget_plan` no Action Registry (mesmo caminho para bots e jogadores).
+
+**Lacunas (`design/09a` §3):** K1 quem ocupa os cargos (gancho `register_office_provider`; sem provedor ninguém age; P1.11/cenário registram) — **bloqueia ligar o Bot Test, não o desenvolvimento**; K2 âncora dos períodos na época do jogo `[PROV]`; K3 repasse só do que sobra após comprometido e obrigações pendentes `[PROV]`; K4 linhas do plano = dotações, piso arredondado para cima, pisos padrão 10% do `11` até a P1.12 `[PROV]`; K5 horizonte e abertura das contas de todos os governos (`ensure_accounts`).
+
+**Prova:** 84 testes (fiscal 16, repasses 24, planos 25, auditoria 13, concorrência 6, 1 só-PG). Mutações detectadas: `<=`→`<` no teto, piso sem arredondar para cima, repasse ignorando pendências, hierarquia desligada, total do plano desligado, mínimo de 30 dias; a trava da conta do Município na confirmação é detectada pelo teste `CROSS_ROW` (PG); **a trava dos repasses não é detectada** (o ledger é a primeira defesa; documentado em `design/09a` §5). Resultados das suítes completas: ver o PR.
+
 ## 2026-10-27 — G12 provisória (regra A), propostas detalhadas de G5/G6 e orientação do GD (`design/10a` §10–§12)
 
 **Orientação do GD (2026-10-27).** G5: opção B como arquitetura final (prédios com nível ligados à estrela, Construtora e materiais; não eliminar do Bot Test); antes de fechar a regra, detalhar a proposta. G6: opção B (aprovação automática só se o zoneamento e as demais restrições permitirem, sem contornar restrições nem leis; gancho para aprovação política); custo sem inventar. **G12: opção A como regra provisória** para destravar alimentos e madeira, provedor substituível, e esclarecer lotes com depósito. P1.09 segue se não comprometer dependências. H6 e H8 continuam provisórios. Nenhum merge.
