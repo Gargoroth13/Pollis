@@ -27,10 +27,13 @@ def wipe_world():
     from geography.models import City, Lot, Neighborhood, ResourceDeposit, State
     from properties.models import (ActiveResidence, Auction, AuctionBid, Building, CompanyLocation, ConstructionSite, Listing, LotTitle, RentListing, Tenancy,
                                TitleEvent, Unit)
+    from budget.models import BudgetPlan, BudgetPlanLine
     from schools.models import Enrollment, MaterialMovement, QualityDay, School
     for model in (CompanyLocation, ActiveResidence, RentListing, Tenancy, Unit, AuctionBid, Auction, Listing, TitleEvent, LotTitle, Building, ConstructionSite):   # a propriedade pertence aos lotes (10)
         model.objects.all().delete()
     for model in (Enrollment, QualityDay, MaterialMovement, School):       # as escolas pertencem ao território (03)
+        model.objects.all().delete()
+    for model in (BudgetPlanLine, BudgetPlan):       # o plano pertence ao Município (09)
         model.objects.all().delete()
     ResourceDeposit.objects.all().delete()
     Lot.objects.all().delete()

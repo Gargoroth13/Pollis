@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "schools",  # escolas: matrícula, materiais, qualidade diária (design/03)
     "contracts",  # contratos: fornecimento, empréstimo e o motor dos demais tipos (design/18)
     "properties",  # imóveis: propriedade de lotes, leilões, venda e obra com lote (design/10)
+    "budget",  # orçamento público: repasses, plano municipal, pisos, visão fiscal (design/09)
 ]
 
 MIDDLEWARE = [
