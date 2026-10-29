@@ -76,6 +76,7 @@ class AuditTests(CompanyTestCase):
                      "support.limit_per_star", "support.lawyer_specialization_key",
                      "retail.sales_capacity_per_work", "retail.sales_specialization_key"}
         expected |= {f"construction.{k}" for k in params.CONSTRUCTION_PROJECTS}
+        expected |= {"construction.consumes_materials", "construction.materials_per_work"}
         self.assertEqual(set(rows), expected)
         self.assertEqual(rows["initial_stars"].status, "PROV")
         self.assertEqual(rows["wage_ceiling_per_day_cents"].value, "None")      # T sem teto: None, nunca 0
