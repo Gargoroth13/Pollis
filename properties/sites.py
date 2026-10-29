@@ -5,12 +5,13 @@ O QUE O DESIGN DEFINE e esta etapa implementa:
   - a empresa opera num lote, e o uso do lote tem de ser o do seu tipo (Matriz rural, Industrial industrial, Varejo/Serviços comercial),
     segundo o ZONEAMENTO (10 §22: consulta `geography.zoning`, não duplica a regra);
   - a categoria da Matriz é a do TERRENO onde ela está (02 §2.1). O terreno rural é decidido por `terrain_of`, ÚNICO ponto de troca: o 08 não define o
-    tipo de um lote rural SEM depósito, então vale a REGRA A PROVISÓRIA do GD (2026-10-27, design/10a G12): produtos comuns (Agropecuária e Extrativismo
+    tipo de um lote rural SEM depósito, então vale a REGRA A do GD (2026-10-27/29, design/10a G12): produtos comuns (Agropecuária e Extrativismo
     não-petróleo) em qualquer lote rural; produtos de depósito (petróleo e os 9 minerais; `Product.resource`) só onde há o depósito. A opção B (tipo
     de terreno gerado por lote) troca só `terrain_of`;
 
-O QUE ESTA ETAPA NÃO FAZ (depende de G5/G6 ou de regra não definida; ver design/10a §9): tipos de imóvel comercial/industrial e estrela → nível
-(G5), mudança de uso (G6), exigir localização para operar (Varejo/Industrial/Serviços) e aluguel comercial.
+PRÉDIO (G5, GD 2026-10-29): Varejo e Serviços precisam de prédio comercial de nível ≥ estrela; Industrial, de prédio industrial (sem nível); uma empresa por prédio
+(uma por lote). Exigir a empresa localizada para OPERAR é `REQUIRE_LOCATION_TO_OPERATE` (porta `companies.gates`; desligada até o cenário do Bot Test). O uso do lote
+(zoneamento + uso designado, mudança de uso: G6) vem de `properties.uses`. Aluguel comercial (H3) segue fora desta etapa.
 
 PROTOCOLO de trava: jogador → empresa → lote (o mesmo da venda, que trava o lote antes de decidir).
 """
@@ -24,7 +25,7 @@ from django.db import transaction
 from catalog import services as catalog
 from catalog.constants import Sector
 from catalog.models import Product
-from companies import production
+from companies import gates, production
 from companies.constants import CompanyType
 from companies.models import Company
 from core import clock as game_clock
@@ -34,7 +35,7 @@ from geography.models import Lot, ResourceDeposit
 from players.models import Player
 from players.services import ActionResult
 
-from . import params
+from . import params, uses
 from .common import authority, is_int, lock, positive, refuse
 from .constants import ListingStatus, OwnerKind, SiteStatus
 from .models import Building, CompanyLocation, ConstructionSite, Listing
@@ -73,8 +74,8 @@ def common_products() -> FrozenSet[str]:
 
 def terrain_of(lot_id: int) -> Terrain:
     """
-    PONTO ÚNICO DE TROCA do terreno rural. Regra A provisória (G12; `params.TERRAIN_RULE`): lote sem depósito sustenta os produtos comuns; lote com
-    depósito sustenta o(s) recurso(s) do depósito e, se `DEPOSIT_LOTS_ALSO_COMMON`, também os comuns. A opção B (tipo de terreno gerado por lote)
+    PONTO ÚNICO DE TROCA do terreno rural. Regra A (G12, GD 2026-10-27/29; `params.TERRAIN_RULE`): lote sem depósito sustenta os produtos comuns; lote com
+    depósito sustenta o(s) recurso(s) do depósito E os comuns (o depósito acrescenta, não substitui). A opção B (tipo de terreno gerado por lote)
     substitui só esta função; os provedores abaixo e `companies.production` não mudam.
     """
     deposits = deposit_products(lot_id)
@@ -82,7 +83,7 @@ def terrain_of(lot_id: int) -> Terrain:
     with_common = not deposits or params.DEPOSIT_LOTS_ALSO_COMMON
     products = deposits | (common if with_common else frozenset())
     return Terrain(products=products, common=common if with_common else frozenset(), deposits=deposits, rule=params.TERRAIN_RULE,
-                   why={"rule": params.TERRAIN_RULE, "provisional": True, "deposits": sorted(deposits), "common_allowed": with_common,
+                   why={"rule": params.TERRAIN_RULE, "provisional": False, "deposits": sorted(deposits), "common_allowed": with_common,
                         "deposit_lots_also_common": params.DEPOSIT_LOTS_ALSO_COMMON})
 
 
@@ -118,6 +119,57 @@ def required_use(company_type: str):
         return None
 
 
+def building_family_of(company_type: str):
+    try:
+        return params.COMPANY_BUILDING_FAMILY.get(CompanyType(company_type))
+    except ValueError:
+        return None
+
+
+def building_refusal(company: Company, building: Optional[Building], lot_id: int) -> Optional[ActionResult]:
+    """
+    Prédio que a empresa ocupa (10 §16-17; G5, GD 2026-10-29): Varejo e Serviços precisam de prédio COMERCIAL de nível ≥ estrela; Industrial, de prédio industrial (sem
+    nível); os demais tipos não ocupam prédio. Só LÊ. Recusas: LOT_HAS_BUILDING (prédio de outra família), BUILDING_REQUIRED, BUILDING_LEVEL_TOO_LOW.
+    """
+    family = building_family_of(company.type)
+    if building is None:
+        if family is not None and params.REQUIRE_BUILDING_FOR_LOCATION:
+            return refuse("BUILDING_REQUIRED", lot=lot_id, family=family.value,
+                          why="a empresa precisa de um prédio " + ("comercial de nível ≥ estrela" if family.value == "commercial" else "industrial") + " (design/10a §11)")
+        return None
+    if family is None or building.family != family.value:
+        return refuse("LOT_HAS_BUILDING", lot=lot_id, building_family=building.family, company_family=None if family is None else family.value)
+    if family.value == "commercial" and (building.level or 0) < company.stars:
+        return refuse("BUILDING_LEVEL_TOO_LOW", lot=lot_id, level=building.level, stars=company.stars,
+                      why="a empresa de N estrelas precisa de prédio de nível ≥ N")
+    return None
+
+
+def stars_allowed(company_id: int, stars: int) -> Optional[ActionResult]:
+    """Para a progressão de estrelas (P1.04f): a empresa localizada num prédio comercial só chega a `stars` se o prédio tiver nível ≥ `stars`. Só LÊ."""
+    row = CompanyLocation.objects.filter(company_id=company_id).first()
+    company = Company.objects.filter(pk=company_id).first()
+    if row is None or company is None:
+        return None
+    building = Building.objects.filter(lot_id=row.lot_id).first()
+    if building is None or building_family_of(company.type) is None or building_family_of(company.type).value != "commercial":
+        return None
+    return None if (building.level or 0) >= stars else refuse("BUILDING_LEVEL_TOO_LOW", lot=row.lot_id, level=building.level, stars=stars)
+
+
+def operation_gate(company: Company) -> Optional[ActionResult]:
+    """Porta de operação (`companies.gates`): com `REQUIRE_LOCATION_TO_OPERATE`, a empresa de Varejo/Industrial/Serviços precisa estar localizada no prédio certo."""
+    if not params.REQUIRE_LOCATION_TO_OPERATE or building_family_of(company.type) is None:
+        return None
+    row = CompanyLocation.objects.filter(company_id=company.pk).first()
+    if row is None:
+        return refuse("COMPANY_NOT_LOCATED", company=company.pk, why="a empresa precisa estar localizada num prédio para operar (design/10a §11.1)")
+    building = Building.objects.filter(lot_id=row.lot_id).first()
+    if building is None:
+        return None if not params.REQUIRE_BUILDING_FOR_LOCATION else refuse("BUILDING_REQUIRED", lot=row.lot_id)
+    return building_refusal(company, building, row.lot_id)
+
+
 def location_refusal(actor_id: Any, target: Any) -> Optional[ActionResult]:
     """Recusas que só LEEM. `lot` nulo = a empresa deixa o lote (sem recusas além das de autoridade)."""
     if not positive(actor_id) or not Player.objects.filter(pk=actor_id).exists():
@@ -147,14 +199,18 @@ def location_refusal(actor_id: Any, target: Any) -> Optional[ActionResult]:
     here = CompanyLocation.objects.filter(lot=lot).first()
     if here is not None:
         return refuse("ALREADY_LOCATED_HERE" if here.company_id == company_id else "LOT_HAS_COMPANY", lot=lot_id)    # J3: uma empresa por lote
-    if Building.objects.filter(lot=lot).exists():
-        return refuse("LOT_HAS_BUILDING", lot=lot_id)              # imóvel residencial não é imóvel comercial/industrial (G5 define os que são)
+    building = Building.objects.filter(lot=lot).first()
+    if building is not None:
+        refusal = building_refusal(company, building, lot_id)       # G5: família do prédio e nível ≥ estrela; uma empresa por prédio (uma por lote)
+        if refusal is not None:
+            return refusal
     if (ConstructionSite.objects.filter(lot=lot, status=SiteStatus.ACTIVE.value).exists()
             or Listing.objects.filter(lot=lot, status=ListingStatus.OPEN.value).exists()):
         return refuse("LOT_RESERVED", lot=lot_id)
-    if not zoning.is_use_allowed(lot, use):
-        return refuse("LOT_USE_NOT_ALLOWED", lot=lot_id, category=lot.category, use=use.value)
-    return None
+    refusal = uses.use_refusal(lot, use)
+    if refusal is not None:
+        return refusal
+    return building_refusal(company, None, lot_id) if building is None else None             # sem prédio: só vale se o prédio não for exigido
 
 
 def _set_occupation(lot_id: int, occupied: bool) -> None:
@@ -208,11 +264,14 @@ def location_view(company_id: int) -> Optional[Dict[str, Any]]:
     if row is None:
         return None
     terrain = terrain_of(row.lot_id)
+    building = Building.objects.filter(lot_id=row.lot_id).first()
     return {"company": company_id, "lot": row.lot_id, "category": row.lot.category, "since": row.since,
+            "building": None if building is None else {"kind": building.kind, "family": building.family, "level": building.level},
             "deposit_products": sorted(terrain.deposits), "terrain_products": sorted(terrain.products),
             "terrain_defined": bool(terrain.products), "terrain": terrain.why}
 
 
 def register() -> None:
+    gates.register_operation_gate(PROVIDER_NAME, operation_gate)
     production.register_site_provider(PROVIDER_NAME, terrain_categories)
     production.register_site_product_provider(PROVIDER_NAME, terrain_products)

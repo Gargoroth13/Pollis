@@ -10,7 +10,7 @@ from __future__ import annotations
 from django.db import models
 from django.db.models import Q
 
-from .constants import AuctionStatus, ListingStatus, OwnerKind, RentListingStatus, SiteStatus, TitleReason
+from .constants import (AuctionStatus, BuildingFamily, ListingStatus, OwnerKind, RentListingStatus, SiteStatus, TitleReason, UseChangeStatus)
 
 
 def _choices(enum_cls):
@@ -148,6 +148,8 @@ class Building(models.Model):
 
     lot = models.OneToOneField("geography.Lot", on_delete=models.PROTECT, related_name="building")
     kind = models.CharField(max_length=30)
+    family = models.CharField(max_length=12, choices=_choices(BuildingFamily), default=BuildingFamily.RESIDENTIAL.value)
+    level = models.PositiveSmallIntegerField(null=True, blank=True)       # só o comercial tem nível (G5): empresa de N estrelas precisa de nível ≥ N
     units = models.PositiveIntegerField()
     qol_bonus = models.DecimalField(max_digits=4, decimal_places=2)
     builder_company_id = models.BigIntegerField(null=True, blank=True)
@@ -155,7 +157,41 @@ class Building(models.Model):
     completed_at = models.BigIntegerField()
 
     class Meta:
-        constraints = [models.CheckConstraint(condition=Q(units__gt=0), name="building_units_positive")]
+        constraints = [
+            models.CheckConstraint(condition=Q(family="residential", units__gt=0, level__isnull=True) | Q(family="commercial", units=0, level__isnull=False, level__gte=1)
+                                   | Q(family="industrial", units=0, level__isnull=True), name="building_family_shape"),
+        ]
+
+
+class UseChange(models.Model):
+    """
+    Mudança de uso APROVADA (10 §21; G6): histórico imutável do que o governo autorizou (a recusa é um código explicado, não uma linha). `old_use`/`new_use` são
+    categorias de zoneamento; `decision` guarda os fatores (zoneamento base/overrides, restrições conferidas, aprovador político, custo).
+    """
+
+    lot = models.ForeignKey("geography.Lot", on_delete=models.PROTECT, related_name="use_changes")
+    sequence = models.IntegerField()
+    old_use = models.CharField(max_length=16)
+    new_use = models.CharField(max_length=16)
+    status = models.CharField(max_length=10, choices=_choices(UseChangeStatus), default=UseChangeStatus.APPROVED.value)
+    requested_by = models.BigIntegerField()
+    owner_kind = models.CharField(max_length=12)
+    owner_id = models.BigIntegerField()
+    fee_cents = models.BigIntegerField(default=0)
+    at = models.BigIntegerField()
+    decision = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["lot_id", "sequence"]
+        constraints = [
+            models.UniqueConstraint(fields=["lot", "sequence"], name="usechange_unique_sequence"),
+            models.CheckConstraint(condition=Q(fee_cents=0), name="usechange_fee_zero_until_defined"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValueError("o histórico de mudança de uso é imutável")
+        super().save(*args, **kwargs)
 
 
 class ConstructionSite(models.Model):

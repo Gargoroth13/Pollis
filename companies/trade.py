@@ -17,7 +17,7 @@ from catalog import services as catalog
 from catalog.constants import Channel
 from players.services import ActionResult
 
-from . import production
+from . import params, production
 from .constants import CompanyType
 from .models import Company
 
@@ -46,4 +46,7 @@ def purchase_refusal(company_id: Any, product_key: Any) -> Optional[ActionResult
                 return None
         return _refuse("NO_VALID_USE", product=product_key, company_type=company.type,
                        why="não é insumo de nenhuma receita que esta empresa possa produzir (tipo, estrela, receita pronta)")
+    if ctype is CompanyType.CONSTRUCTION and params.CONSTRUCTION_CONSUMES_MATERIALS and any(
+            product_key in table for table in params.CONSTRUCTION_MATERIALS_PER_WORK.values()):
+        return None                                      # G5: a Construtora compra os materiais que a obra consome (consumo configurado)
     return _refuse("NO_VALID_USE", product=product_key, company_type=company.type, why="o tipo ainda não tem operação que consuma produtos")

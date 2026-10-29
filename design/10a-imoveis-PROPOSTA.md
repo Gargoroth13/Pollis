@@ -11,7 +11,8 @@
 |---|---|---|
 | **P1.07a** | Propriedade de lotes (título + histórico), leilão público com extensão, venda entre proprietários, imóvel residencial construído, obra da Construtora ligada ao lote, auditoria, ações no Action Registry | implementada |
 | **P1.07b** | Unidades e ocupação, residência ativa, **Aluguel** (handler `RENT` no motor de `18`), venda de imóvel alugado mantendo o contrato, QoL estrutural, moradia inicial | implementada (§6) |
-| **P1.07c** | Localização de empresas, terreno da Matriz (`production.register_site_provider`) | **parcial** (§8): feito o que o design define; **G12** resolvida provisoriamente pela regra A (GD 2026-10-27, §10); **G5** (tipos comercial/industrial) e **G6** (mudança de uso): direção do GD registrada (B e B), detalhes em §11–§12 |
+| **P1.07c** | Localização de empresas, terreno da Matriz (`production.register_site_provider`) | implementada (§8); **G12** confirmada pelo GD em 2026-10-29 (§10) |
+| **P1.07d** | **G5** prédios comerciais (nível 1–5) e industrial, nível ≥ estrela, materiais da obra configuráveis; **G6** mudança de uso, uso designado do lote, gancho político | implementada (§13) |
 
 ## 2. O que a P1.07a entrega (app `properties`)
 
@@ -104,8 +105,8 @@ Seguem abertos (fora da P1.07b): limite de propriedade por jogador (lei), impost
 
 ## 10. Decisões pendentes de design (G5, G6, G12)
 
-### G5 — Tipos de imóvel comercial/industrial e estrela → nível
-> **Direção do GD (2026-10-27): opção B como arquitetura final.** Proposta detalhada e pendências em §11.
+### G5 — Tipos de imóvel comercial/industrial e estrela → nível — **RESOLVIDA (GD 2026-10-29), implementada em §13**
+> **Direção do GD (2026-10-27): opção B como arquitetura final.** Decisões de 2026-10-29: estrela é requisito mínimo (nível ≥ estrela), uma empresa por prédio, industrial único sem nível (Construtora ≥ 2★), materiais configuráveis.
 
 **Design atual.** `10` §16: "A estrela da empresa determina o nível de imóvel comercial que ela pode ocupar. Isso se aplica especialmente ao Varejo. A empresa precisa atender simultaneamente: requisitos de localização; de tipo de imóvel; de estrela; de atividade." §17: industriais "precisam possuir uma localização compatível com seu tipo de atividade". §6 só tem números para o residencial. `02a` registra "Nível de imóvel comercial: a definir com `10` §16". Fluxo `10` §34: lote → leilão → empresa adquire → **Construtora constrói** → empresa ocupa → opera. O catálogo de obras (`companies.params.CONSTRUCTION_PROJECTS`) só tem os 4 residenciais.
 
@@ -119,8 +120,8 @@ Seguem abertos (fora da P1.07b): limite de propriedade por jogador (lei), impost
 
 **O que o GD precisa responder:** (1) A, B ou C; (2) se B: nº de níveis e relação estrela→nível; (3) estrela mínima da Construtora por nível; (4) industrial: 1 tipo ou por sub-tipo; (5) quantas empresas por prédio; (6) a exigência de localização vale já para Varejo/Industrial/Serviços?
 
-### G6 — Mudança de uso e quem aprova
-> **Direção do GD (2026-10-27): opção B** (aprovação automática só se zoneamento e demais restrições permitirem, com gancho para aprovação política). Detalhes, consequências e custo em §12.
+### G6 — Mudança de uso e quem aprova — **RESOLVIDA (GD 2026-10-29), implementada em §13**
+> **Direção do GD (2026-10-27): opção B.** Decisões de 2026-10-29: aprovação automática quando o zoneamento e todas as restrições permitem; custo zero configurável; gancho para aprovação política; cenário do Bot Test com zoneamento funcional (§13.3).
 
 **Design atual.** `10` §21: "Um imóvel pode mudar de finalidade, desde que o governo aprove a alteração" (comercial↔residencial, industrial→outro uso permitido); "a mudança não é realizada livremente pelo proprietário"; o pedido é analisado por zoneamento vigente, leis federais, restrições do lote e projetos especiais. §33: "[ABERTO: quem aprova a mudança de uso]". `11` §11.7: alteração de zoneamento **por lei** não existe no primeiro Bot Test; "não existem leis municipais". §23: demolição e reforma profunda **não** existem no Bot Test.
 
@@ -134,29 +135,29 @@ Seguem abertos (fora da P1.07b): limite de propriedade por jogador (lei), impost
 
 **O que o GD precisa responder:** (1) A, B ou C; (2) se C: quem aprova; (3) o pedido tem custo (hoje não existe natureza monetária para ele em `24`)?
 
-### G12 — Tipo de terreno de lote rural **sem depósito** — **REGRA A PROVISÓRIA (GD 2026-10-27)**
-**Decisão do GD.** Opção A como regra **provisória**, para destravar a cadeia de alimentos e madeira, mantendo o provedor de terreno substituível para evoluir à opção B sem reescrever os consumidores. **Prioridade de desbloqueio** (registrada em TASK/TASK_QUEUE).
+### G12 — Tipo de terreno de lote rural — **REGRA A (GD 2026-10-27; lote com depósito CONFIRMADO em 2026-10-29)**
+**Decisão do GD.** Opção A para o lote sem depósito (cadeia de alimentos e madeira destravada), mantendo o provedor de terreno substituível para evoluir à opção B sem reescrever os consumidores. **2026-10-29:** o lote rural com depósito também produz os produtos comuns permitidos; o depósito **acrescenta** os recursos específicos, não substitui.
 
 **Design atual (que continua sem definir o tipo).** `02` §2.1: "a categoria da Matriz é determinada pelo tipo de terreno" (Terreno Agro → Matriz Agro; o dono escolhe o produto dentro da categoria). `08` §12: lotes rurais permitem Agropecuária, Extrativismo (inclui petróleo) e Mineração; os minerais "são definidos pelo sistema geográfico"; petróleo e minerais vêm de **depósitos** (§13-15). O `08` não define o tipo de um lote sem depósito.
 
-**Como a regra A foi implementada (`properties/sites.py::terrain_of`, `params.TERRAIN_RULE = "G12-A-PROV"`):**
+**Como a regra A foi implementada (`properties/sites.py::terrain_of`, `params.TERRAIN_RULE = "G12-A"`):**
 | Lote rural | Produtos que a Matriz pode escolher |
 |---|---|
 | **Sem depósito** | **Comuns**: Agropecuária (Trigo, Leite, Cana, Grão de café, Cacau, Carne, Ovos, Couro, Lã, Fruta) + Extrativismo **não-petróleo** (Madeira, Resina, Látex, Óleo natural, Ervas, Areia, Pedra, Químicos, Borracha). **Nunca** petróleo nem mineral |
 | **Com depósito(s)** | O(s) recurso(s) **do próprio lote** (petróleo → Extrativismo; mineral → Mineração) **e**, `[PROV]` `DEPOSIT_LOTS_ALSO_COMMON = True`, também os comuns |
 
 **Lotes com depósito (esclarecimento pedido pelo GD).** A regra A só fala do lote sem depósito. Para o lote **com** depósito há duas leituras do `08` §12; a implementada é a primeira, por ser a que o texto do `08` §12 sustenta ("lotes rurais permitem ... as três áreas"; o depósito define só QUAL recurso espacial existe, que "não é escolhido livremente"):
-1. **Depósito acrescenta** (implementada, `[PROV]`): o lote com ferro sustenta ferro **e** os produtos comuns. Efeito no Bot Test: nenhum lote rural fica "preso" a uma só atividade; a escassez é só do recurso espacial (que continua exclusivo de quem tem o depósito). Risco: lote com depósito raro vale mais (ouro + agro), o que já é o efeito desejado da escassez.
+1. **Depósito acrescenta** (implementada, confirmada pelo GD em 2026-10-29): o lote com ferro sustenta ferro **e** os produtos comuns. Efeito no Bot Test: nenhum lote rural fica "preso" a uma só atividade; a escassez é só do recurso espacial (que continua exclusivo de quem tem o depósito). Risco: lote com depósito raro vale mais (ouro + agro), o que já é o efeito desejado da escassez.
 2. **Depósito substitui**: o lote com depósito sustenta **só** o(s) recurso(s) dele. Efeito: mais fiel a "um terreno, uma categoria macro" (`02` §2.1); torna lotes agro e lotes minerais mutuamente exclusivos e reduz a oferta de lotes para agro/madeira onde há muitos depósitos. Basta `DEPOSIT_LOTS_ALSO_COMMON = False` (testado nos dois valores).
-**O que o GD ainda precisa confirmar:** qual das duas leituras vale para lote com depósito (hoje: 1, provisória).
+**Confirmado pelo GD (2026-10-29):** vale a leitura 1 (o depósito acrescenta). `DEPOSIT_LOTS_ALSO_COMMON = True` deixa de ser `[PROV]`.
 
 **Mantém substituível.** Só `terrain_of` decide; `terrain_categories`/`terrain_products` (provedores registrados em `companies.production`) e `production.site_refusal` não mudam com a opção B. `location_view` expõe a regra e o detalhamento (`terrain`: regra, `provisional`, depósitos, se os comuns valem). Testes cobrem: sem depósito (agro e extrativo comum sim; petróleo e minerais nunca), com depósito mineral e de petróleo, chave desligada, troca do ponto único por um terreno fictício (opção B simulada) e a recusa `TERRAIN_TYPE_UNDEFINED` para provedor sem dado.
 
 **Para a opção B (destino).** Gerar um tipo de terreno por lote (fração agro/extrativista/mineral, agrupado como os recursos, `08` §13), guardado em atributo do lote (migração + regeração do mundo de teste); `terrain_of` passa a lê-lo. Impacto: nenhum nos consumidores.
 
-## 11. G5 — proposta detalhada (direção do GD, 2026-10-27: **opção B**, prédios com nível ligados à estrela, Construtora e materiais)
+## 11. G5 — proposta detalhada (direção do GD, 2026-10-27: **opção B**) — **DECIDIDA em 2026-10-29: ver §13**
 
-> **Estado:** PROPOSTA — nada abaixo está implementado nem vira regra definitiva antes da resposta do GD. Números marcados `[PROPOSTA]` são sugestões; se o GD preferir, entram como `[PROV]`.
+> **Estado:** as recomendações abaixo foram APLICADAS pelo GD em 2026-10-29 (os números `[PROPOSTA]` viraram valores do GD), exceto onde §13 registra o contrário. O texto é mantido como histórico do raciocínio.
 
 ### 11.0. Ponto de interpretação que precisa de resposta
 `10` §16: "A estrela da empresa **determina o nível** de imóvel comercial que ela **pode ocupar**." Duas leituras:
@@ -205,9 +206,9 @@ O residencial já usa estrela mínima crescente (1★, 2★, 3★, 4★ para os 
 
 **Decisões do GD para fechar G5:** (1) 11.0: (i) ou (ii); (2) níveis 1–5 e regra nível ≥ estrela; (3) Construtora ≥ *k*★ e `work_units` por nível; (4) uma empresa por prédio; (5) industrial: um tipo sem nível, Construtora ≥ 2★ (ou outro); (6) subtipos industriais: sim/não; (7) consumo de materiais na obra: agora ou depois da P1.05b; (8) `REQUIRE_BUILDING_FOR_LOCATION`: ligar já ou depois.
 
-## 12. G6 — proposta detalhada (direção do GD, 2026-10-27: **opção B**, aprovação automática restrita, com gancho para aprovação política)
+## 12. G6 — proposta detalhada (direção do GD, 2026-10-27: **opção B**) — **DECIDIDA em 2026-10-29: ver §13**
 
-> **Estado:** PROPOSTA — nada implementado. Honestidade técnica (CLAUDE.md §13): **a opção B quase não tem caso aplicável no Bot Test**, pelos motivos abaixo.
+> **Estado:** implementada em §13. A constatação abaixo (zoneamento padrão não aprova nada) levou ao **uso designado do lote** e ao zoneamento misto do cenário do Bot Test (§13.3).
 
 ### 12.1. O que a opção B significa
 Aprovação **automática** só quando **todas** as condições valem; nenhuma delas pode ser contornada pela aprovação:
@@ -237,3 +238,38 @@ Não há natureza em `24` para custo de mudança de uso (lista fechada, §24.8):
 - A integração com a aprovação política depende de `06`/P1.11 (cargos) e de `11` (competência); o gancho existe sem elas.
 
 **Decisões do GD para fechar G6:** (1) confirmar B com as 5 condições de 12.1; (2) mapeamento de conversão de prédio construído (depende de G5) ou restringir a mudança de uso a cenários com zoneamento misto no Bot Test; (3) custo: (a) agora e (b) depois, ou valor/destino já.
+
+
+## 13. Decisões do GD de 2026-10-29 e o que a P1.07d implementa (G5, G6, G12, G1)
+
+### 13.1. G5 — prédios e níveis (decidido e implementado)
+| Decisão do GD | Implementação |
+|---|---|
+| A estrela da empresa é **requisito mínimo**: empresa de N★ precisa de prédio de nível ≥ N | `sites.building_refusal`: Varejo e Serviços → prédio **comercial** de nível ≥ estrela (`BUILDING_LEVEL_TOO_LOW`); sem prédio → `BUILDING_REQUIRED` (`REQUIRE_BUILDING_FOR_LOCATION = True`); prédio de outra família → `LOT_HAS_BUILDING`. `sites.stars_allowed(company, N)` é o ponto para a P1.04f (progressão de estrela só vale se o prédio segurar). A auditoria (invariante 9) acusa empresa localizada num prédio de nível menor que a estrela |
+| **Uma empresa por prédio** | já era uma por lote (`CompanyLocation.lot` único) e o prédio é do lote: testado na regra e pelo banco |
+| Industrial: **tipo único, sem nível**, Construtora ≥ 2★ | `industrial` (família `industrial`, `level = None`, `work_units` 200); a Industrial usa esse prédio, qualquer estrela. Sem subtipos |
+| Comercial **nível 1–5**, Construtora ≥ nível, trabalhos 50·2^(n−1) | `commercial_1..5` em `companies.params.CONSTRUCTION_PROJECTS` e `properties.params.BUILDING_TYPES` (50/100/200/400/800) — recomendação de §11.2 aplicada |
+| Materiais da obra **configuráveis**; custo real e preços na P1.05b | `CONSTRUCTION_CONSUMES_MATERIALS` (desligado) e `CONSTRUCTION_MATERIALS_PER_WORK` (**vazia: o design não dá quantidades, nenhum número foi inventado**). Ligado, cada Trabalhar retira do estoque da Construtora as unidades da tabela (`INPUT_CONSUMPTION`, referência `construction_work`), a obra para antes de gastar Energia (`CONSTRUCTION_NO_MATERIALS`), a Construtora pode comprar esses materiais (`trade.purchase_refusal`) e a auditoria confere trabalho × movimentos |
+| Aplicar as recomendações restantes de §11 | Matriz, Construtora e Financeira não ocupam prédio; sem prédio por subtipo industrial; `Building` ganhou `family` e `level` (restrição de formato no banco); comercial/industrial sem unidades e sem QoL (ninguém mora); aluguel comercial (H3) continua fora desta etapa |
+
+**Exigir a empresa localizada para OPERAR** (Varejo vender, Industrial produzir): `REQUIRE_LOCATION_TO_OPERATE`, **desligado** (recomendação de §11.1: ligar quando o cenário do Bot Test tiver lotes e Construtoras suficientes; é uma linha de configuração). A porta é `companies.gates` (Companies não conhece Imóveis). Varejo e Industrial já são recusados com `COMPANY_NOT_LOCATED`/`BUILDING_*` quando ligada.
+
+### 13.2. G6 — mudança de uso (decidida e implementada)
+- **Uso designado do lote** (`properties.uses.use_of_lot`): a categoria do lote ou o `new_use` da última mudança aprovada (`UseChange`, histórico imutável). Obra e localização exigem **zoneamento permite E uso designado** (`LOT_USE_NOT_ALLOWED`/`LOT_USE_NOT_DESIGNATED`). Com o zoneamento padrão nada muda; com zoneamento misto é a mudança de uso que liga o lote ao novo uso (10 §21: "não é realizada livremente pelo proprietário").
+- **Aprovação automática** quando: zoneamento (padrão + leis) permite o novo uso; o lote não tem imóvel, empresa, obra ativa, anúncio ou leilão abertos; nenhuma restrição registrada (`register_use_change_restriction`) recusa; nenhum aprovador político (`register_use_change_approver`) nega. **O aprovador só nega**; sem aprovador, aprova. Nenhuma regra de votação ou competência foi antecipada.
+- **Custo zero configurável** (`USE_CHANGE_FEE_CENTS = 0`; > 0 é recusado com `USE_CHANGE_FEE_UNDEFINED`; restrição no banco). Nenhum dinheiro se move.
+- Ação `change_lot_use` no Action Registry (mesmo caminho para bots e jogadores); auditoria invariante 10.
+- **Conflito específico que ficou:** a mudança de uso de um **imóvel já construído** exigiria um mapeamento de conversão (residencial → comercial de qual nível? as unidades somem) que o design não define e que não existe demolição/reforma no Bot Test (10 §23). Recusado com `USE_CHANGE_BUILDING_PRESENT`; não inventei o mapeamento.
+
+### 13.3. G6.4 — zoneamento padrão `{c: {c}}` e o cenário do Bot Test
+Investigado: **não há bloqueio estrutural**. O código já aceita `Scenario.zoning_permissions` (decisão do GD de 2026-10-03). A matriz padrão do código continua `{c: {c}}` (cenário neutro, testes antigos); o cenário do Bot Test usa o preset **`geography.zoning.BOT_TEST_ZONING`** (`POLIS_GEOGRAPHY = {"zoning_permissions": BOT_TEST_ZONING}`): **residencial ↔ comercial se misturam; industrial, institucional, especial e rural ficam isolados**. Assim a mudança de uso é aprovada onde faz sentido e continua recusada onde seria proibida (indústria, rural, institucional, especial). Testado: com o preset, o dono muda o uso, a Construtora constrói o prédio comercial e a empresa se localiza; com o padrão, tudo isso é recusado sem efeito colateral. **Menor decisão pendente:** confirmar essa matriz como a do cenário do Bot Test (ou indicar outra); o código não muda.
+
+### 13.4. G12, G1 e K3
+- **G12:** o depósito acrescenta (confirmado). `[PROV]` removido; regra `G12-A`.
+- **G1:** abrir leilões continua sendo ferramenta de sistema/Dev (`manage.py open_auctions`) até o cenário inicial e os ocupantes de cargo serem definidos. Não bloqueia.
+- **K3 (`design/09a`):** o repasse respeita as obrigações pendentes (GD). `[PROV]` removido.
+- **H6 e H8** continuam provisórios documentados.
+
+### 13.5. Limites conhecidos da prova
+- A corrida mudança de uso × localização (PG) passa, mas **a remoção da trava do lote em `change_use` não é detectada** pelo teste (temporização); a segunda defesa é a recusa `LOT_HAS_COMPANY` e a auditoria invariantes 9–10.
+- `REQUIRE_LOCATION_TO_OPERATE` desligado: o requisito de operar localizado ainda não vale no Bot Test até o cenário o ligar.

@@ -129,7 +129,8 @@ class CompletionTests(SiteBase):
         self.assertEqual(ConstructionSite.objects.get().status, "completed")
         self.assertEqual(services.owner_of_lot(self.plot.pk), (services.OwnerKind.COMPANY, self.build))   # o dono do terreno é o dono do imóvel
         view = services.lot_view(self.plot.pk)
-        self.assertEqual((view["building"], view["active_site"]), ({"kind": "low_density_simple", "units": 1, "qol_bonus": "0.00"}, None))
+        self.assertEqual((view["building"], view["active_site"]),
+                         ({"kind": "low_density_simple", "family": "residential", "level": None, "units": 1, "qol_bonus": "0.00"}, None))
         self.assertEqual(self.findings(), set())
 
     def test_a_built_lot_is_not_built_again_nor_auctioned_and_may_be_sold_with_its_building(self):
@@ -148,21 +149,33 @@ class CompletionTests(SiteBase):
     def test_the_building_types_follow_the_design_table_and_the_construction_projects(self):
         self.assertEqual({k: (b.units, b.qol_bonus, b.min_stars) for k, b in params.BUILDING_TYPES.items()},
                          {"low_density_simple": (1, D("0"), 1), "low_density_luxury": (1, D("0.3"), 3),
-                          "high_density_simple": (20, D("0.1"), 2), "high_density_luxury": (20, D("0.4"), 4)})
+                          "high_density_simple": (20, D("0.1"), 2), "high_density_luxury": (20, D("0.4"), 4),
+                          # G5 (GD 2026-10-29): comercial nível 1–5 (Construtora ≥ nível) e industrial único sem nível (Construtora ≥ 2★); sem unidades
+                          **{f"commercial_{n}": (0, D("0"), n) for n in range(1, 6)}, "industrial": (0, D("0"), 2)})
+        self.assertEqual({k: (b.family.value, b.level) for k, b in params.BUILDING_TYPES.items() if b.family.value != "residential"},
+                         {**{f"commercial_{n}": ("commercial", n) for n in range(1, 6)}, "industrial": ("industrial", None)})
+        self.assertEqual({k: p.work_units for k, p in company_params.CONSTRUCTION_PROJECTS.items() if k.startswith("commercial_") or k == "industrial"},
+                         {"commercial_1": 50, "commercial_2": 100, "commercial_3": 200, "commercial_4": 400, "commercial_5": 800, "industrial": 200})
         self.assertEqual({k: p.min_stars for k, p in company_params.CONSTRUCTION_PROJECTS.items()},
                          {k: b.min_stars for k, b in params.BUILDING_TYPES.items()})
 
     def test_each_project_creates_the_building_of_its_type(self):
         from companies.models import Company
         self.audit_companies_at_end = False                  # `finish(shortcut=True)` adianta o progresso direto no banco (de propósito)
-        Company.objects.filter(pk=self.build).update(stars=4)
-        for n, (key, kind) in enumerate(params.BUILDING_TYPES.items(), start=1):
-            lot = self.lot(n=n)
+        Company.objects.filter(pk=self.build).update(stars=5)
+        used = {}
+        for key, kind in params.BUILDING_TYPES.items():
+            if key in ("commercial_2", "commercial_4"):
+                continue                                           # o mundo pequeno só tem 3 lotes comerciais: níveis 1, 3 e 5 (a tabela de todos está no teste acima)
+            category = params.FAMILY_USE[kind.family].value
+            used[category] = used.get(category, 0) + 1
+            lot = self.lot(category, used[category])                                  # cada família no lote da sua categoria (zoneamento)
             self.sold_to(self.boss, lot, price=1_000, party=self.company_ref(self.build))
             self.assertTrue(self.start(lot, key).ok, key)
             self.finish(shortcut=True)
             b = Building.objects.get(lot=lot)
-            self.assertEqual((b.kind, b.units, b.qol_bonus), (key, kind.units, kind.qol_bonus))
+            self.assertEqual((b.kind, b.units, b.qol_bonus, b.family, b.level), (key, kind.units, kind.qol_bonus, kind.family.value, kind.level))
+            self.assertEqual(b.unit_rows.count(), kind.units)
         self.assertEqual(self.findings(), set())
 
     def test_the_work_that_completes_the_obra_and_the_building_are_one_transaction(self):

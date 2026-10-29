@@ -279,7 +279,8 @@ Implementar `10`, em etapas (lacunas em `design/10a`):
 
 - **[x] P1.07a — Propriedade, leilões, venda e obra com lote** (branch `dev/p1.07a-propriedade-leiloes`, PR empilhado sobre o #22; `CHANGELOG_DEV.md`, 2026-10-25).
 - **[x] P1.07b — Unidades, residência ativa, Aluguel e QoL** (branch `dev/p1.07b-moradia-aluguel`, PR empilhado sobre o #24; `CHANGELOG_DEV.md`, 2026-10-26; lacunas H1–H10 em `design/10a` §7). G9 resolvida pelo texto do design.
-- **[~] P1.07c — Empresas e Matriz** (branch `dev/p1.07c-empresas-localizacao`, PR empilhado sobre o #25; `CHANGELOG_DEV.md`, 2026-10-27; `design/10a` §8–§10). **Feito:** localização de empresas, terreno da Matriz (depósitos), invariante 9. **Resta e depende do GD:** tipos comercial/industrial e estrela → nível (G5, direção B; proposta em `design/10a` §11) e exigir localização (J4), mudança de uso (G6, direção B; §12), confirmação de G12 para lote com depósito, aluguel comercial/empresa inquilina (H3, após G5).
+- **[x] P1.07c — Empresas e Matriz** (PR #26; `design/10a` §8–§10): localização de empresas, terreno da Matriz (depósitos), invariante 9; G12 confirmada pelo GD (2026-10-29).
+- **[x] P1.07d — Prédios comerciais/industrial, estrela → nível, mudança de uso** (branch `dev/p1.07d-predios-uso`, PR empilhado sobre o #27; `design/10a` §13): G5 e G6 decididos pelo GD (2026-10-29). **Resta (específico):** mapeamento de conversão de prédio construído; confirmar `BOT_TEST_ZONING` como zoneamento do cenário; ligar `REQUIRE_LOCATION_TO_OPERATE` quando o cenário tiver lotes e Construtoras; aluguel comercial/empresa inquilina (H3).
 
 ## [~] P1.08 — Contratos
 
@@ -467,9 +468,9 @@ Ajustar arquitetura, recompensa, exploração e memória com base nos dados reai
 | P1.07b (feita) | G9 — moradia inicial | **Resolvida** pelo texto do design (`04` §24, `10` §14): ausência de residência ativa |
 | P1.07b (feita) | H8 — voltar à moradia inicial por escolha (`set_residence` nulo) | Provisória: permitido; GD pode vetar |
 | P1.06d | Quais residências contam na capacidade de escola (`03a` decisão 1) | Provisória (provedor de residências só é ligado em P1.06d) |
-| **P1.07c** (parcial) | G5 (direção B do GD): 8 pontos em `design/10a` §11, começando pela interpretação do `10` §16; G6 (direção B): 3 pontos em §12 (aprova nada no Bot Test com zoneamento padrão; custo sem natureza) | **Bloqueiam o restante da P1.07c**; o que o design define já está feito |
-| P1.07c / Bot Test | **G12** tipo de terreno de lote rural sem depósito | **Regra A provisória implementada (GD 2026-10-27)**: cadeia de alimentos e madeira destravada; **prioridade de desbloqueio**: falta confirmar lote *com* depósito (hoje: depósito acrescenta) e evoluir à opção B quando o GD definir; retomar os pontos dependentes da cadeia agro/madeira (P1.05b, Industrial Alimentícia) agora que há Matriz agro |
-| Antes de ligar os bots | G1 — quem abre leilões e quando; G2 — arrematante sem fundos | Provisória (só ferramenta de sistema; invalida) |
+| **P1.07d** | G5 e G6 | **Decididas (GD 2026-10-29) e implementadas.** Específicos: conversão de prédio construído na mudança de uso; confirmar `BOT_TEST_ZONING` no cenário (`design/10a` §13) |
+| P1.07c / Bot Test | **G12** tipo de terreno de lote rural | **Decidida (GD 2026-10-29):** regra A; lote com depósito também produz os comuns; provedor substituível para a opção B futura. Cadeia agro/madeira (P1.05b, Industrial Alimentícia) pode ser retomada |
+| Antes de ligar os bots | G1 — quem abre leilões e quando | **GD 2026-10-29:** ferramenta de sistema/Dev até o cenário e os ocupantes de cargo serem definidos; não bloqueia. G2 (arrematante sem fundos): provisória (invalida) |
 | P1.09 (Orçamento) | Destino/natureza do custo fixo de troca de produção (`24`); IR 5% até haver leis | Provisória |
 | P1.06b–d (Escolas) | 13 decisões de `03a` (professores, mensalidade, diplomas, capacidade) | Provisória; P1.06b só começa com as decisões 3–6 |
 | P1.05b / P1.04f | Mecanismo do Mercado (`17a`, lacunas 1–6); permissões de compra entre empresas de Serviços/Construtora/Financeira | **Bloqueiam** P1.05b e P1.04f (seguem paradas) |

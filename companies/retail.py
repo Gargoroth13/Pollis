@@ -26,7 +26,7 @@ from core.breakdown import Calc, Explained
 from ledger.money import competence_day_of
 from players.services import ActionResult
 
-from . import stock, support
+from . import gates, stock, support
 from .constants import CompanyType, PositionKind, StockOperation
 from .models import Company, SalesCapacityUse
 
@@ -56,6 +56,9 @@ def sale_refusal(company_id: Any, product_key: Any, quantity: Any) -> Optional[A
         return _refuse("COMPANY_NOT_FOUND", company=company_id)
     if CompanyType(company.type) is not CompanyType.RETAIL:
         return _refuse("COMPANY_TYPE_CANNOT_SELL_TO_PLAYERS", company_type=company.type)
+    gate = gates.operation_refusal(company)               # G5: exigir empresa localizada no prédio certo (Imóveis), quando ligado
+    if gate is not None:
+        return gate
     if not isinstance(product_key, str) or catalog.get_product(product_key) is None:
         return _refuse("UNKNOWN_PRODUCT", key=repr(product_key)[:40])
     if not catalog.has_channel(product_key, Channel.RETAIL_SALE):

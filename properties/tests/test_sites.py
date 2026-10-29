@@ -1,6 +1,7 @@
 """Localização de empresas e terreno da Matriz (10 §29; 02 §2.1; 08 §8, §9, §12): lote próprio, uso exigido pelo zoneamento, terreno pelos depósitos."""
 from contextlib import contextmanager
 from decimal import Decimal as D
+from unittest import mock
 
 from catalog.constants import Sector
 from companies import production
@@ -13,7 +14,7 @@ from geography.models import Lot, ResourceDeposit
 from ledger import services as ledger
 from ledger.tests.base import fund_account
 from players import registry
-from properties import params, services, sites
+from properties import params, services, sites, uses
 from properties.audit import audit_properties
 from properties.models import CompanyLocation, LotTitle
 
@@ -21,7 +22,12 @@ from .base import PropertiesBase
 
 
 class SitesBase(PropertiesBase):
+    require_building = False          # os testes de localização/terreno valem com "o lote basta"; as regras do prédio (G5) têm a própria classe (test_buildings)
+
     def setUp(self):
+        patcher = mock.patch.object(params, "REQUIRE_BUILDING_FOR_LOCATION", self.require_building)       # antes do super: o cleanup roda DEPOIS da auditoria final
+        patcher.start()
+        self.addCleanup(patcher.stop)
         super().setUp()
         fund_account(ledger.player_account(self.boss.pk), 50_000_000)          # fundar empresas e arrematar lotes custam dinheiro de verdade
         self.matrix = self.found(self.boss, "matrix", "Mina Alfa", 0)
@@ -155,6 +161,9 @@ class LocationTests(SitesBase):
         lot = self.own(self.lot("residential", 3), retail)
         self.assertEqual(self.locate(retail, lot).code, "LOT_USE_NOT_ALLOWED")
         with self._zoning_allows(Category.COMMERCIAL):
+            self.assertEqual(self.locate(retail, lot).code, "LOT_USE_NOT_DESIGNATED")            # G6: o zoneamento permite, mas o lote ainda não foi designado ao uso
+            res = uses.change_use(self.boss.pk, {"lot": lot.pk, "owner": self.company_ref(retail), "use": "commercial"})
+            self.assertTrue(res.ok, res)                                                           # aprovação automática: o zoneamento permite
             self.assertTrue(self.locate(retail, lot).ok)
 
     def test_the_registry_exposes_the_same_refusals(self):
@@ -208,7 +217,7 @@ class TerrainTests(SitesBase):
         self.assertTrue(res.ok, res)
         view = sites.location_view(self.matrix)
         self.assertTrue(view["terrain_defined"])
-        self.assertEqual((view["terrain"]["rule"], view["terrain"]["provisional"]), ("G12-A-PROV", True))
+        self.assertEqual((view["terrain"]["rule"], view["terrain"]["provisional"]), ("G12-A", False))
 
     def test_no_deposit_never_sustains_oil_or_minerals(self):
         self.located([])

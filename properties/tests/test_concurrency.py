@@ -355,3 +355,37 @@ class SitesConcurrencyTests(ConcurrencyBase):
         self.assertEqual(CompanyLocation.objects.filter(lot=a).count(), 0)           # com o lote vendido, ninguém fica localizado nele
         self.assertEqual(Lot.objects.get(pk=a.pk).occupation, "empty")
         self.assertClean()
+
+
+class UseChangeConcurrencyTests(ConcurrencyBase):
+    """Mudança de uso × localização no mesmo lote (G6): a empresa nunca fica localizada num lote cujo uso designado não é o do seu tipo."""
+
+    @CROSS_ROW
+    def test_changing_the_use_away_versus_locating_a_company_leaves_a_consistent_lot(self):
+        from unittest import mock
+
+        from django.test import override_settings
+
+        from geography import zoning
+        from properties import params, sites, uses
+        from properties.audit import audit_properties
+        from properties.models import CompanyLocation, UseChange
+        outcomes = set()
+        with override_settings(POLIS_GEOGRAPHY={"zoning_permissions": zoning.BOT_TEST_ZONING}), \
+                mock.patch.object(params, "REQUIRE_BUILDING_FOR_LOCATION", False):          # o prédio em si é testado à parte: aqui só o uso do lote
+            for n in range(6):
+                retail = company_services.found_company(self.boss.pk, "retail", f"Loja{n}", 0).detail["company"]
+                self.assertTrue(company_services.fund_company(self.boss.pk, retail, 2_000_000).ok)
+                lot = self.lots[n]
+                self.own(lot, "company", retail, self.boss)
+                UseChange.objects.create(lot=lot, sequence=1, old_use="residential", new_use="commercial", requested_by=self.boss.pk, owner_kind="company",
+                                         owner_id=retail, fee_cents=0, at=0, decision={"rule": "test"})
+                change, locate = run_together(
+                    lambda: uses.change_use(self.boss.pk, {"lot": lot.pk, "owner": self.company_ref(retail), "use": "residential"}),
+                    lambda: sites.set_company_location(self.boss.pk, {"company": retail, "lot": lot.pk}))
+                outcomes.add((change.result.code, locate.result.code))
+                if CompanyLocation.objects.filter(lot=lot).exists():
+                    self.assertEqual(uses.use_of_lot(lot).value, "commercial")              # empresa localizada ⇒ o uso do lote continua o do seu tipo
+            report = audit_properties()
+            self.assertTrue(report.ok, report.findings)
+        self.assertTrue(outcomes <= {("OK", "LOT_USE_NOT_DESIGNATED"), ("LOT_HAS_COMPANY", "OK")}, outcomes)

@@ -30,7 +30,7 @@ FLOOR_PCT: Dict[Area, Decimal] = {Area.EDUCATION: Decimal("10"), Area.HEALTH: De
 FLOOR_RANGE: Dict[Area, tuple] = {Area.EDUCATION: (Decimal("5"), Decimal("30")), Area.HEALTH: (Decimal("1"), Decimal("30")),
                                   Area.INFRASTRUCTURE: (Decimal("1"), Decimal("30"))}
 
-# 09 §11 manda priorizar as obrigações já assumidas; 24 §24.9 deixa à P1.09 decidir se isso bloqueia repasses. [PROV]: o governo só repassa o que sobra
+# 09 §11 manda priorizar as obrigações já assumidas; 24 §24.9 deixa à P1.09 decidir se isso bloqueia repasses. GD 2026-10-29 (mantida): o governo só repassa o que sobra
 # depois do comprometido E das obrigações pendentes (design/09a, K3).
 TRANSFERS_RESPECT_PENDING_OBLIGATIONS = True
 
@@ -59,7 +59,7 @@ def provisional_table() -> List[ProvisionalRow]:
                                    f"piso municipal; faixa {lo}–{hi}%; padrão de 11 até o motor de leis (P1.12); base: receitas de 30 dias (11 §11.2.1)",
                                    "11 §11.2.1", status="PROV"))
     rows.append(ProvisionalRow("budget", "transfers_respect_pending_obligations", str(TRANSFERS_RESPECT_PENDING_OBLIGATIONS),
-                               "repasse só do que sobra após comprometido e obrigações pendentes (09 §11; 24 §24.9 deixa à P1.09)", "09 §11", status="PROV"))
+                               "repasse só do que sobra após comprometido e obrigações pendentes (09 §11; 24 §24.9 deixa à P1.09)", "GD 2026-10-29", status="GD"))
     rows.append(ProvisionalRow("budget", "not_revenue", ",".join(sorted(n.value for n in NOT_REVENUE)),
                                "o que não conta como receita (24 §24.16)", "24 §24.16", status="GD"))
     rows.append(ProvisionalRow("budget", "not_expense", ",".join(sorted(n.value for n in NOT_EXPENSE)),

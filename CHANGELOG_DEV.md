@@ -4,6 +4,16 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-29 — P1.07d — Prédios comerciais/industrial, estrela → nível (G5), mudança de uso (G6), terreno rural com depósito (G12) (`design/10a` §13)
+
+**Decisões do GD (2026-10-29), aplicadas e registradas em `design/10a` §13.** **G5:** estrela da empresa é requisito mínimo (empresa de N★ exige prédio de nível ≥ N); uma empresa por prédio; industrial é tipo único sem nível, construído por Construtora ≥ 2★; consumo de materiais da obra configurável (custo real e preços na P1.05b; construção continua no escopo). **G6:** aprovação automática quando o zoneamento e todas as restrições permitem; custo zero configurável; gancho para aprovação política sem antecipar votação/competências; zoneamento padrão `{c:{c}}` investigado. **G12:** lote rural com depósito também produz os comuns (marcador `[PROV]` removido; regra `G12-A`). **G1:** abrir leilões segue como ferramenta de sistema/Dev. **K3:** repasse respeita obrigações pendentes (marcador `[PROV]` removido em `design/09a` e `budget/params.py`).
+
+**Entregue (migração `properties/0004`):** `Building.family`/`level` (restrição de formato no banco) e prédios `commercial_1..5` e `industrial` (projetos em `companies.params`, trabalhos 50·2^(n−1) e 200); `sites.building_refusal` (nível ≥ estrela, `BUILDING_REQUIRED`, `BUILDING_LEVEL_TOO_LOW`) e `stars_allowed` (ponto para a P1.04f); **uso designado do lote** (`properties.uses`, `UseChange` imutável) e ação `change_lot_use` (Action Registry); ganchos `register_use_change_restriction`/`register_use_change_approver` (o aprovador só nega); `companies.gates` (operação exige localização por configuração, `REQUIRE_LOCATION_TO_OPERATE`, **desligado**); materiais da obra por configuração (`CONSTRUCTION_CONSUMES_MATERIALS`, tabela **vazia**: o design não dá quantidades); auditoria: invariantes 5, 9 e 10 de Imóveis e 13 de Empresas; preset de zoneamento `geography.zoning.BOT_TEST_ZONING` (residencial ↔ comercial; demais usos isolados).
+
+**Pontos específicos que ficaram:** (1) mudança de uso de **imóvel já construído** exige mapeamento de conversão que o design não define → recusada (`USE_CHANGE_BUILDING_PRESENT`); (2) confirmar `BOT_TEST_ZONING` como o zoneamento do cenário do Bot Test (o código não muda); (3) K1 (ocupantes dos cargos) segue bloqueando ligar o Bot Test, não o desenvolvimento.
+
+**Prova honesta:** mutações detectadas: comparação de nível, uso designado, zoneamento, prédio presente, bloqueio por materiais. **Não detectada:** a remoção da trava do lote em `uses.change_use` (corrida só-PG passa mesmo sem ela; 3 execuções); segunda defesa: `LOT_HAS_COMPANY` e auditoria. Resultados das suítes completas: ver o PR.
+
 ## 2026-10-28 — P1.09a — Núcleo do Orçamento Público (`design/09` FINAL — BOT TEST; lacunas K1–K5 em `design/09a`)
 
 **Decisão de execução.** Instrução do GD (2026-10-27): prosseguir com a P1.09 se não comprometer dependências. A P1.09a vem empilhada sobre a P1.07c (#26). P1.09b (projetos/contratos governamentais, depende de P1.08c), P1.09c (dívida) e P1.09d (subsídios/campanhas) ficam para as próximas etapas; nada saiu do escopo do Bot Test.

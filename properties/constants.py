@@ -9,6 +9,13 @@ class OwnerKind(str, enum.Enum):
     COMPANY = "company"
 
 
+class BuildingFamily(str, enum.Enum):
+    """Famílias de imóvel (10 §5-6, §16-17; G5, GD 2026-10-29): residencial (unidades, QoL), comercial (nível 1–5 ≥ estrela da empresa) e industrial (tipo único, sem nível)."""
+    RESIDENTIAL = "residential"
+    COMMERCIAL = "commercial"
+    INDUSTRIAL = "industrial"
+
+
 class TitleReason(str, enum.Enum):
     AUCTION = "auction"                        # 10 §4: lote público arrematado
     SALE = "sale"                              # 10 §8: venda entre proprietários
@@ -43,3 +50,8 @@ class RentListingStatus(str, enum.Enum):
 
 # Aluguel (10 §9-13): natureza `RENT` do inquilino ao proprietário, via contrato do tipo `rent` do motor de `18`.
 RENT_FREQUENCIES = ("daily", "weekly", "monthly")                 # periodicidade (10 §10); "única" não faz sentido para uso contínuo
+
+
+class UseChangeStatus(str, enum.Enum):
+    """Mudança de uso (10 §21; G6, GD 2026-10-29): só as APROVADAS ficam registradas; a recusa é um código explicado (20)."""
+    APPROVED = "approved"

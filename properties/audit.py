@@ -16,7 +16,10 @@ Auditoria dos Imóveis (design/10). Só LÊ. Invariantes (numeração própria d
   8  aluguel: cada `Tenancy` aponta um contrato `rent` cujos termos (lote, unidade) conferem e cujo inquilino é o registrado; no máximo um
      contrato em vigor por unidade; o locador VIGENTE do contrato em vigor é o proprietário atual do lote (a venda cede o contrato, 10 §13);
      anúncio de aluguel aberto: dono do lote, unidade livre, sem morador; alugado: contrato existente com os termos do anúncio
-  9  localização de empresa: tipo localizável, o lote é DA empresa (título), sem imóvel residencial no lote, lote OCUPADO, sem obra ativa
+  9  localização de empresa: tipo localizável, o lote é DA empresa (título), prédio (se houver) da família do tipo e, no comercial, nível ≥ estrela (G5), lote
+     OCUPADO, sem obra ativa; com `REQUIRE_BUILDING_FOR_LOCATION`, Varejo/Serviços/Industrial têm prédio; o uso do lote é o uso exigido pelo tipo (designado)
+  10 mudança de uso (G6): histórico contínuo 1..n por lote, a primeira parte da categoria do lote, cada uma parte do uso anterior e muda de uso, custo zero,
+     decisão registrada; o imóvel construído e a empresa localizada estão no uso designado do lote
 """
 from __future__ import annotations
 
@@ -24,6 +27,7 @@ from typing import Dict, Optional
 
 from contracts.constants import RUNNING_STATUSES, ContractType
 from contracts.models import Contract
+from companies.constants import CompanyType
 from companies.models import ConstructionJob
 from companies.constants import ProjectStatus
 from geography.constants import Occupation
@@ -32,11 +36,11 @@ from ledger.audit import AuditReport
 from ledger.constants import AccountKind, Nature
 from ledger.models import Account, Entry, Transaction
 
-from . import params
-from .constants import AuctionStatus, ListingStatus, OwnerKind, SiteStatus, TitleReason
+from . import params, uses
+from .constants import AuctionStatus, BuildingFamily, ListingStatus, OwnerKind, SiteStatus, TitleReason, UseChangeStatus
 from .constants import RentListingStatus
 from .models import (ActiveResidence, Auction, Building, CompanyLocation, ConstructionSite, Listing, LotTitle, RentListing, Tenancy, TitleEvent,
-                     Unit)
+                     Unit, UseChange)
 
 
 def _payment(key: str, nature: Nature) -> Optional[Entry]:
@@ -56,6 +60,7 @@ def audit_properties() -> AuditReport:
     _residences(report)
     _rent(report)
     _locations(report)
+    _use_changes(report)
     return report
 
 
@@ -181,7 +186,7 @@ def _buildings(report: AuditReport) -> None:
         kind = params.BUILDING_TYPES.get(b.kind)
         if kind is None:
             report.add(5, "UNKNOWN_BUILDING_KIND", lot=b.lot_id, kind=b.kind)
-        elif (b.units, b.qol_bonus) != (kind.units, kind.qol_bonus):
+        elif (b.units, b.qol_bonus, b.family, b.level) != (kind.units, kind.qol_bonus, kind.family.value, kind.level):
             report.add(5, "BUILDING_DOES_NOT_MATCH_TYPE", lot=b.lot_id)
         if Lot.objects.filter(pk=b.lot_id).values_list("occupation", flat=True).first() != Occupation.OCCUPIED.value:
             report.add(5, "BUILDING_LOT_NOT_OCCUPIED", lot=b.lot_id)
@@ -285,10 +290,46 @@ def _locations(report: AuditReport) -> None:
         title = LotTitle.objects.filter(lot_id=loc.lot_id).first()
         if title is None or (title.owner_kind, title.owner_id) != (OwnerKind.COMPANY.value, loc.company_id):
             report.add(9, "LOCATION_LOT_NOT_OWNED_BY_COMPANY", company=loc.company_id, lot=loc.lot_id)
-        if Building.objects.filter(lot_id=loc.lot_id).exists():
+        family = params.COMPANY_BUILDING_FAMILY.get(CompanyType(loc.company.type)) if loc.company.type in {t.value for t in CompanyType} else None
+        building = Building.objects.filter(lot_id=loc.lot_id).first()
+        if building is not None and (family is None or building.family != family.value):
             report.add(9, "LOCATION_LOT_HAS_BUILDING", company=loc.company_id, lot=loc.lot_id)
+        elif building is not None and family is BuildingFamily.COMMERCIAL and (building.level or 0) < loc.company.stars:
+            report.add(9, "LOCATED_COMPANY_BUILDING_LEVEL_TOO_LOW", company=loc.company_id, lot=loc.lot_id, level=building.level, stars=loc.company.stars)
+        elif building is None and family is not None and params.REQUIRE_BUILDING_FOR_LOCATION:
+            report.add(9, "LOCATED_COMPANY_WITHOUT_BUILDING", company=loc.company_id, lot=loc.lot_id)
+        use = params.COMPANY_SITE_USE.get(CompanyType(loc.company.type)) if loc.company.type in {t.value for t in CompanyType} else None
+        if use is not None and uses.use_of_lot(loc.lot) is not use:
+            report.add(9, "LOCATION_LOT_USE_NOT_DESIGNATED", company=loc.company_id, lot=loc.lot_id, use=use.value, designated=uses.use_of_lot(loc.lot).value)
         if loc.lot.occupation != Occupation.OCCUPIED.value:
             report.add(9, "LOCATION_LOT_NOT_OCCUPIED", company=loc.company_id, lot=loc.lot_id)
         if ConstructionSite.objects.filter(lot_id=loc.lot_id, status=SiteStatus.ACTIVE.value).exists():
             report.add(9, "LOCATION_LOT_HAS_ACTIVE_SITE", company=loc.company_id, lot=loc.lot_id)
     report.stats["company_locations"] = n
+
+
+def _use_changes(report: AuditReport) -> None:
+    n = 0
+    by_lot = {}
+    for u in UseChange.objects.order_by("lot_id", "sequence"):
+        n += 1
+        by_lot.setdefault(u.lot_id, []).append(u)
+    for lot_id, rows in by_lot.items():
+        lot = Lot.objects.get(pk=lot_id)
+        if [r.sequence for r in rows] != list(range(1, len(rows) + 1)):
+            report.add(10, "USE_CHANGE_SEQUENCE_GAP", lot=lot_id)
+        previous = lot.category
+        for r in rows:
+            if r.old_use != previous:
+                report.add(10, "USE_CHANGE_CHAIN_BROKEN", lot=lot_id, sequence=r.sequence, old_use=r.old_use, expected=previous)
+            if r.old_use == r.new_use:
+                report.add(10, "USE_CHANGE_NO_CHANGE", lot=lot_id, sequence=r.sequence)
+            if r.fee_cents != 0 or not r.decision:
+                report.add(10, "USE_CHANGE_FEE_OR_DECISION", lot=lot_id, sequence=r.sequence, fee=r.fee_cents)
+            report.enum(UseChangeStatus, r.status, "UseChange", "status", r.pk)
+            previous = r.new_use
+    for b in Building.objects.select_related("lot").order_by("lot_id"):
+        kind = params.BUILDING_TYPES.get(b.kind)
+        if kind is not None and uses.use_of_lot(b.lot) is not params.FAMILY_USE[kind.family]:
+            report.add(10, "BUILDING_USE_NOT_DESIGNATED", lot=b.lot_id, family=b.family, designated=uses.use_of_lot(b.lot).value)
+    report.stats["use_changes"] = n
