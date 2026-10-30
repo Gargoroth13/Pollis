@@ -305,7 +305,9 @@ Implementar `18`.
 
 Implementar `09`.
 
-## [ ] P1.10 — Processo legislativo
+## [~] P1.10 — Processo legislativo
+
+- **[x] P1.10a — Motor** (branch `dev/p1.10a-leis-motor`, PR empilhado sobre o #28; `design/07a`; `CHANGELOG_DEV.md`, 2026-10-30): propostas, Câmara, sanção/veto, vigor, interregno, sugestões, auditoria. **Resta:** ligar provedores de cargo (P1.11), registrar as leis do catálogo `11` e os consumidores (P1.12), pisos constitucionais com valores (GD), UI do preview.
 
 Implementar `07`.
 
