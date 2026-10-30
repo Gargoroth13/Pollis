@@ -31,7 +31,7 @@ from market.recording import party_account_id
 from players.models import Player
 from players.services import ActionResult
 
-from . import housing, params, rent, sites
+from . import uses, housing, params, rent, sites
 from players import qol
 from .constants import AuctionStatus, ListingStatus, OwnerKind, SiteStatus, TitleReason
 from .models import Auction, AuctionBid, Building, CompanyLocation, ConstructionSite, Listing, LotTitle, TitleEvent
@@ -424,7 +424,7 @@ def buy_property(actor_id: Any, listing_id: Any, buyer: Any) -> ActionResult:
 # --- obra com lote (10 §5, §28) ----------------------------------------------------------------------------------------------
 
 def _start_validator(player_id: int, company_id: int, project_key: str, lot_id: Any) -> Optional[ActionResult]:
-    """A Construtora constrói no lote QUE É DELA (10 §28), vazio, onde o zoneamento permite moradia (10 §5-6, 08 §7)."""
+    """A Construtora constrói no lote QUE É DELA (10 §28), vazio, onde o zoneamento permite o uso do prédio E o lote está designado a esse uso (10 §5-6, §21-22; 08 §7)."""
     if not _positive(lot_id):
         return _refuse("INVALID_PARAMS", lot=repr(lot_id)[:30])
     lot = Lot.objects.filter(pk=lot_id).first()
@@ -439,9 +439,8 @@ def _start_validator(player_id: int, company_id: int, project_key: str, lot_id: 
     if (ConstructionSite.objects.filter(lot=lot, status=SiteStatus.ACTIVE.value).exists()
             or Listing.objects.filter(lot=lot, status=ListingStatus.OPEN.value).exists()):
         return _refuse("LOT_RESERVED", lot=lot_id)
-    if not zoning.is_use_allowed(lot, Category.RESIDENTIAL):
-        return _refuse("LOT_USE_NOT_ALLOWED", lot=lot_id, category=lot.category, use=Category.RESIDENTIAL.value)
-    return None
+    use = params.FAMILY_USE[params.BUILDING_TYPES[project_key].family]            # residencial, comercial ou industrial (G5)
+    return uses.use_refusal(lot, use)
 
 
 def _start_hook(job, lot_id: Any) -> None:
@@ -456,7 +455,7 @@ def _completion_hook(job) -> None:
         return
     Lot.objects.select_for_update().filter(pk=site.lot_id).first()
     kind = params.BUILDING_TYPES[job.project]
-    building = Building.objects.create(lot_id=site.lot_id, kind=kind.key, units=kind.units, qol_bonus=kind.qol_bonus,
+    building = Building.objects.create(lot_id=site.lot_id, kind=kind.key, family=kind.family.value, level=kind.level, units=kind.units, qol_bonus=kind.qol_bonus,
                                        builder_company_id=job.company_id, job_id=job.pk, completed_at=job.completed_at)
     housing.create_units(building)                                   # 10 §6.1: as unidades independentes do imóvel
     Lot.objects.filter(pk=site.lot_id).update(occupation=Occupation.OCCUPIED.value)
@@ -504,7 +503,9 @@ def lot_view(lot_id: int) -> Optional[Dict[str, Any]]:
     site = ConstructionSite.objects.filter(lot=lot, status=SiteStatus.ACTIVE.value).first()
     located = CompanyLocation.objects.filter(lot=lot).values_list("company_id", flat=True).first()
     return {"lot": lot.pk, "category": lot.category, "occupation": lot.occupation, "owner": [kind.value, owner], "company": located,
-            "building": None if building is None else {"kind": building.kind, "units": building.units, "qol_bonus": str(building.qol_bonus)},
+            "designated_use": uses.use_of_lot(lot).value,
+            "building": None if building is None else {"kind": building.kind, "family": building.family, "level": building.level, "units": building.units,
+                                                      "qol_bonus": str(building.qol_bonus)},
             "units": [] if building is None else list(building.unit_rows.order_by("index").values_list("pk", flat=True)),
             "open_auction": None if auction is None else auction.pk,
             "open_listing": None if listing is None else {"id": listing.pk, "price_cents": listing.price_cents},

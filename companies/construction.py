@@ -11,7 +11,8 @@ Construtora: a obra (design/02 §12; 10 §5-6, §28).
     é prestadora, não recebe o imóvel) são de Imóveis (P1.07) e do contrato com o dono do lote (P1.07/P1.09/18): esta camada só
     expõe `register_completion_hook` e grava a conclusão. Nada de dinheiro aqui; o pagamento da obra é do contrato.
   - Não há cancelamento nem abandono de obra no design (lacuna registrada em CHANGELOG_DEV).
-  - Materiais de obra: o design não define consumo de produtos na obra (02 §10 é limitação conhecida).
+  - Materiais de obra (G5, GD 2026-10-29): consumo CONFIGURÁVEL (`params.CONSTRUCTION_CONSUMES_MATERIALS`/`CONSTRUCTION_MATERIALS_PER_WORK`; o design não define
+    quantidades, 02 §10, então a tabela nasce vazia); custo real e preços: P1.05b.
 
 PROTOCOLO: jogador → empresa (serializa a obra e o progresso) → registro monetário (o salário, depois).
 """
@@ -30,10 +31,12 @@ from players.models import Player
 from players.services import ActionResult
 from skills.services import get_levels, specialization_value
 
-from . import params, production, support
-from .constants import CompanyType, PositionKind, ProjectStatus
+from catalog import services as catalog
+
+from . import params, production, stock, support
+from .constants import CompanyType, PositionKind, ProjectStatus, StockOperation
 from .jobs import current_job, relevant_skill
-from .models import Company, ConstructionJob, ConstructionWork, WorkWage
+from .models import Company, ConstructionJob, ConstructionWork, StockItem, WorkWage
 from .services import owner_of
 
 BLOCK_PROVIDER = "companies_construction"
@@ -198,13 +201,33 @@ def _builder_job(player_id: int):
     return job
 
 
+def materials_per_work(project_key: str) -> Dict[str, int]:
+    """Unidades por Trabalhar do projeto (configuráveis, G5); vazio quando o consumo está desligado ou o projeto não tem linha na tabela."""
+    if not params.CONSTRUCTION_CONSUMES_MATERIALS:
+        return {}
+    return {k: v for k, v in params.CONSTRUCTION_MATERIALS_PER_WORK.get(project_key, {}).items() if v > 0}
+
+
+def _missing_materials(company_id: int, project_key: str) -> Dict[str, Dict[str, int]]:
+    need = materials_per_work(project_key)
+    if not need:
+        return {}
+    have = {k: 0 for k in need}
+    for row in StockItem.objects.filter(company_id=company_id, product__key__in=list(need)).select_related("product"):
+        have[row.product.key] = row.quantity
+    return {k: {"required": q, "have": have[k]} for k, q in need.items() if have[k] < q}
+
+
 def block_provider(player: Player, action: Action, now: int, activity) -> Optional[str]:
     if action is not Action.WORK:
         return None
     job = _builder_job(player.pk)
     if job is None:
         return None
-    return None if active_job(job.company_id) is not None else "COMPANY_NO_PROJECT"
+    obra = active_job(job.company_id)
+    if obra is None:
+        return "COMPANY_NO_PROJECT"
+    return "CONSTRUCTION_NO_MATERIALS" if _missing_materials(job.company_id, obra.project) else None
 
 
 def build_on_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
@@ -219,6 +242,9 @@ def build_on_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
     obra = ConstructionJob.objects.select_for_update().filter(company_id=job.company_id, status=ProjectStatus.ACTIVE.value).first()
     if obra is None:
         return {"company": job.company_id, "progress_added": 0, "limited_by": ["COMPANY_NO_PROJECT"]}
+    missing = _missing_materials(job.company_id, obra.project)
+    if missing:
+        return {"company": job.company_id, "project": obra.project, "progress_added": 0, "limited_by": ["CONSTRUCTION_NO_MATERIALS"], "missing": missing}
     level = get_levels(player_id)[relevant_skill(PositionKind.WORKER)]
     spec = specialization_value(player_id, specialization_key_of(obra.project))
     gain = progress_per_work(obra.project, level, spec, support.engineering_bonus(job.company_id, ctx.now), ctx.now)
@@ -226,8 +252,17 @@ def build_on_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
     after = min(Decimal(100), (before + gain.value).quantize(_Q))
     added = after - before
     sequence = WorkWage.objects.filter(player_id=player_id).count() + 1                      # o MESMO nº do salário desta ação
+    consumed = {}
+    company_row = Company.objects.get(pk=job.company_id)
+    for product_key, quantity in sorted(materials_per_work(obra.project).items()):               # G5: materiais configuráveis, pela trilha imutável de estoque
+        moved = stock.apply_locked(company_row, catalog.get_product(product_key), -quantity, StockOperation.INPUT_CONSUMPTION, origin=f"company:{job.company_id}",
+                                   destination="construction", key=f"construction:{obra.pk}:work:{sequence}:{player_id}:{product_key}",
+                                   reference_kind="construction_work", reference_id=f"{obra.pk}:{sequence}", at=ctx.now, actor=player_id)
+        if not moved.ok:                                                                          # impossível: a empresa está travada desde a checagem
+            raise RuntimeError(f"estoque de materiais da obra mudou sob a trava da empresa: {moved.code} {moved.detail}")
+        consumed[product_key] = quantity
     ConstructionWork.objects.create(job=obra, player_id=player_id, sequence=sequence, at=ctx.now, progress_added=added,
-                                    progress_after=after, explained=gain.to_dict())
+                                    progress_after=after, explained={**gain.to_dict(), "materials_consumed": consumed} if consumed else gain.to_dict())
     obra.progress = after
     completed = after >= 100
     if completed:

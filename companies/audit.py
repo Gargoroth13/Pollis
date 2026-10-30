@@ -314,6 +314,18 @@ def _audit_construction(report: AuditReport) -> None:
             total = sum(ConstructionWork.objects.filter(job=j).values_list("progress_added", flat=True)) or Decimal(0)
             if abs(total - j.progress) > Decimal("0.000001"):
                 report.add(13, "CONSTRUCTION_PROGRESS_MISMATCH", job=j.pk, progress=str(j.progress), works=str(total))
+    consumed_rows = {}
+    for m in StockMovement.objects.filter(operation="input_consumption", reference_kind="construction_work").select_related("product").order_by("id").iterator():
+        consumed_rows.setdefault((m.company_id, m.reference_id), {})[m.product.key] = -m.delta           # materiais da obra (G5): saída do estoque por Trabalhar
+    seen_works = set()
+    for w in ConstructionWork.objects.select_related("job").order_by("id").iterator():
+        booked = (w.explained or {}).get("materials_consumed", {})
+        registered = consumed_rows.get((w.job.company_id, f"{w.job_id}:{w.sequence}"), {})
+        seen_works.add((w.job.company_id, f"{w.job_id}:{w.sequence}"))
+        if booked != registered:
+            report.add(13, "CONSTRUCTION_MATERIALS_MISMATCH", construction_work=w.pk, booked=booked, registered=registered)
+    for orphan in sorted(set(consumed_rows) - seen_works):
+        report.add(13, "CONSTRUCTION_MATERIALS_WITHOUT_WORK", company=orphan[0], reference=orphan[1])
     for w in ConstructionWork.objects.select_related("job").order_by("id").iterator():
         wage = WorkWage.objects.select_related("position").filter(player_id=w.player_id, sequence=w.sequence).first()
         if (wage is None or wage.company_id != w.job.company_id or wage.position.kind != PositionKind.WORKER.value or wage.at != w.at

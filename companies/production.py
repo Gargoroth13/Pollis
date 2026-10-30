@@ -41,7 +41,7 @@ from skills.balance import get_skill_balance
 from skills.rules import production_multiplier
 from skills.services import get_levels, specialization_value
 
-from . import params, stock
+from . import gates, params, stock
 from .constants import CompanyType, PositionKind, StockOperation
 from .jobs import current_job, relevant_skill
 from .models import Company, Position, ProductionChange, ProductionLine, StockItem, WorkWage
@@ -344,6 +344,10 @@ def work_refusal(job: Position, now: int) -> Optional[str]:
         return "COMPANY_IN_SETUP"
     if CompanyType(job.company.type) is CompanyType.MATRIX and site_refusal(job.company, line.product.key) is not None:
         return "COMPANY_SITE_INVALID"                    # a Matriz perdeu o terreno (ou mudou para um que não permite o produto)
+    if CompanyType(job.company.type) is CompanyType.INDUSTRIAL:
+        gate = gates.operation_refusal(job.company)      # G5: Industrial localizada no prédio industrial, quando `REQUIRE_LOCATION_TO_OPERATE`
+        if gate is not None:
+            return gate.code
     inputs, yield_q = _needs(line.product.key)
     cap_left = int(stock.capacity_of(job.company.stars).value) - stock.used_of(job.company_id)
     if cap_left <= 0:
@@ -380,6 +384,10 @@ def produce_on_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
         return {"company": company.pk, "produced": 0, "limited_by": ["COMPANY_IN_SETUP"]}
     if CompanyType(company.type) is CompanyType.MATRIX and site_refusal(company, line.product.key) is not None:
         return {"company": company.pk, "produced": 0, "limited_by": ["COMPANY_SITE_INVALID"]}
+    if CompanyType(company.type) is CompanyType.INDUSTRIAL:
+        gate = gates.operation_refusal(company)
+        if gate is not None:
+            return {"company": company.pk, "produced": 0, "limited_by": [gate.code]}
     product = line.product
     level = get_levels(player_id)[relevant_skill(PositionKind.WORKER)]
     spec = specialization_value(player_id, product.key)

@@ -57,7 +57,9 @@ class StartTests(ConstructionBase):
 
     def test_the_minimum_stars_follow_the_design_table(self):
         self.assertEqual({k: p.min_stars for k, p in params.CONSTRUCTION_PROJECTS.items()},
-                         {"low_density_simple": 1, "high_density_simple": 2, "low_density_luxury": 3, "high_density_luxury": 4})
+                         {"low_density_simple": 1, "high_density_simple": 2, "low_density_luxury": 3, "high_density_luxury": 4,
+                          "commercial_1": 1, "commercial_2": 2, "commercial_3": 3, "commercial_4": 4, "commercial_5": 5,
+                          "industrial": 2})
         Company.objects.filter(pk=self.build).update(stars=4)
         self.assertTrue(self.start("high_density_luxury").ok)
 

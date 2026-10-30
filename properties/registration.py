@@ -13,6 +13,8 @@ funções de recusa que a execução usa. Bots e jogadores usam o mesmo caminho 
   unlist_rent      Retirar anúncio de aluguel   alvo = {"listing": id, "owner": {"kind","id"}}
   rent_unit        Alugar unidade anunciada     alvo = {"listing": id, "tenant": {"kind","id"}, "starts_on": dia, "ends_on": dia}
   set_company_location  Localizar a empresa num lote dela  alvo = {"company": id, "lot": id | null}  (null = deixa o lote; só o Dono)
+  change_lot_use   Pedir mudança de uso do lote    alvo = {"lot": id, "owner": {"kind","id"}, "use": "residential|commercial|industrial|institutional|special|rural"}
+                   (aprovação automática quando o zoneamento e as restrições permitem; custo zero; G6)
   (o contrato `rent` em si usa as ações de contrato: propose/accept/decline/withdraw/break_contract)
 A obra com lote usa a ação de iniciar obra da Construtora (`start_construction`), com o parâmetro opcional `lot`.
 """
@@ -23,7 +25,7 @@ from typing import Any, Callable, Dict, Optional
 from players.registry import TARGET_PARAMS, ActionDescriptor, TargetSpec, register_action
 from players.services import ActionResult
 
-from . import housing, rent, services, sites
+from . import housing, rent, services, sites, uses
 
 BID_ID, LIST_ID, UNLIST_ID, BUY_ID = "bid_auction", "list_property", "unlist_property", "buy_property"
 BID_KEYS, LIST_KEYS, LISTING_KEYS = services.BID_KEYS, services.LIST_KEYS, services.LISTING_KEYS
@@ -153,9 +155,34 @@ def _register_sites() -> None:
         check=check, execute=run, preview=preview)
 
 
+CHANGE_USE_ID = "change_lot_use"
+
+
+def _register_uses() -> None:
+    def check(player, now, bal, target):
+        return None if target is None else uses.change_refusal(player.pk, target)
+
+    def run(player_id, target):
+        return uses.change_use(player_id, target)
+
+    def preview(player, now, bal, target):
+        lot = target.get("lot") if isinstance(target, dict) else None
+        view = uses.use_view(lot) if isinstance(lot, int) and not isinstance(lot, bool) else None
+        return {} if view is None else {"use": view}
+
+    register_action(
+        ActionDescriptor(id=CHANGE_USE_ID, name="Pedir mudança de uso do lote",
+                         requirements=("INVALID_PARAMS", "PLAYER_NOT_FOUND", "INVALID_PARTY", "INVALID_USE", "USE_CHANGE_FEE_UNDEFINED", "NOT_PARTY_REPRESENTATIVE",
+                                       "NOT_OWNER", "COMPANY_NOT_FOUND", "LOT_NOT_FOUND", "NOT_LOT_OWNER", "USE_UNCHANGED", "ZONING_DOES_NOT_ALLOW_USE",
+                                       "USE_CHANGE_BUILDING_PRESENT", "LOT_HAS_COMPANY", "LOT_RESERVED"),
+                         cost=(), target=TargetSpec(TARGET_PARAMS, required=True), effects=("lot_use_changed",)),
+        check=check, execute=run, preview=preview)
+
+
 def register() -> None:
     _register_housing()
     _register_sites()
+    _register_uses()
     for action_id, name, keys, refusal, execute, order, view, requirements, effects, cost in (
         (BID_ID, "Dar lance em leilão", BID_KEYS, services.bid_refusal, services.bid, ("auction", "bidder", "amount"), _auction_preview,
          ("INVALID_PARAMS", "PLAYER_NOT_FOUND", "INVALID_PARTY", "AUCTION_NOT_FOUND", "NOT_PARTY_REPRESENTATIVE", "NOT_OWNER",

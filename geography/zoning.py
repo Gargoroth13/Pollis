@@ -21,6 +21,11 @@ from .balance import Scenario, get_scenario
 from .constants import CATEGORIES, Category
 from .models import Lot
 
+# Zoneamento MISTO do cenário do Bot Test (proposta, G6 do GD 2026-10-29: o cenário inicial não pode deixar a mudança de uso inutilizável): residencial e comercial se
+# misturam (a mudança de uso de um para o outro é aprovada automaticamente, 10 §21); industrial, institucional, especial e rural ficam isolados. Entra no cenário por
+# `POLIS_GEOGRAPHY = {"zoning_permissions": BOT_TEST_ZONING}` (a matriz padrão `{c: {c}}` continua sendo o padrão do código). Decisão de cenário, não de mecânica.
+BOT_TEST_ZONING = {"residential": ["residential", "commercial"], "commercial": ["commercial", "residential"]}
+
 Override = Callable[[Lot, Category], Optional[bool]]
 _overrides: Dict[str, Override] = {}
 

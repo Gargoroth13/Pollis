@@ -100,7 +100,19 @@ CONSTRUCTION_PROJECTS = {p.key: p for p in (
     ConstructionProject("high_density_simple", "Alta densidade simples", 2, 400),
     ConstructionProject("low_density_luxury", "Baixa densidade luxo", 3, 100),
     ConstructionProject("high_density_luxury", "Alta densidade luxo", 4, 600),
+    # G5 (GD 2026-10-29): prédio comercial de nível 1 a 5, a Construtora precisa de estrela ≥ nível (design/10a §11.1-§11.2); trabalhos para concluir dobram a
+    # cada nível a partir do residencial simples (50/100/200/400/800: recomendação de §11.2 aplicada pelo GD). Industrial: tipo único, sem nível, Construtora ≥ 2★,
+    # 200 trabalhos (§11.4).
+    *(ConstructionProject(f"commercial_{n}", f"Comercial nível {n}", n, 50 * 2 ** (n - 1)) for n in range(1, 6)),
+    ConstructionProject("industrial", "Industrial", 2, 200),
 )}
+
+# Materiais da obra (G5, GD 2026-10-29): o consumo é CONFIGURÁVEL nesta etapa; o custo real e a integração com preços ficam para a P1.05b. O design não define
+# quantidades (02 §10, `GAP_FINISHINGS_UNDEFINED`), então a tabela nasce VAZIA e o consumo DESLIGADO: nenhum número é inventado. Com o consumo ligado, cada Trabalhar
+# que faz a obra andar retira do estoque da Construtora as unidades configuradas do projeto (`{produto: unidades por Trabalhar}`), pela trilha imutável de estoque
+# (`INPUT_CONSUMPTION`); sem estoque a obra para (`CONSTRUCTION_NO_MATERIALS`) antes de gastar Energia. Projeto sem linha na tabela não consome.
+CONSTRUCTION_CONSUMES_MATERIALS = False
+CONSTRUCTION_MATERIALS_PER_WORK: Dict[str, Dict[str, int]] = {}
 
 
 @dataclass(frozen=True)
@@ -148,8 +160,15 @@ def provisional_table() -> List[ProvisionalRow]:
     rows.append(ProvisionalRow("companies", "retail.sales_specialization_key", SALES_SPECIALIZATION_KEY,
                                "chave de especialização do vendedor (02 §13)", SOURCE))
     for project in CONSTRUCTION_PROJECTS.values():
+        gd = project.key.startswith("commercial_") or project.key == "industrial"
         rows.append(ProvisionalRow("companies", f"construction.{project.key}", f"stars>={project.min_stars};work_units={project.work_units}",
-                                   "estrela mínima: 10 §6 (inicial para Bot Test); trabalhos para concluir: [PROV] (02 §12)", SOURCE))
+                                   "G5 (GD 2026-10-29): estrela da Construtora ≥ nível; trabalhos 50·2^(n-1); industrial 2★/200" if gd else
+                                   "estrela mínima: 10 §6 (inicial para Bot Test); trabalhos para concluir: [PROV] (02 §12)", "GD 2026-10-29; 10a §11" if gd else SOURCE,
+                                   status="GD" if gd else "PROV"))
+    rows.append(ProvisionalRow("companies", "construction.consumes_materials", str(CONSTRUCTION_CONSUMES_MATERIALS),
+                               "consumo de materiais da obra: configurável (G5); custo real e preços: P1.05b", "GD 2026-10-29", status="GD"))
+    rows.append(ProvisionalRow("companies", "construction.materials_per_work", repr(CONSTRUCTION_MATERIALS_PER_WORK),
+                               "unidades por Trabalhar e projeto: o design não define quantidades (02 §10); tabela vazia até o GD/balanceamento", "02 §10", status="PROV"))
     for kind in PositionKind:
         rows.append(ProvisionalRow("companies", f"relevant_skill.{kind.value}", RELEVANT_SKILL[kind].value,
                                    "skill relevante do cargo para S (01 §1.7-1.8): distribuição refinada em Empresas", SOURCE))
