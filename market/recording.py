@@ -41,6 +41,23 @@ def party_account_id(kind: PartyKind, entity_id: int) -> Optional[int]:
     return ledger.get_or_create_account(AccountKind.COMPANY, entity_id).pk if Company.objects.filter(pk=entity_id).exists() else None
 
 
+def find_payment(ledger_key: str, buyer_acc: int, seller_acc: int, total: int, *, include_reversed: bool) -> Optional[Entry]:
+    """
+    O lançamento `SALE` do pagamento: UM lançamento do comprador ao vendedor na transação `ledger_key`, e `SALE` + `TAX_SALES`
+    pagos pelo comprador (imposto retido do valor, `ledger.post_taxed_payment`) somam o valor total da venda. Sem imposto, o
+    `SALE` é o total. Devolve o lançamento `SALE` (ou None). Estornados só contam com `include_reversed=True` (auditoria).
+    """
+    rows = list(Entry.objects.filter(transaction__key=ledger_key, nature__in=[Nature.SALE.value, Nature.TAX_SALES.value]))
+    if not include_reversed:
+        reversed_ids = set(Entry.objects.filter(reverses_id__in=[e.pk for e in rows]).values_list("reverses_id", flat=True))
+        rows = [e for e in rows if e.pk not in reversed_ids]
+    sale = [e for e in rows if e.nature == Nature.SALE.value and e.from_account_id == buyer_acc and e.to_account_id == seller_acc]
+    tax = sum(e.amount for e in rows if e.nature == Nature.TAX_SALES.value and e.from_account_id == buyer_acc)
+    if len(sale) != 1 or sale[0].amount + tax != total:
+        return None
+    return sale[0]
+
+
 def record_sale(*, product_key: Any, quantity: Any, unit_price_cents: Any, buyer_kind: Any, buyer_id: Any, seller_kind: Any,
                 seller_id: Any, channel: Any, ledger_key: Any) -> ActionResult:
     """
@@ -75,12 +92,11 @@ def record_sale(*, product_key: Any, quantity: Any, unit_price_cents: Any, buyer
         buyer_acc, seller_acc = party_account_id(b_kind, buyer_id), party_account_id(s_kind, seller_id)
         if buyer_acc is None or seller_acc is None:
             return _refuse("PARTY_NOT_FOUND", buyer=buyer_acc is not None, seller=seller_acc is not None)
-        sale = [e for e in Entry.objects.filter(transaction__key=ledger_key, nature=Nature.SALE.value, reversed_by__isnull=True)
-                if e.from_account_id == buyer_acc and e.to_account_id == seller_acc and e.amount == total]
-        if len(sale) != 1:
+        sale = find_payment(ledger_key, buyer_acc, seller_acc, total, include_reversed=False)
+        if sale is None:
             return _refuse("PAYMENT_NOT_FOUND", ledger_key=ledger_key, total_cents=total,
-                           why="não há UM lançamento SALE do comprador ao vendedor pelo valor total")
-        at = sale[0].at
+                           why="não há UM lançamento SALE do comprador ao vendedor (líquido + TAX_SALES do comprador = valor total)")
+        at = sale.at
         try:
             with transaction.atomic():
                 tx = MarketTransaction.objects.create(
