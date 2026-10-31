@@ -4,6 +4,16 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-30 — P1.18a — Infraestrutura do Bot Test (`design/21` FINAL — BOT TEST; lacunas técnicas em `design/21a`)
+
+**Decisão de execução.** Instrução do GD (2026-10-28): acelerar o Bot Test. A P1.18 não depende do modelo neural nem de decisão nova; vem empilhada sobre a P1.10a. Nada saiu do escopo.
+
+**Entregue (app `bots`, migração `0001`):** entidade Bot (conta de jogador normal, `Usuario` sem senha utilizável), execução `BotRun` (versões do jogo e do modelo, seed global, população-alvo, velocidade do relógio, contadores), Population Controller (1 Bot por minuto REAL configurável, meta, rajada máxima, perfis pela menor cobertura, personalidade/objetivo/especialização combináveis, 10 arquétipos), scheduler individual com `wake`, observação restrita (`ALLOWED_KEYS`), máscara sobre o Action Registry compartilhado, ciclo de decisão com uma ação por avaliação, logs de decisão e de ação, experiência (`next_observation`), seeds reproduzíveis, métricas por passada, Admin (congelar/descongelar/remover/parar), dashboard técnico, exportação zip (CSV/JSON/JSONL) e comandos `bot_run`, `bot_step`, `bot_export`.
+
+**Lacunas B1–B10 (`design/21a`):** intervalos de avaliação `[PROV]`; política-base de infraestrutura (`uniform_masked_v0`, sem estratégia); arquivos de exportação ainda dependentes de P1.19/P1.21/P1.22 declarados como pendentes; dotação inicial = a do cenário (mesmo gancho do jogador; cenário sem a linha recusa a criação).
+
+**Prova:** testes de população, cobertura, scheduler, avaliação (mask, exceções, experiência), simulação multi-dia, exportação/comandos e concorrência PG-only. Mutações detectadas: máscara, vencimento, status, `wake`, meta de população, chaves proibidas na observação, experiência. Resultados das suítes completas: ver o PR.
+
 ## 2026-10-30 — P1.10a — Motor do processo legislativo (`design/07` FINAL — BOT TEST; lacunas técnicas em `design/07a`)
 
 **Decisão de execução.** Próxima etapa executável da fila depois da P1.07d (#28): o `07` é FINAL e não depende de decisão nova do GD. Vem empilhada sobre a P1.07d. Cargos/composição da Câmara (`06`, P1.11) e catálogo concreto de leis (`11` REVIEW, P1.12) entram por **provedor** e por **registro de leis**; nada saiu do escopo do Bot Test.
