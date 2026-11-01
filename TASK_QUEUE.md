@@ -329,9 +329,9 @@ Depois de `11` FINAL, implementar o motor de parâmetros legais.
 
 Implementar o padrão arquitetural de `20` para fórmulas compostas.
 
-## [ ] P1.14 — Histórico do Mundo
+## [x] P1.14 — Histórico do Mundo
 
-Implementar `12`.
+Implementar `12`. **P1.14a feita** (branch `dev/p1.14a-historico-mundo`, PR empilhado sobre a P1.18a; `design/12a`; `CHANGELOG_DEV.md`, 2026-11-01). **Resta:** ligar falência (quando existir), eleições e mudança de governo (P1.11) e conflitos (`19`) às funções de `history.news`; resolvedores de referência com a UI (P1.16).
 
 ## [ ] P1.15 — Rankings
 

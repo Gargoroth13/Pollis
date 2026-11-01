@@ -18,6 +18,7 @@ from django.db import transaction
 
 from core import clock as game_clock
 from core.breakdown import Calc, Explained
+from history import news as history_news
 from ledger import services as ledger
 from ledger.constants import MAX_AMOUNT, AccountKind, Nature
 from players.models import Player
@@ -112,6 +113,7 @@ def found_company(player_id: int, company_type: Any, name: Any, owner_salary: An
         Position.objects.create(company=company, kind=PositionKind.OWNER.value, salary=owner_salary, holder_id=player_id,
                                 created_at=now)
         account = ledger.get_or_create_account(AccountKind.COMPANY, company.pk)
+        history_news.company_founded(company.pk, company.name, company_type, now)           # marco "primeira empresa do tipo" (12 §12.5, §12.8)
         return ActionResult(True, "OK", {
             "company": company.pk, "type": company_type, "stars": company.stars, "cost": cents, "cost_explained": cost,
             "account": account.pk, "owner_salary": owner_salary})
