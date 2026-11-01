@@ -4,6 +4,16 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-01 — P1.14a — Histórico do Mundo (`design/12` FINAL — BOT TEST; lacunas técnicas em `design/12a`)
+
+- App `history`: `NewsItem` imutável e permanente, publicação com modelos de texto variados e determinísticos, idempotência por chave, marco único (restrição única), intervalo mínimo por indicador, prioridade interna, feed (filtros Todas/Política/Economia/Conflito/Sociedade/Marco, cursor estável), arquivo por mês, marcos, auditoria `audit_history`, Admin somente-leitura.
+- Integrações ligadas: Empresas (marco da primeira empresa de cada tipo, na transação da fundação), Leis (`LawSpec.newsworthy`; aprovação, veto, derrubada e vigor) e Mercado (tendência de 7 dias do `17`, no tick diário, sobre agregados).
+- API pronta e testada, sem chamador (sistema de origem inexistente): falência 5★+ (não há falência de empresa no código nem no `02`), eleições/mudança de governo (`06`, REVIEW) e conflitos (`19`, REVIEW).
+- Parâmetros `[PROV]` em `history/params.py` (limiar 5 %, "grande" 20 %, intervalo 3 dias, prioridade de leis).
+- Nenhuma mecânica nova de jogo; `LawSpec.newsworthy` é só a marca que o 12.6 exige que venha do catálogo (padrão `False`).
+
+---
+
 ## 2026-10-30 — P1.18a — Infraestrutura do Bot Test (`design/21` FINAL — BOT TEST; lacunas técnicas em `design/21a`)
 
 **Decisão de execução.** Instrução do GD (2026-10-28): acelerar o Bot Test. A P1.18 não depende do modelo neural nem de decisão nova; vem empilhada sobre a P1.10a. Nada saiu do escopo.

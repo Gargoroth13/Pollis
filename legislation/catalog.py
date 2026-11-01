@@ -43,6 +43,7 @@ class LawSpec:
     group: Optional[str] = None                       # grupo acoplado (07 §07.17): uma proposta ativa bloqueia o grupo inteiro
     validators: Tuple[Validator, ...] = ()
     source: str = ""
+    newsworthy: bool = False                          # design/12 §12.6: só o CATÁLOGO diz se a mudança é relevante para a imprensa do servidor
 
     @property
     def scope(self) -> str:
