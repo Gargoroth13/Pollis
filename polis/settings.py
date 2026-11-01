@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "schools",  # escolas: matrícula, materiais, qualidade diária (design/03)
     "contracts",  # contratos: fornecimento, empréstimo e o motor dos demais tipos (design/18)
     "properties",  # imóveis: propriedade de lotes, leilões, venda e obra com lote (design/10)
+    "bots",  # Bot Test: infraestrutura (design/21; sem modelo neural)
     "legislation",  # processo legislativo: propostas, Câmara, sanção, veto, vigor (design/07)
     "budget",  # orçamento público: repasses, plano municipal, pisos, visão fiscal (design/09)
 ]
@@ -135,3 +136,6 @@ POLIS_GAME_TIMEZONE = os.environ.get("POLIS_GAME_TIMEZONE", TIME_ZONE)
 # Bot Test: 600 (1 dia = 10 min, design/21 §21.3). Só vale ao criar o relógio do
 # mundo; depois o valor vive no banco (`manage.py world_clock set-speed`).
 POLIS_REAL_SECONDS_PER_GAME_DAY = int(os.environ.get("POLIS_REAL_SECONDS_PER_GAME_DAY", "86400"))
+
+# Versão do jogo registrada em cada execução do Bot Test e em cada decisão (design/21 §21.49, §21.54).
+POLIS_GAME_VERSION = "0.1-dev"

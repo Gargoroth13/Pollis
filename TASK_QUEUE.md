@@ -353,7 +353,9 @@ Usar `SITEMAP-REVIEW.md` para construir a navegação principal sem bloquear aju
 
 # P1 — Bot Test
 
-## [ ] P1.18 — Bot Test: infraestrutura
+## [~] P1.18 — Bot Test: infraestrutura
+
+- **[x] P1.18a — Infraestrutura base** (branch `dev/p1.18a-bots-infra`, PR empilhado sobre a P1.10a; `design/21a`; `CHANGELOG_DEV.md`, 2026-10-30): Bot, execução, Population Controller, scheduler, observação restrita, máscara, logs, experiência, seeds, Admin, dashboard técnico, exportação. **Resta:** GPU/VRAM (entram com o modelo, P1.19), cenário inicial com ocupantes de cargo (K1), conexão com a informação pública dos sistemas conforme existirem.
 
 Implementar a infraestrutura não dependente do modelo neural:
 
