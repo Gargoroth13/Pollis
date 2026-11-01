@@ -4,6 +4,16 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-10-30 — P1.10a — Motor do processo legislativo (`design/07` FINAL — BOT TEST; lacunas técnicas em `design/07a`)
+
+**Decisão de execução.** Próxima etapa executável da fila depois da P1.07d (#28): o `07` é FINAL e não depende de decisão nova do GD. Vem empilhada sobre a P1.07d. Cargos/composição da Câmara (`06`, P1.11) e catálogo concreto de leis (`11` REVIEW, P1.12) entram por **provedor** e por **registro de leis**; nada saiu do escopo do Bot Test.
+
+**Entregue (app `legislation`, migração `0001`):** propostas com versões, discussão de 3 dias civis, janela semanal (segunda 00:00), votação com composição congelada, voto nominal alterável, maioria absoluta das cadeiras ocupadas, sanção (3 dias; inação = sanção automática), veto com justificativa, derrubada por 2/3, vigor no próximo `weekly tick` (não retroativo), conflito por escopo com grupos acoplados (restrição única parcial no banco), cooldown `[PROV]`, revogação, mudança de Presidente/deposição e interregno (07 §07.18-§07.19), sugestões de Governador/Prefeito, preview (diretos × estimativas × validações), consultas públicas, histórico imutável, `audit_legislation` (7 invariantes) e 9 ações no Action Registry; handler no tick `TEN_MINUTES`.
+
+**Lacunas técnicas L1–L14 (`design/07a`):** a leitura de "3 dias de calendário" (dias civis contando o dia da criação) e a janela da derrubada (próxima segunda) são as duas que o GD pode querer confirmar; cooldowns `[PROV]` 7/3 dias; pisos constitucionais sem valores (gancho pronto, nenhum registrado).
+
+**Prova:** 106 testes (calendário, propostas, processo, interregno/Presidente, sugestões, auditoria, visões, concorrência PG-only). Mutações detectadas: maioria, 2/3, prazo de voto, dias de discussão, vigor estritamente após a decisão, suspensão por interregno, exigência de Câmara, vigor durante interregno, retorno por mudança de Presidente, Presidente na sanção, cooldown, bloqueio por escopo e a trava da proposta em PG. Resultados das suítes completas: ver o PR.
+
 ## 2026-10-29 — P1.07d — Prédios comerciais/industrial, estrela → nível (G5), mudança de uso (G6), terreno rural com depósito (G12) (`design/10a` §13)
 
 **Decisões do GD (2026-10-29), aplicadas e registradas em `design/10a` §13.** **G5:** estrela da empresa é requisito mínimo (empresa de N★ exige prédio de nível ≥ N); uma empresa por prédio; industrial é tipo único sem nível, construído por Construtora ≥ 2★; consumo de materiais da obra configurável (custo real e preços na P1.05b; construção continua no escopo). **G6:** aprovação automática quando o zoneamento e todas as restrições permitem; custo zero configurável; gancho para aprovação política sem antecipar votação/competências; zoneamento padrão `{c:{c}}` investigado. **G12:** lote rural com depósito também produz os comuns (marcador `[PROV]` removido; regra `G12-A`). **G1:** abrir leilões segue como ferramenta de sistema/Dev. **K3:** repasse respeita obrigações pendentes (marcador `[PROV]` removido em `design/09a` e `budget/params.py`).

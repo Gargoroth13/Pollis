@@ -33,11 +33,14 @@ class DescriptorContractTests(TravelTestCase):
 
     def test_the_actions_are_registered_with_stable_ids(self):
         self.assertEqual([d.id for d in registry.list_descriptors()],
-                         ["accept_contract", "apply_position", "approve_application", "auto_consumption", "bid_auction", "break_contract", "budget_transfer",
-                          "buy_property", "change_lot_use", "change_school", "close_position", "confirm_budget_plan", "consume", "decline_contract", "dismiss_employee", "found_company", "fund_company",
-                          "leisure", "list_property", "list_rent", "open_position", "propose_contract", "reject_application", "rent_unit", "resign",
-                          "send_item", "set_budget_plan", "set_company_location", "set_production", "set_residence", "start_construction", "study", "travel", "unlist_property",
-                          "unlist_rent", "withdraw_application", "withdraw_contract", "work"])
+                         ["accept_contract", "adopt_suggestion", "apply_position", "approve_application", "auto_consumption", "bid_auction",
+                          "break_contract", "budget_transfer", "buy_property", "cast_vote", "change_lot_use", "change_school", "close_position",
+                          "confirm_budget_plan", "consume", "decline_contract", "dismiss_employee", "dismiss_suggestion", "edit_proposal",
+                          "found_company", "fund_company", "leisure", "list_property", "list_rent", "open_position", "propose_contract",
+                          "propose_law", "reject_application", "rent_unit", "resign", "sanction_proposal", "send_item", "set_budget_plan",
+                          "set_company_location", "set_production", "set_residence", "start_construction", "study", "suggest_law", "travel",
+                          "unlist_property", "unlist_rent", "veto_proposal", "withdraw_application", "withdraw_contract", "withdraw_proposal",
+                          "work"])
         self.assertEqual({d.id: d.name for d in registry.list_descriptors()},
                          {"work": "Trabalhar", "study": "Estudar", "leisure": "Lazer", "travel": "Viajar",
                           "consume": "Consumir", "send_item": "Enviar item pelo Correio",
@@ -57,7 +60,12 @@ class DescriptorContractTests(TravelTestCase):
                           "set_company_location": "Localizar empresa num lote",
                           "budget_transfer": "Repassar verba a outro governo", "set_budget_plan": "Montar plano orçamentário municipal",
                           "confirm_budget_plan": "Confirmar plano orçamentário municipal",
-                          "change_lot_use": "Pedir mudança de uso do lote"})
+                          "change_lot_use": "Pedir mudança de uso do lote",
+                          "propose_law": "Formalizar proposta de lei", "edit_proposal": "Alterar proposta na discussão",
+                          "withdraw_proposal": "Retirar proposta na discussão", "cast_vote": "Votar na Câmara",
+                          "sanction_proposal": "Sancionar proposta aprovada", "veto_proposal": "Vetar proposta aprovada",
+                          "suggest_law": "Sugerir lei ao Presidente", "adopt_suggestion": "Formalizar sugestão como proposta",
+                          "dismiss_suggestion": "Descartar sugestão"})
 
     def test_travel_is_not_added_to_the_energy_action_enum(self):
         """Viajar não tem custo de Energia (04 §2.2): o enum Action continua com as 3 ações de custo fixo."""
@@ -68,7 +76,8 @@ class DescriptorContractTests(TravelTestCase):
             "dismiss_employee", "resign", "set_production", "start_construction", "change_school", "propose_contract",
         "accept_contract", "decline_contract", "withdraw_contract", "break_contract", "bid_auction", "list_property", "unlist_property",
             "buy_property", "set_residence", "list_rent", "unlist_rent", "rent_unit", "set_company_location",
-            "budget_transfer", "set_budget_plan", "confirm_budget_plan", "change_lot_use"})
+            "budget_transfer", "set_budget_plan", "confirm_budget_plan", "change_lot_use", "propose_law", "edit_proposal", "withdraw_proposal",
+            "cast_vote", "sanction_proposal", "veto_proposal", "suggest_law", "adopt_suggestion", "dismiss_suggestion"})
 
     def test_every_contract_field_is_present(self):
         for d in registry.list_descriptors():
@@ -90,11 +99,14 @@ class DescriptorContractTests(TravelTestCase):
 
     def test_availability_lists_actions_in_a_deterministic_id_order(self):
         self.assertEqual([a.action_id for a in registry.available_actions(self.player.pk)],
-                         ["accept_contract", "apply_position", "approve_application", "auto_consumption", "bid_auction", "break_contract", "budget_transfer",
-                          "buy_property", "change_lot_use", "change_school", "close_position", "confirm_budget_plan", "consume", "decline_contract", "dismiss_employee", "found_company", "fund_company",
-                          "leisure", "list_property", "list_rent", "open_position", "propose_contract", "reject_application", "rent_unit", "resign",
-                          "send_item", "set_budget_plan", "set_company_location", "set_production", "set_residence", "start_construction", "study", "travel", "unlist_property",
-                          "unlist_rent", "withdraw_application", "withdraw_contract", "work"])
+                         ["accept_contract", "adopt_suggestion", "apply_position", "approve_application", "auto_consumption", "bid_auction",
+                          "break_contract", "budget_transfer", "buy_property", "cast_vote", "change_lot_use", "change_school", "close_position",
+                          "confirm_budget_plan", "consume", "decline_contract", "dismiss_employee", "dismiss_suggestion", "edit_proposal",
+                          "found_company", "fund_company", "leisure", "list_property", "list_rent", "open_position", "propose_contract",
+                          "propose_law", "reject_application", "rent_unit", "resign", "sanction_proposal", "send_item", "set_budget_plan",
+                          "set_company_location", "set_production", "set_residence", "start_construction", "study", "suggest_law", "travel",
+                          "unlist_property", "unlist_rent", "veto_proposal", "withdraw_application", "withdraw_contract", "withdraw_proposal",
+                          "work"])
 
     def test_descriptors_are_immutable(self):
         with self.assertRaises(Exception):
