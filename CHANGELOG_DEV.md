@@ -4,6 +4,19 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-03 — P1.15a (fatia 1) — Rankings (app `rankings`)
+
+Implementa parte do `design/14` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p1.15a-rankings-nucleo`, **baseada diretamente na `main`** (independente da pilha). **Não mergeada; aguarda revisão e autorização do Game Director.** O `14` continua FINAL — BOT TEST até integrar e validar na `main`. Detalhes, mapa de fontes e interpretações: `design/14a-rankings-PROPOSTA.md`.
+
+- **Ativos nesta fatia:** Maior patrimônio líquido (1), Maior contribuinte 30 dias (7), Conta mais antiga (10), Maior tempo ativo (11) e os recordes de patrimônio (12) e de tempo ativo (14); interface do recorde presidencial (15) sem chamador.
+- **Pendentes de fonte (explícitos, sem dados inventados):** Maior empresa (2), Maior produção (3), Maior empregador (6), Escola (8), Organização (9), recorde de empresa (13). **Pendente de decisão:** QoL (4), com proposta técnica de snapshot comparável. **Fora do Bot Test:** influência política (5).
+- **Hook novo e genérico:** `players.registry.register_action_observer` (chamado após execução bem-sucedida; falha isolada por savepoint e registrada em log, nunca desfaz a ação).
+- Decisões do GD (2026-11-02) aplicadas: patrimônio só com o que o ledger reconhece; produção por produto; empregador sem o Dono; QoL sem valores "último calculado"; influência política fora; históricas numeradas 12–15.
+- Limite conhecido: o recorde de patrimônio é verificado nas ações do jogador e numa varredura diária (o ledger não tem gancho pós-lançamento); `audit_rankings` aponta recorde atrás da fonte.
+- Nenhum dinheiro é criado ou movido pelos Rankings (testado).
+
+---
+
 ## 2026-10-16 — P0.07b — registro monetário implementado (app `ledger`)
 
 Implementa `design/24` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p0.07b-ledger`, empilhada sobre o PR #10 (que sobre #9 → #8). **Não mergeada; aguarda auditoria externa e aprovação do Game Director.**

@@ -294,9 +294,9 @@ Implementar o padrão arquitetural de `20` para fórmulas compostas.
 
 Implementar `12`.
 
-## [ ] P1.15 — Rankings
+## [~] P1.15 — Rankings
 
-Implementar `14`.
+Implementar `14`. Fatia 1 (P1.15a) implementada em PR independente sobre a `main`. Restam: fatia 2 (empresa/empregador/produção/recorde de empresa, após #15–#17), 3 (escola, #21), 4 (organização, P1.17), 5 (recorde presidencial, P1.11) e QoL (após decisão do GD sobre `design/14a` §4).
 
 ## [ ] P1.16 — Sitemap / UI shell
 

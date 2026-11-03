@@ -1,0 +1,71 @@
+"""
+Auditoria dos Rankings (design/14 §14.9): confere que os dados guardados são íntegros e que os recordes não ficaram ATRÁS
+da fonte (o que indicaria uma atualização perdida). Só lê. Achados: {code, ...detalhe}.
+"""
+from __future__ import annotations
+
+from fractions import Fraction
+from typing import Any, Dict, List
+
+from core import clock as game_clock
+
+from . import live, params
+from .constants import ENTITY_TYPES, Cat, Group, spec as category_spec
+from .models import ActivityStreak, RankingHistorico
+
+
+def audit_rankings(at: int = None) -> Dict[str, Any]:
+    at = game_clock.now() if at is None else at
+    findings: List[Dict[str, Any]] = []
+    stats: Dict[str, Any] = {"at": at}
+
+    streaks = list(ActivityStreak.objects.all())
+    stats["streaks"] = len(streaks)
+    for s in streaks:
+        if s.best_length != s.best_end - s.best_start or s.best_length < s.last_action_at - s.current_start:
+            findings.append({"code": "STREAK_INCONSISTENT", "player_id": s.player_id})
+
+    records = {r.category: r for r in RankingHistorico.objects.all()}
+    stats["records"] = len(records)
+    for key, r in records.items():
+        try:
+            spec = category_spec(key)
+        except ValueError:
+            spec = None
+        if spec is None or spec.group != Group.HISTORICAL:
+            findings.append({"code": "RECORD_UNKNOWN_CATEGORY", "category": key})
+            continue
+        if r.entity_type not in ENTITY_TYPES:
+            findings.append({"code": "RECORD_BAD_ENTITY_TYPE", "category": key, "entity_type": r.entity_type})
+        if r.recorded_at > at:
+            findings.append({"code": "RECORD_IN_THE_FUTURE", "category": key, "recorded_at": r.recorded_at})
+
+    ar = records.get(Cat.ACTIVE_TIME_RECORD.value)
+    best = max(streaks, key=lambda s: (s.best_length, -s.player_id), default=None)
+    if best is not None and (ar is None or best.best_length > ar.value):
+        findings.append({"code": "RECORD_BEHIND_SOURCE", "category": Cat.ACTIVE_TIME_RECORD.value,
+                         "record": None if ar is None else ar.value, "source": best.best_length, "player_id": best.player_id})
+    if ar is not None:
+        m = ar.metadata
+        if (m.get("length_seconds") != ar.value or m.get("end", 0) - m.get("start", 0) != ar.value
+                or not ar.entity_type == "player"):
+            findings.append({"code": "RECORD_METADATA_MISMATCH", "category": ar.category})
+
+    nr = records.get(Cat.NET_WORTH_RECORD.value)
+    top = live.net_worth_rows(limit=1, at=at)
+    if top and top[0]["value"] > 0 and (nr is None or top[0]["value"] > nr.value):
+        findings.append({"code": "RECORD_BEHIND_SOURCE", "category": Cat.NET_WORTH_RECORD.value,
+                         "record": None if nr is None else nr.value, "source": top[0]["value"],
+                         "player_id": top[0]["entity_id"]})
+
+    pr = records.get(Cat.PRESIDENT_VOTE_RECORD.value)
+    if pr is not None:
+        m = pr.metadata
+        ok = all(isinstance(m.get(k), int) for k in ("votes", "total_votes", "election_date")) and m.get("election")
+        if not ok or not 0 <= m["votes"] <= m["total_votes"] or m["total_votes"] <= 0 \
+                or pr.value != m["votes"] * 1_000_000 // m["total_votes"]:
+            findings.append({"code": "RECORD_METADATA_MISMATCH", "category": pr.category})
+    stats["parameters"] = {"production_window_days": params.PRODUCTION_WINDOW_DAYS,
+                           "taxpayer_window_days": params.TAXPAYER_WINDOW_DAYS,
+                           "streak_max_gap_seconds": params.STREAK_MAX_GAP_SECONDS}
+    return {"ok": not findings, "findings": findings, "stats": stats}
