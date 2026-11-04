@@ -22,11 +22,17 @@ def fmt_ppm(value: int) -> str:
     return f"{value / 10_000:.4f}%".replace(".", ",")
 
 
-def fmt(unit: str, value: int) -> str:
+def fmt_qol(value) -> str:
+    return f"{value:.4f}".replace(".", ",")
+
+
+def fmt(unit: str, value) -> str:
     if unit == "centavos":
         return fmt_centavos(value)
     if unit == "segundos":
         return fmt_seconds(value)
+    if unit == "qol":
+        return fmt_qol(value)
     if unit == "percentual":
         return fmt_ppm(value)
     return str(value)

@@ -12,3 +12,9 @@ STREAK_MAX_GAP_SECONDS = 72 * SECONDS_PER_HOUR   # DESIGN 14.3.11 / 14.12-6: o i
 PAGE_SIZE = 20                               # [PROV] linhas por ranking na página
 MAX_PAGE_SIZE = 100                          # [PROV] teto de linhas pedidas a uma consulta
 DAILY_TICK_PRIORITY = 90                     # [PROV] ordem da varredura diária entre os handlers do tick DAILY do mundo
+
+# Snapshots de QoL (14.3.4; decisão do GD, 2026-11-03)
+QOL_SNAPSHOT_INTERVAL_SECONDS = 3600         # GD: frequência inicial de 1 hora, parametrizada (múltiplo do ciclo de 10 min)
+QOL_SNAPSHOT_RETAIN_COMPLETE = 24            # GD: reter as últimas 24 snapshots COMPLETAS
+QOL_SWEEP_BATCH = 200                        # [PROV] jogadores por lote da varredura (cada jogador em transação própria)
+QOL_TICK_PRIORITY = 95                       # [PROV] ordem do handler entre os do tick de 10 minutos do mundo

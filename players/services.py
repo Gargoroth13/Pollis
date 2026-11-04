@@ -57,7 +57,16 @@ def _locked(player_id: int) -> Player:
 
 def _catch_up(player: Player, now: int) -> None:
     """Processa os ciclos de 10 min pendentes (lazy, 04 §22) e roda os hooks de acesso (On Access)."""
-    ctx = CycleContext(player, get_balance())
+    bal = get_balance()
+    ctx = CycleContext(player, bal)
+    # Checkpoints (hooks.register_checkpoint): o catch-up é dividido nos instantes pedidos para que o estado exato de cada um
+    # possa ser lido antes de qualquer mudança posterior. Sem checkpoints, é uma passada só, como sempre foi.
+    for t, callbacks in hooks.checkpoints_between(player, player.processed_until, now):
+        result = catch_up(PLAYER, player.processed_until, ctx, until=t)
+        player.processed_until = max(player.processed_until, result.processed_until)
+        hooks.run_access_hooks(player, t)
+        for callback in callbacks:
+            callback(player, t, bal)
     result = catch_up(PLAYER, player.processed_until, ctx, until=now)
     player.processed_until = max(player.processed_until, result.processed_until)
     hooks.run_access_hooks(player, now)  # ex.: concluir o que venceu entre o último ciclo e `now`
@@ -124,6 +133,21 @@ def create_player(user, *, now: Optional[int] = None) -> Player:
     rules.update_health_flags(player, now, bal)
     player.save()
     hooks.run_player_created_hooks(player, now)
+    return player
+
+
+@transaction.atomic
+def sync_player_until(player_id: int, until: int) -> Player:
+    """
+    Processa o jogador só até `until` (<= agora; instante passado/atual), idempotente. Para tarefas do mundo que precisam do
+    estado exato de um instante (snapshot de QoL): quem já foi processado além de `until` não é alterado.
+    """
+    if until > game_clock.now():
+        raise ValueError("`until` não pode estar no futuro")
+    player = _locked(player_id)
+    if player.processed_until <= until:
+        _catch_up(player, until)
+        player.save()
     return player
 
 

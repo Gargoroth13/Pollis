@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .actions import Action
 from .balance import Balance
@@ -119,6 +119,43 @@ def run_block_providers(player: Player, action: Action, now: int, activity: Opti
 def run_access_hooks(player: Player, now: int) -> None:
     for name in sorted(_access_hooks):
         _access_hooks[name](player, now)
+
+
+# --- checkpoints do catch-up --------------------------------------------------------------------------------------------
+# Um sistema que precisa do estado do jogador EXATAMENTE em um instante `t` (ex.: snapshot comparável de QoL) declara quais
+# instantes lhe interessam em (início, fim] de um catch-up. O catch-up é então DIVIDIDO em `t`: o jogador é processado até
+# `t` (mesmos ciclos e hooks de acesso de sempre, só em duas partes) e o callback lê o estado de `t` ANTES de qualquer
+# mudança posterior (uma ação, o fim de um efeito substituído). Sem provedores registrados o catch-up é idêntico ao de antes.
+CheckpointProvider = Callable[[Player, int, int], Sequence[int]]      # (jogador, início, fim] -> instantes de interesse
+CheckpointCallback = Callable[[Player, int, Balance], None]           # (jogador JÁ processado até t, t, balanço)
+_checkpoints: Dict[str, Tuple[CheckpointProvider, CheckpointCallback]] = {}
+
+
+def register_checkpoint(name: str, provider: CheckpointProvider, callback: CheckpointCallback) -> None:
+    if name in _checkpoints:
+        raise ValueError(f"Checkpoint duplicado: {name}")
+    _checkpoints[name] = (provider, callback)
+
+
+def unregister_checkpoint(name: str) -> None:
+    _checkpoints.pop(name, None)
+
+
+def checkpoint_names() -> List[str]:
+    return sorted(_checkpoints)
+
+
+def checkpoints_between(player: Player, start: int, end: int) -> List[Tuple[int, List[CheckpointCallback]]]:
+    """Instantes em (start, end] pedidos pelos provedores, em ordem crescente, com os callbacks de cada um (ordem de nome)."""
+    if end <= start or not _checkpoints:
+        return []
+    by_instant: Dict[int, List[CheckpointCallback]] = {}
+    for name in sorted(_checkpoints):
+        provider, callback = _checkpoints[name]
+        for t in provider(player, start, end):
+            if start < t <= end:
+                by_instant.setdefault(int(t), []).append(callback)
+    return sorted(by_instant.items())
 
 
 def unregister_block_provider(name: str) -> None:      # para testes

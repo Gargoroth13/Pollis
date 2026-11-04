@@ -11,7 +11,7 @@ from core import clock as game_clock
 
 from . import live, params
 from .constants import ENTITY_TYPES, Cat, Group, spec as category_spec
-from .models import ActivityStreak, NetWorthCandidate, RankingHistorico
+from .models import ActivityStreak, NetWorthCandidate, QolSnapshot, QolSnapshotEntry, RankingHistorico
 
 
 def audit_rankings(at: int = None) -> Dict[str, Any]:
@@ -63,6 +63,19 @@ def audit_rankings(at: int = None) -> Dict[str, Any]:
     if pending:
         findings.append({"code": "NET_WORTH_CANDIDATES_PENDING", "count": pending,
                          "oldest_at": NetWorthCandidate.objects.order_by("at").values_list("at", flat=True).first()})
+
+    # snapshots de QoL: COMPLETE precisa ter exatamente os elegíveis representados; OPEN vencida há muito indica job parado
+    for sn in QolSnapshot.objects.filter(status=QolSnapshot.COMPLETE):
+        n = QolSnapshotEntry.objects.filter(snapshot=sn).count()
+        if n != sn.eligible or n != sn.represented or sn.missing != 0:
+            findings.append({"code": "QOL_SNAPSHOT_INCONSISTENT", "reference_at": sn.reference_at, "entries": n,
+                             "eligible": sn.eligible})
+    overdue = QolSnapshot.objects.filter(status=QolSnapshot.OPEN, reference_at__lt=at - 2 * params.QOL_SNAPSHOT_INTERVAL_SECONDS)
+    for sn in overdue:
+        findings.append({"code": "QOL_SNAPSHOT_OVERDUE", "reference_at": sn.reference_at})
+    latest = QolSnapshot.objects.filter(status=QolSnapshot.COMPLETE).order_by("-reference_at").first()
+    stats["qol_latest_complete"] = None if latest is None else latest.reference_at
+    stats["qol_incomplete"] = QolSnapshot.objects.filter(status=QolSnapshot.INCOMPLETE).count()
 
     pr = records.get(Cat.PRESIDENT_VOTE_RECORD.value)
     if pr is not None:

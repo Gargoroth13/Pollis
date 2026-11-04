@@ -6,12 +6,13 @@ from core.timeline import Tick, TickKind
 from ledger import hooks as ledger_hooks
 from players import registry
 
-from . import activity, params, records
+from . import activity, params, qol_snapshots, records
 
 OBSERVER_ACTIVITY = "rankings_activity"
 LEDGER_HOOK_NET_WORTH = "rankings_net_worth"
 TICK_RETRY = "rankings_net_worth_retry"
 TICK_SWEEP = "rankings_net_worth_sweep"
+TICK_QOL = "rankings_qol_snapshots"
 
 
 def _on_action_activity(player_id, action_id, result) -> None:
@@ -39,5 +40,8 @@ def connect() -> None:
         ledger_hooks.register_operation_hook(LEDGER_HOOK_NET_WORTH, records.on_ledger_operation)
     if not _has_tick(TickKind.HOURLY, TICK_RETRY):
         ticks.register(ticks.WORLD, TickKind.HOURLY, TICK_RETRY, params.DAILY_TICK_PRIORITY)(hourly_retry)
+    qol_snapshots.connect()
+    if not _has_tick(TickKind.TEN_MINUTES, TICK_QOL):
+        ticks.register(ticks.WORLD, TickKind.TEN_MINUTES, TICK_QOL, params.QOL_TICK_PRIORITY)(qol_snapshots.world_tick)
     if not _has_tick(TickKind.DAILY, TICK_SWEEP):
         ticks.register(ticks.WORLD, TickKind.DAILY, TICK_SWEEP, params.DAILY_TICK_PRIORITY)(daily_sweep)

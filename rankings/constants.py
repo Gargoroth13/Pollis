@@ -75,8 +75,9 @@ CATEGORIES: Tuple[CategorySpec, ...] = (
        depends_on="estrelas e funcionários da empresa: P1.04a/b (PRs #15/#16), ainda não integrados à main"),
     _S(Cat.PRODUCTION, 3, _L, "Maior produção (14 dias)", "14.3.3", Status.PENDING_SOURCE, window_days=14,
        depends_on="registro de produção efetiva por produto: P1.04c (PR #17), ainda não integrado à main"),
-    _S(Cat.QOL, 4, _L, "Melhor QoL pessoal", "14.3.4", Status.PENDING_DESIGN,
-       depends_on="snapshot comparável de QoL (referência de tempo comum): proposta em design/14a, aguardando o Game Director"),
+    _S(Cat.QOL, 4, _L, "Melhor QoL pessoal", "14.3.4", Status.ACTIVE, "qol",
+       source="rankings.QolSnapshot: última snapshot COMPLETA (QoL de todos os jogadores elegíveis no mesmo instante de referência, "
+              "calculada por players.qol.qol_current)"),
     _S(Cat.POLITICAL_INFLUENCE, 5, _L, "Maior influência política", "14.3.5", Status.OUT_OF_SCOPE,
        depends_on="fora do Bot Test até existir métrica objetiva documentada (14.3.5, 14.10)"),
     _S(Cat.BIGGEST_EMPLOYER, 6, _L, "Maior empregador", "14.3.6", Status.PENDING_SOURCE,

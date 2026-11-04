@@ -20,7 +20,7 @@ from ledger.models import Account, Obligation
 from ledger.money import competence_day_of
 from players.models import Player
 
-from . import display, params, taxes
+from . import display, params, qol_snapshots, taxes
 from .constants import ENTITY_COMPANY, ENTITY_PLAYER, Cat, Group, Status, spec
 from .models import ActivityStreak, RankingHistorico
 
@@ -185,7 +185,23 @@ def active_time_rows(limit: Optional[int] = None, at: Optional[int] = None) -> L
     return assign_ranks(out)
 
 
+def qol_rows(limit: Optional[int] = None, at: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Melhor QoL pessoal: SÓ a última snapshot COMPLETA (todos os elegíveis no mesmo `reference_at`). Nunca mistura instantes e
+    nunca recalcula jogadores no acesso. Sem snapshot completa ainda: lista vazia (não há valor comparável a mostrar).
+    """
+    snap = qol_snapshots.latest_complete()
+    if snap is None:
+        return []
+    rows = list(snap.entries.order_by("-qol", "player_id").values("player_id", "player__user__username", "qol", "explained")
+                [:_limit(limit)])
+    out = [{"entity_type": ENTITY_PLAYER, "entity_id": r["player_id"], "name": r["player__user__username"], "value": r["qol"],
+            "detail": {"reference_at": snap.reference_at, "explained": r["explained"]}} for r in rows]
+    return assign_ranks(out)
+
+
 _ROWS = {
+    Cat.QOL: qol_rows,
     Cat.NET_WORTH: net_worth_rows,
     Cat.TAXPAYER: taxpayer_rows,
     Cat.OLDEST_ACCOUNT: oldest_account_rows,
@@ -215,6 +231,12 @@ def live_ranking(category, limit: Optional[int] = None, at: Optional[int] = None
     out.update({"available": True, "as_of": at, "entries": entries})
     if s.key == Cat.TAXPAYER:
         out["window"] = taxpayer_window(at)
+    if s.key == Cat.QOL:
+        snap = qol_snapshots.latest_complete()
+        out["snapshot"] = None if snap is None else {
+            "reference_at": snap.reference_at, "finalized_at": snap.finalized_at, "players": snap.represented,
+            "interval_seconds": params.QOL_SNAPSHOT_INTERVAL_SECONDS}
+        out["as_of"] = at if snap is None else snap.reference_at     # a QoL mostrada é a do instante de referência
     return out
 
 

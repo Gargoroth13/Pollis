@@ -75,3 +75,47 @@ class NetWorthCandidate(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["at", "id"], name="nwcandidate_order_idx")]
+
+
+class QolSnapshot(models.Model):
+    """
+    Foto comparável da QoL de todos os jogadores elegíveis em UM instante de referência comum (design/14 §14.3.4).
+    OPEN: coletando. COMPLETE: todos os elegíveis representados exatamente em `reference_at` (única que a página pública lê).
+    INCOMPLETE: finalizada com jogadores que já tinham sido processados além da referência e cujo valor não pôde ser obtido;
+    nunca é exibida, e a última COMPLETE é preservada.
+    """
+
+    OPEN, COMPLETE, INCOMPLETE = "open", "complete", "incomplete"
+
+    reference_at = models.BigIntegerField(unique=True)
+    status = models.CharField(max_length=10, default=OPEN, choices=[(OPEN, OPEN), (COMPLETE, COMPLETE), (INCOMPLETE, INCOMPLETE)])
+    opened_at = models.BigIntegerField()
+    finalized_at = models.BigIntegerField(null=True, blank=True)
+    eligible = models.IntegerField(null=True, blank=True)        # jogadores com created_at_game <= reference_at
+    represented = models.IntegerField(null=True, blank=True)
+    missing = models.IntegerField(null=True, blank=True)
+    metrics = models.JSONField(default=dict, blank=True)         # duração, consultas, jogadores por origem (14.9 / CLAUDE.md §9)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(status="open") | (Q(eligible__isnull=False, represented__isnull=False, missing__isnull=False,
+                                                finalized_at__isnull=False)),
+                name="qolsnapshot_final_has_counts"),
+            models.CheckConstraint(
+                condition=~Q(status="complete") | Q(missing=0, represented=models.F("eligible")),
+                name="qolsnapshot_complete_means_all_represented"),
+        ]
+        indexes = [models.Index(fields=["status", "-reference_at"], name="qolsnapshot_status_idx")]
+
+
+class QolSnapshotEntry(models.Model):
+    player = models.ForeignKey("players.Player", on_delete=models.CASCADE, related_name="+")
+    snapshot = models.ForeignKey(QolSnapshot, on_delete=models.CASCADE, related_name="entries")
+    qol = models.DecimalField(max_digits=30, decimal_places=12)  # o valor EXATO de players.qol.qol_current em reference_at
+    explained = models.JSONField(default=dict)                   # o detalhamento do MESMO cálculo (doc 20), não reconstruído
+    source = models.CharField(max_length=10)                     # "advance" (captura ao avançar o jogador) ou "sweep"
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["snapshot", "player"], name="qolentry_unique_player")]
+        indexes = [models.Index(fields=["snapshot", "-qol", "player"], name="qolentry_rank_idx")]

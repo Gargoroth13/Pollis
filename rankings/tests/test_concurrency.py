@@ -159,3 +159,92 @@ class NetWorthLedgerConcurrencyTests(_ConcurrencyBase):
         self.assertEqual(RankingHistorico.objects.get(category=Cat.NET_WORTH_RECORD.value).value, 4_000)
         self.assertEqual(ActivityStreak.objects.count(), 4)
         self.assertTrue(audit.audit_rankings(at=T0 + 4 * HOUR)["ok"])
+
+
+class QolSnapshotConcurrencyTests(TransactionTestCase):
+    """Ações de jogadores (que mudam a QoL DEPOIS da referência) em paralelo com a finalização da snapshot."""
+
+    N = 6
+
+    def setUp(self):
+        from decimal import Decimal
+        from core.clock import ManualClock, use_clock
+        from players import qol
+        generate_world(get_scenario(**SMALL))
+        install_test_role(self)
+        self.clk = ManualClock(T0)
+        with use_clock(self.clk):
+            self.players = [create_player(Usuario.objects.create_user(f"q{i}")) for i in range(self.N)]
+        qol.register_qol_base_provider("per_player", lambda p, at: Decimal(p.pk % 7) / Decimal(10))
+        self.addCleanup(qol.clear_qol_base_providers)
+        self.ref = T0 + HOUR
+        from rankings import qol_snapshots
+        qol_snapshots.ensure_open(T0)
+
+    def _expected(self, p):
+        from decimal import Decimal
+        return Decimal("0.5") + Decimal(p.pk % 7) / Decimal(10)
+
+    def _run(self, jobs):
+        from core.clock import use_clock
+        barrier = threading.Barrier(len(jobs))
+        errors, results = [], [None] * len(jobs)
+
+        def worker(i, job):
+            try:
+                with use_clock(self.clk):
+                    barrier.wait(timeout=10)
+                    results[i] = _retry(job)
+            except Exception as exc:          # noqa: BLE001
+                errors.append(exc)
+            finally:
+                close_old_connections()
+                connection.close()
+        threads = [threading.Thread(target=worker, args=(i, j)) for i, j in enumerate(jobs)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=90)
+        self.assertEqual(errors, [])
+        return results
+
+    def test_actions_after_the_reference_in_parallel_with_finalize_keep_every_value_exact(self):
+        from decimal import Decimal
+        from players.actions import Action
+        from players.services import EffectSpec, perform_action
+        from rankings import qol_snapshots
+        from rankings.models import QolSnapshot, QolSnapshotEntry
+        self.clk.advance(seconds=HOUR + 20 * 60)
+        act = [lambda p=p: perform_action(p.pk, Action.LEISURE, effect=EffectSpec("leisure:t", Decimal("0.5"), 5 * HOUR))
+               for p in self.players[: self.N // 2]]                         # metade age (a QoL de AGORA muda: +0,5)
+        fin = [lambda: qol_snapshots.finalize(self.ref, self.clk.now()) for _ in range(2)]     # duas varreduras concorrentes
+        self._run(act + fin)
+        snap = QolSnapshot.objects.get(reference_at=self.ref)
+        self.assertEqual((snap.status, snap.eligible, snap.represented, snap.missing), ("complete", self.N, self.N, 0))
+        self.assertEqual(QolSnapshotEntry.objects.filter(snapshot=snap).count(), self.N)      # uma entrada por jogador
+        for p in self.players:
+            e = QolSnapshotEntry.objects.get(snapshot=snap, player=p)
+            self.assertEqual(e.qol, self._expected(p).quantize(Decimal("1e-12")), p.pk)       # valor DA referência, não o atual
+            self.assertEqual(e.explained["computed_at"], self.ref)
+        self.assertEqual({e.source for e in snap.entries.all()} - {"advance", "sweep"}, set())
+
+    def test_actions_racing_with_the_sweep_never_produce_a_complete_snapshot_with_wrong_values(self):
+        """Repetição: a ordem entre ações e varredura varia; o invariante vale em qualquer ordem."""
+        from decimal import Decimal
+        from players.actions import Action
+        from players.services import EffectSpec, perform_action
+        from rankings import qol_snapshots
+        from rankings.models import QolSnapshot, QolSnapshotEntry
+        self.clk.advance(seconds=HOUR + 5 * 60)
+        jobs = []
+        for p in self.players:
+            jobs.append(lambda p=p: perform_action(p.pk, Action.LEISURE, effect=EffectSpec("leisure:t", Decimal("1"), 5 * HOUR)))
+        jobs.append(lambda: qol_snapshots.finalize(self.ref, self.clk.now()))
+        self._run(jobs)
+        snap = QolSnapshot.objects.get(reference_at=self.ref)
+        self.assertIn(snap.status, ("complete", "incomplete"))
+        for e in QolSnapshotEntry.objects.filter(snapshot=snap):
+            self.assertEqual(e.qol, self._expected(e.player).quantize(Decimal("1e-12")))     # nunca um valor de outro instante
+        if snap.status == "complete":
+            self.assertEqual(snap.represented, self.N)
+        self.assertEqual(snap.status, "complete")                           # a captura no avanço torna o caso comum completo
