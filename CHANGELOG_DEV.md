@@ -6,13 +6,14 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ## 2026-11-03 — P1.15a (fatia 1) — Rankings (app `rankings`)
 
-Implementa parte do `design/14` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p1.15a-rankings-nucleo`, **baseada diretamente na `main`** (independente da pilha). **Não mergeada; aguarda revisão e autorização do Game Director.** O `14` continua FINAL — BOT TEST até integrar e validar na `main`. Detalhes, mapa de fontes e interpretações: `design/14a-rankings-PROPOSTA.md`.
+Implementa parte do `design/14` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p1.15a-rankings-nucleo`, **baseada diretamente na `main`** (independente da pilha). **Não mergeada; aguarda revisão e autorização do Game Director.** O `14` continua FINAL — BOT TEST até integrar e validar na `main`. Detalhes: `design/14a-rankings-PROPOSTA.md`.
 
-- **Ativos nesta fatia:** Maior patrimônio líquido (1), Maior contribuinte 30 dias (7), Conta mais antiga (10), Maior tempo ativo (11) e os recordes de patrimônio (12) e de tempo ativo (14); interface do recorde presidencial (15) sem chamador.
-- **Pendentes de fonte (explícitos, sem dados inventados):** Maior empresa (2), Maior produção (3), Maior empregador (6), Escola (8), Organização (9), recorde de empresa (13). **Pendente de decisão:** QoL (4), com proposta técnica de snapshot comparável. **Fora do Bot Test:** influência política (5).
-- **Hook novo e genérico:** `players.registry.register_action_observer` (chamado após execução bem-sucedida; falha isolada por savepoint e registrada em log, nunca desfaz a ação).
-- Decisões do GD (2026-11-02) aplicadas: patrimônio só com o que o ledger reconhece; produção por produto; empregador sem o Dono; QoL sem valores "último calculado"; influência política fora; históricas numeradas 12–15.
-- Limite conhecido: o recorde de patrimônio é verificado nas ações do jogador e numa varredura diária (o ledger não tem gancho pós-lançamento); `audit_rankings` aponta recorde atrás da fonte.
+- **Ativos:** (1) patrimônio líquido, (4) QoL por snapshots, (7) contribuinte 30 dias, (10) conta mais antiga, (11) tempo ativo (sequência atual), (12) recorde de patrimônio, (14) recorde de tempo ativo; (15) interface do recorde presidencial, sem chamador.
+- **Pendentes de fonte (explícitos, sem dados inventados):** Maior empresa (2), produção (3), empregador (6), escola (8), organização (9), recorde de empresa (13). **Fora do Bot Test:** influência política (5).
+- **Decisões do GD (2026-11-03) aplicadas no PR #32:** (D1) snapshots de QoL a cada 1 h parametrizado, últimas 24 COMPLETE, COMPLETE só com todos os elegíveis no mesmo `reference_at`, INCOMPLETE preserva a última COMPLETE, métricas e testes de concorrência; (D2) patrimônio = saldo bruto + créditos a receber − obrigações a pagar; (D3) imposto retido sobre remuneração atribuído ao jogador beneficiário (por natureza + transação/referência), demais impostos à conta pagadora; (D4) tempo ativo ao vivo pela sequência corrente ativa (< 72 h), histórico pela melhor.
+- **Recorde de patrimônio confiável:** `ledger/hooks.py` (extensão pequena, sem alterar regra monetária): gancho de fim de operação, uma vez por operação completa, com o estado final, dentro da transação; `NetWorthCandidate` durável + retry horário; falha total desfaz a operação. A varredura diária virou reconciliação.
+- **Ganchos genéricos novos:** `players.registry.register_action_observer`, `players.hooks.register_checkpoint` (catch-up dividido só quando há checkpoint; equivalência testada) e `players.services.sync_player_until`.
+- **Limitação registrada:** a falha do observer de ação preserva a ação mas o log não recupera a ação perdida na sequência de atividade; solução durável (outbox) proposta em `design/14a` §3.6, aguardando o GD.
 - Nenhum dinheiro é criado ou movido pelos Rankings (testado).
 
 ---
