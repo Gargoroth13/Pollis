@@ -95,10 +95,22 @@ def _player_accounts():
                       net=F("balance") + F("receivable") - F("owed")))
 
 
+def net_worth_components(balance: int, receivable: int, owed: int) -> Dict[str, Any]:
+    """
+    Detalhamento SEPARADO do patrimônio (decisão do GD, 2026-11-04): créditos a receber e obrigações a pagar aparecem cada um no
+    seu lado, com as regras condicionais que se aplicam. Chaves estáveis (a UI traduz); valores em centavos.
+      receivables_nominal_value  o crédito conta pelo valor NOMINAL restante: sem desconto de solvência/inadimplência e sem
+                                 garantia de recuperação (não há provisão para devedores duvidosos nesta versão).
+    """
+    return {"balance": balance, "receivables": receivable, "obligations_payable": owed,
+            "rules": [{"key": "receivables_nominal_value", "applies": receivable > 0},
+                      {"key": "paid_and_cancelled_obligations_excluded", "applies": True}]}
+
+
 def _net_worth_payload(row: Dict[str, Any], at: int) -> Dict[str, Any]:
     ex = net_worth_explained(row["balance"], row["receivable"], row["owed"], at)
     return {"value": row["net"], "balance": row["balance"], "receivables": row["receivable"], "obligations_open": row["owed"],
-            "explained": ex.to_dict()}
+            "components": net_worth_components(row["balance"], row["receivable"], row["owed"]), "explained": ex.to_dict()}
 
 
 _NW_FIELDS = ("owner_id", "balance", "receivable", "owed", "net")
@@ -123,7 +135,8 @@ def net_worth_rows(limit: Optional[int] = None, at: Optional[int] = None) -> Lis
     rows = list(_player_accounts().order_by("-net", "owner_id").values(*_NW_FIELDS)[:_limit(limit)])
     names = _player_names(r["owner_id"] for r in rows)
     out = [{"entity_type": ENTITY_PLAYER, "entity_id": r["owner_id"], "name": entity_name(ENTITY_PLAYER, r["owner_id"], names),
-            "value": r["net"], "detail": net_worth_explained(r["balance"], r["receivable"], r["owed"], at).to_dict()}
+            "value": r["net"], "detail": {**net_worth_explained(r["balance"], r["receivable"], r["owed"], at).to_dict(),
+                                          "components": net_worth_components(r["balance"], r["receivable"], r["owed"])}}
            for r in rows]
     return assign_ranks(out)
 
@@ -228,6 +241,9 @@ def live_ranking(category, limit: Optional[int] = None, at: Optional[int] = None
     entries = fn(limit=limit, at=at)
     for e in entries:
         e["display"] = display.fmt(s.unit, e["value"])
+        comp = (e.get("detail") or {}).get("components")
+        if comp is not None:                       # patrimônio: valores formatados de cada parcela, para a tela
+            comp["display"] = {k: display.fmt_centavos(comp[k]) for k in ("balance", "receivables", "obligations_payable")}
     out.update({"available": True, "as_of": at, "entries": entries})
     if s.key == Cat.TAXPAYER:
         out["window"] = taxpayer_window(at)

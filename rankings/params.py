@@ -18,3 +18,10 @@ QOL_SNAPSHOT_INTERVAL_SECONDS = 3600         # GD: frequência inicial de 1 hora
 QOL_SNAPSHOT_RETAIN_COMPLETE = 24            # GD: reter as últimas 24 snapshots COMPLETAS
 QOL_SWEEP_BATCH = 200                        # [PROV] jogadores por lote da varredura (cada jogador em transação própria)
 QOL_TICK_PRIORITY = 95                       # [PROV] ordem do handler entre os do tick de 10 minutos do mundo
+
+# Outbox de atividade (14.3.11; decisão do GD, 2026-11-04)
+ACTIVITY_INLINE_PROCESSING = True            # [PROV] passada imediata do jogador após o commit da ação (a durabilidade não depende dela)
+ACTIVITY_OUTBOX_PLAYER_BATCH = 200           # [PROV] eventos por jogador numa passada
+ACTIVITY_OUTBOX_MAX_PLAYERS = 500            # [PROV] jogadores por passada do worker
+ACTIVITY_OUTBOX_TICK_PRIORITY = 92           # [PROV] ordem do handler entre os do tick de 10 minutos do mundo
+ACTIVITY_OUTBOX_OVERDUE_SECONDS = 3600     # [PROV] evento pendente há mais que isto vira achado de auditoria (tick de 10 min deveria tê-lo drenado)

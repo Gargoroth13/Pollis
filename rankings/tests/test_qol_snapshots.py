@@ -411,3 +411,43 @@ class QolAuditTests(QolSnapshotBase):
         QolSnapshot.objects.create(reference_at=T0 - 600, status="open", opened_at=T0)            # vencida há mais de 2 intervalos
         codes = sorted(f["code"] for f in audit.audit_rankings()["findings"])
         self.assertEqual(codes, ["QOL_SNAPSHOT_INCONSISTENT", "QOL_SNAPSHOT_OVERDUE"])
+
+
+class CheckpointCostTests(QolSnapshotBase):
+    """O custo do checkpoint de QoL no catch-up (medido aqui; o teste de custo do registro o isola de propósito)."""
+
+    def _sync_queries(self, hours, with_checkpoint=True):
+        from core.instrument import QueryCounter
+        from players.services import sync_player
+        p = self.new_player(f"cost-{hours}-{with_checkpoint}")
+        base = snaps.reference_for(self.clk.now())
+        for h in range(1, 14):                                      # linhas abertas de antemão: custo simétrico entre jogadores
+            snaps._open(base + h * HOUR, self.clk.now())
+        self.clk.advance(seconds=hours * HOUR)
+        saved = dict(player_hooks._checkpoints)
+        if not with_checkpoint:
+            player_hooks._checkpoints.clear()
+        try:
+            with QueryCounter() as q:
+                sync_player(p.pk)
+        finally:
+            player_hooks._checkpoints.clear()
+            player_hooks._checkpoints.update(saved)
+        return q.count
+
+    def test_cost_is_zero_extra_without_a_reference_and_bounded_per_reference_crossed(self):
+        def extra(hours):
+            return self._sync_queries(hours, True) - self._sync_queries(hours, False)
+        # 10 min: nenhuma referência atravessada (T0 já é uma): o checkpoint não consulta o banco
+        self.clk.advance(seconds=600)
+        e0 = extra(0)
+        self.assertEqual(e0, 0)
+        e1, e2, e8 = extra(1), extra(2), extra(8)
+        e11 = extra(11)
+        self.assertGreater(e1, 0)
+        # limitado às duas últimas referências: não cresce com a ausência (medido: 8 consultas a mais com 1 referência, 14 com 2+)
+        self.assertLessEqual(e8, e2 + 2)
+        self.assertLessEqual(abs(e11 - e8), 2)
+        self.assertLessEqual(max(e2, e8, e11), 16)
+        self.assertLessEqual(e2, 2 * e1)
+        self.assertLessEqual(e1, 10)

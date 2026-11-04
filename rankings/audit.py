@@ -7,11 +7,13 @@ from __future__ import annotations
 from fractions import Fraction
 from typing import Any, Dict, List
 
+from django.db.models import Max
+
 from core import clock as game_clock
 
 from . import live, params
 from .constants import ENTITY_TYPES, Cat, Group, spec as category_spec
-from .models import ActivityStreak, NetWorthCandidate, QolSnapshot, QolSnapshotEntry, RankingHistorico
+from .models import ActivityEvent, ActivityStreak, NetWorthCandidate, QolSnapshot, QolSnapshotEntry, RankingHistorico
 
 
 def audit_rankings(at: int = None) -> Dict[str, Any]:
@@ -24,6 +26,29 @@ def audit_rankings(at: int = None) -> Dict[str, Any]:
     for s in streaks:
         if s.best_length != s.best_end - s.best_start or s.best_length < s.last_action_at - s.current_start:
             findings.append({"code": "STREAK_INCONSISTENT", "player_id": s.player_id})
+
+    streak_last = {x.player_id: x.last_action_at for x in streaks}
+    # outbox de atividade: pendentes, erros e o evento pendente mais antigo
+    pending_qs = ActivityEvent.objects.filter(processed_at__isnull=True)
+    oldest = pending_qs.order_by("at", "id").first()
+    errors = pending_qs.filter(attempts__gt=0)
+    stats["activity_outbox"] = {"pending": pending_qs.count(), "with_errors": errors.count(),
+                                "oldest_pending_id": None if oldest is None else oldest.pk,
+                                "oldest_pending_at": None if oldest is None else oldest.at,
+                                "oldest_pending_age_seconds": None if oldest is None else max(0, at - oldest.at)}
+    if oldest is not None and at - oldest.at > params.ACTIVITY_OUTBOX_OVERDUE_SECONDS:
+        findings.append({"code": "ACTIVITY_OUTBOX_OVERDUE", "oldest_event_id": oldest.pk, "oldest_at": oldest.at,
+                         "age_seconds": at - oldest.at, "pending": stats["activity_outbox"]["pending"]})
+    for ev in errors.order_by("at", "id")[:20]:
+        findings.append({"code": "ACTIVITY_EVENT_ERROR", "event_id": ev.pk, "player_id": ev.player_id, "action_id": ev.action_id,
+                         "at": ev.at, "attempts": ev.attempts, "last_error": ev.last_error})
+    # processado mas a sequência não reflete (a atualização e a marcação são atômicas: isto indicaria corrupção)
+    for pid, last_at in (ActivityEvent.objects.filter(processed_at__isnull=False).values("player_id")
+                         .annotate(m=Max("at")).values_list("player_id", "m")):
+        s = streak_last.get(pid)
+        if s is None or s < last_at:
+            findings.append({"code": "ACTIVITY_PROCESSED_NOT_REFLECTED", "player_id": pid, "event_at": last_at,
+                             "streak_last_action_at": s})
 
     records = {r.category: r for r in RankingHistorico.objects.all()}
     stats["records"] = len(records)

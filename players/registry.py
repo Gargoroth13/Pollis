@@ -221,10 +221,42 @@ def execute_action(player_id: int, action_id: str, target: Any = None, **params)
     problem = _target_problem(entry.descriptor, target, executing=True)
     if problem is not None:
         return problem
-    result = entry.execute(player_id, target)
+    # Ação e gravadores obrigatórios na MESMA transação: se um gravador falhar, a ação inteira é desfeita (a exceção sobe).
+    # Recusas não executam gravadores. A recusa em si não escreve nada além do catch-up lazy, que sempre foi confirmado.
+    with transaction.atomic():
+        result = entry.execute(player_id, target)
+        if result.ok and _recorders:
+            at = game_clock.now()
+            for name in sorted(_recorders):
+                _recorders[name](player_id, action_id, result, at)
     if result.ok:
         _notify_observers(player_id, action_id, result)
     return result
+
+
+# --- gravadores transacionais (registro que NÃO PODE se perder: roda dentro da transação da ação) -------------------------
+
+ActionRecorder = Callable[[int, str, ActionResult, int], None]
+_recorders: Dict[str, ActionRecorder] = {}
+
+
+def register_action_recorder(name: str, recorder: ActionRecorder) -> None:
+    """
+    Registra `recorder(player_id, action_id, result, at)`, chamado DENTRO da transação de TODA execução BEM-SUCEDIDA pelo
+    registro (mesma regra para jogadores e bots). Diferente do observador: se o gravador levantar exceção, a ação NÃO é
+    confirmada. Para registros obrigatórios (ex.: outbox de atividade); deve ser barato e só escrever o próprio registro.
+    """
+    if name in _recorders:
+        raise ValueError(f"gravador duplicado: {name}")
+    _recorders[name] = recorder
+
+
+def unregister_action_recorder(name: str) -> None:
+    _recorders.pop(name, None)
+
+
+def action_recorder_names() -> List[str]:
+    return sorted(_recorders)
 
 
 # --- observadores de ações (qualquer sistema que precise saber que UMA AÇÃO VÁLIDA aconteceu) ---------------------------

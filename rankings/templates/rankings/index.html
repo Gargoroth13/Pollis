@@ -18,7 +18,15 @@
       {% if r.window %}<p>Janela: dias {{ r.window.first_day }} a {{ r.window.last_day }} ({{ r.window.days }} dias fechados).</p>{% endif %}
       {% if r.entries %}
       <ol>
-        {% for e in r.entries %}<li value="{{ e.rank }}">{{ e.name }} — {{ e.display }}</li>{% endfor %}
+        {% for e in r.entries %}<li value="{{ e.rank }}">{{ e.name }} — {{ e.display }}
+          {% if e.detail.components %}<details><summary>Como é composto</summary>
+            <ul>
+              <li>Saldo: {{ e.detail.components.display.balance }}</li>
+              <li>Créditos a receber: {{ e.detail.components.display.receivables }}</li>
+              <li>Obrigações a pagar: {{ e.detail.components.display.obligations_payable }}</li>
+            </ul>
+            <p>Os créditos a receber contam pelo valor nominal restante das obrigações abertas, sem desconto por risco de inadimplência: não representam garantia de recuperação. Obrigações pagas ou canceladas não entram.</p>
+          </details>{% endif %}</li>{% endfor %}
       </ol>
       {% else %}<p>Ainda sem dados.</p>{% endif %}
     {% else %}

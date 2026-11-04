@@ -21,10 +21,10 @@ import time
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence
 
-from django.db import IntegrityError, connection, transaction
-from django.test.utils import CaptureQueriesContext
+from django.db import IntegrityError, transaction
 
 from core import clock as game_clock
+from core.instrument import QueryCounter
 from core.timeline import SECONDS_PER_TEN_MINUTES, Tick
 from players import hooks as player_hooks, qol
 from players.models import Player
@@ -137,7 +137,7 @@ def finalize(reference_at: int, now: Optional[int] = None) -> QolSnapshot:
         return snap
     started = time.perf_counter()
     swept = skipped_beyond = 0
-    with CaptureQueriesContext(connection) as queries:
+    with QueryCounter() as queries:
         last_pk = 0
         while True:
             batch = list(Player.objects.filter(created_at_game__lte=reference_at, pk__gt=last_pk)
@@ -171,7 +171,7 @@ def finalize(reference_at: int, now: Optional[int] = None) -> QolSnapshot:
             snap.status = QolSnapshot.COMPLETE if missing == 0 else QolSnapshot.INCOMPLETE
             snap.finalized_at = now
             snap.metrics = {"duration_ms": round((time.perf_counter() - started) * 1000, 2),
-                            "queries": len(queries), "swept_by_this_run": swept, "unrecoverable_in_this_run": skipped_beyond,
+                            "queries": queries.count, "db_ms": round(queries.db_seconds * 1000, 2), "swept_by_this_run": swept, "unrecoverable_in_this_run": skipped_beyond,
                             "entries_by_source": by_source, "lag_seconds": now - reference_at}
             snap.save()
     if snap.status != QolSnapshot.COMPLETE:

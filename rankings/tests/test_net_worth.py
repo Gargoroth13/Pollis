@@ -32,6 +32,37 @@ class NetWorthTests(RankingsTestCase):
                          [("balance", "10000"), ("receivables", "1200"), ("open_obligations", "-3000")])
         self.assertEqual(nw["explained"]["value"], "8200")
 
+    def test_components_separate_receivables_from_payables_and_record_that_the_value_is_nominal(self):
+        """Decisão do GD (2026-11-04): detalhamento separado; valor nominal, sem garantia de recuperação."""
+        a = self.acct()
+        self.fund(a, 10_000)
+        self.owe(a, self.company(1), 3_000, "o1")
+        self.owe(self.company(2), a, 1_200, "o2")
+        c = live.net_worth_of(self.player.pk)["components"]
+        self.assertEqual((c["balance"], c["receivables"], c["obligations_payable"]), (10_000, 1_200, 3_000))
+        rules = {r["key"]: r["applies"] for r in c["rules"]}
+        self.assertEqual(rules, {"receivables_nominal_value": True, "paid_and_cancelled_obligations_excluded": True})
+        row = live.net_worth_rows()[0]["detail"]["components"]                 # o mesmo detalhamento no ranking
+        self.assertEqual((row["balance"], row["receivables"], row["obligations_payable"]), (10_000, 1_200, 3_000))
+
+    def test_nominal_value_rule_applies_only_when_there_are_receivables(self):
+        self.fund(self.acct(), 500)
+        c = live.net_worth_of(self.player.pk)["components"]
+        self.assertEqual(c["receivables"], 0)
+        self.assertFalse({r["key"]: r["applies"] for r in c["rules"]}["receivables_nominal_value"])
+
+    def test_page_shows_receivables_and_payables_on_separate_lines_with_the_nominal_note(self):
+        a = self.acct()
+        self.fund(a, 10_000)
+        self.owe(a, self.company(1), 3_000, "o1")
+        self.owe(self.company(2), a, 1_200, "o2")
+        html = self.client.get("/rankings/").content.decode()
+        self.assertIn("Créditos a receber: R$ 12,00", html)
+        self.assertIn("Obrigações a pagar: R$ 30,00", html)
+        self.assertIn("Saldo: R$ 100,00", html)
+        self.assertIn("valor nominal", html)
+        self.assertIn("não representam garantia de recuperação", html)
+
     def test_partially_paid_obligation_counts_only_the_remainder(self):
         a = self.acct()
         self.fund(a, 10_000)

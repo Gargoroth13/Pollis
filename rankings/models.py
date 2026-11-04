@@ -30,6 +30,32 @@ class RankingHistorico(models.Model):
         return f"RankingHistorico({self.category}: {self.entity_type}#{self.entity_id}={self.value})"
 
 
+class ActivityEvent(models.Model):
+    """
+    Outbox durável da atividade (design/14a §3.6). UMA linha por execução BEM-SUCEDIDA do Action Registry (jogadores e bots
+    iguais), gravada na MESMA transação da ação: ou ação e evento são confirmados juntos, ou nenhum dos dois.
+    `ActivityStreak` é atualizada a partir destes eventos por `rankings.outbox` (em ordem `(at, id)` por jogador, idempotente).
+    `id` é o identificador único e o desempate estável da ordem. Não é um barramento de eventos: só carrega atividade.
+    """
+
+    player = models.ForeignKey("players.Player", on_delete=models.CASCADE, related_name="activity_events")
+    action_id = models.CharField(max_length=64)
+    at = models.BigIntegerField()                               # instante (tempo de jogo) em que a ação foi confirmada
+    processed_at = models.BigIntegerField(null=True, blank=True)   # NULL = pendente
+    attempts = models.PositiveIntegerField(default=0)           # tentativas de processamento que FALHARAM
+    last_error = models.CharField(max_length=500, blank=True, default="")
+    last_attempt_at = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["player", "at", "id"], name="activityevent_pending_idx", condition=Q(processed_at__isnull=True)),
+            models.Index(fields=["at", "id"], name="activityevent_oldest_idx", condition=Q(processed_at__isnull=True)),
+        ]
+
+    def __str__(self):
+        return f"evento #{self.pk} jogador {self.player_id} {self.action_id}@{self.at}"
+
+
 class ActivityStreak(models.Model):
     """
     Sequência de atividade de uma conta (design/14 §14.3.11). Uma linha por jogador.

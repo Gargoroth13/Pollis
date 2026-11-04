@@ -5,6 +5,7 @@ auditoria limpa), que vale nos dois.
 """
 import threading
 import time
+import unittest
 
 from django.db import OperationalError, close_old_connections, connection
 from django.test import TransactionTestCase
@@ -248,3 +249,172 @@ class QolSnapshotConcurrencyTests(TransactionTestCase):
         if snap.status == "complete":
             self.assertEqual(snap.represented, self.N)
         self.assertEqual(snap.status, "complete")                           # a captura no avanço torna o caso comum completo
+
+
+ON_PG = connection.vendor == "postgresql"
+
+
+class OutboxConcurrencyTests(TransactionTestCase):
+    """Outbox de atividade: processadores concorrentes não duplicam nem invertem a ordem por jogador; ações e processadores juntos."""
+
+    def setUp(self):
+        from core.clock import ManualClock, use_clock
+        generate_world(get_scenario(**SMALL))
+        install_test_role(self)
+        self.clk = ManualClock(T0)
+        with use_clock(self.clk):
+            self.players = [create_player(Usuario.objects.create_user(f"o{i}")) for i in range(4)]
+        self.calls, self.calls_lock = [], threading.Lock()
+
+    def _seed(self, p, instants):
+        from rankings.models import ActivityEvent
+        for at in instants:
+            ActivityEvent.objects.create(player_id=p.pk, action_id="leisure", at=at)
+
+    def _logging_record_action(self):
+        original = activity.record_action
+
+        def wrapper(pid, at=None):
+            with self.calls_lock:
+                self.calls.append(("start", pid, at))
+            out = original(pid, at)
+            with self.calls_lock:
+                self.calls.append(("end", pid, at))
+            return out
+        return wrapper
+
+    def _run(self, jobs):
+        from core.clock import use_clock
+        barrier = threading.Barrier(len(jobs))
+        errors, results = [], [None] * len(jobs)
+
+        def worker(i, job):
+            try:
+                with use_clock(self.clk):
+                    barrier.wait(timeout=10)
+                    results[i] = _retry(job)
+            except Exception as exc:          # noqa: BLE001
+                errors.append(exc)
+            finally:
+                close_old_connections()
+                connection.close()
+
+        threads = [threading.Thread(target=worker, args=(i, j)) for i, j in enumerate(jobs)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=90)
+        self.assertEqual(errors, [])
+        return results
+
+    def test_concurrent_processors_handle_each_event_once_and_in_order(self):
+        from unittest import mock
+        from rankings import outbox
+        from rankings.models import ActivityEvent
+        for k, p in enumerate(self.players[:3]):
+            instants = [T0 - (20 - k) * HOUR + i * HOUR for i in range(6)]
+            self._seed(p, instants[::-1])                       # ids em ordem INVERSA da cronológica
+        with mock.patch.object(activity, "record_action", self._logging_record_action()):
+            self._run([lambda: outbox.process_pending() for _ in range(4)])
+        starts = [(pid, at) for kind, pid, at in self.calls if kind == "start"]
+        if ON_PG:        # a trava por jogador só existe em PostgreSQL; em SQLite o banco serializa escritas e há retentativas
+            self.assertEqual(len(starts), 18)                   # cada evento processado UMA vez
+            self.assertEqual(len(set(starts)), 18)
+            for p in self.players[:3]:
+                seq = [at for pid, at in starts if pid == p.pk]
+                self.assertEqual(seq, sorted(seq), "inversão de ordem no jogador")
+        outbox.process_pending()                                # em SQLite, o que perdeu para um bloqueio é retomado
+        self.assertEqual(ActivityEvent.objects.filter(processed_at__isnull=True).count(), 0)
+        if ON_PG:
+            self.assertEqual(ActivityEvent.objects.filter(attempts__gt=0).count(), 0)
+        for k, p in enumerate(self.players[:3]):
+            st = ActivityStreak.objects.get(player=p)
+            self.assertEqual((st.current_start, st.last_action_at), (T0 - (20 - k) * HOUR, T0 - (15 - k) * HOUR))
+        self.assertTrue(audit.audit_rankings(at=T0)["ok"], audit.audit_rankings(at=T0)["findings"])
+
+    @unittest.skipUnless(ON_PG, "exclusão por trava de linha do jogador (SELECT ... FOR UPDATE): só tem efeito em PostgreSQL")
+    def test_a_later_event_waits_for_the_earlier_one_still_being_processed(self):
+        """O processador A segura o evento 1 (no meio do processamento); o B, no MESMO jogador, não pode andar para o evento 2."""
+        from unittest import mock
+        from core.clock import use_clock
+        from rankings import outbox
+        p = self.players[0]
+        self._seed(p, [T0 - 2 * HOUR, T0 - HOUR])
+        in_first, release = threading.Event(), threading.Event()
+        original = activity.record_action
+
+        def slow_first(pid, at=None):
+            with self.calls_lock:
+                self.calls.append(("start", pid, at))
+            if at == T0 - 2 * HOUR and not in_first.is_set():
+                in_first.set()
+                release.wait(timeout=20)
+            out = original(pid, at)
+            with self.calls_lock:
+                self.calls.append(("end", pid, at))
+            return out
+
+        errors = []
+
+        def runner():
+            try:
+                with use_clock(self.clk):
+                    _retry(lambda: outbox.process_player(p.pk))
+            except Exception as exc:    # noqa: BLE001
+                errors.append(exc)
+            finally:
+                close_old_connections()
+                connection.close()
+
+        with mock.patch.object(activity, "record_action", slow_first):
+            a = threading.Thread(target=runner)
+            b = threading.Thread(target=runner)
+            try:
+                a.start()
+                self.assertTrue(in_first.wait(timeout=20))
+                b.start()
+                time.sleep(0.5)                                 # B tem tempo de sobra para (indevidamente) andar
+                with self.calls_lock:
+                    started_during_hold = [c for c in self.calls if c[0] == "start"]
+                self.assertEqual(started_during_hold, [("start", p.pk, T0 - 2 * HOUR)])   # nada posterior com o anterior preso
+            finally:
+                release.set()                                   # nunca deixa a thread presa segurando o banco
+                a.join(timeout=30)
+                if b.is_alive() or b.ident:
+                    b.join(timeout=30)
+        self.assertEqual(errors, [])
+        starts = [(pid, at) for kind, pid, at in self.calls if kind == "start"]
+        self.assertEqual(starts, [(p.pk, T0 - 2 * HOUR), (p.pk, T0 - HOUR)])        # ordem, uma vez cada
+        self.assertEqual(ActivityStreak.objects.get(player=p).last_action_at, T0 - HOUR)
+
+    def test_actions_and_processors_running_together_leave_every_event_processed(self):
+        from players import registry
+        from players.models import Player
+        from rankings import outbox
+        from rankings.models import ActivityEvent
+        Player.objects.update(energy=100)
+
+        def act(p):
+            return lambda: registry.execute_action(p.pk, "leisure").ok
+        jobs = [act(p) for p in self.players] + [lambda: outbox.process_pending() for _ in range(3)]
+        results = self._run(jobs)
+        self.assertEqual(results[:4], [True] * 4)
+        self.assertEqual(ActivityEvent.objects.count(), 4)                      # uma ação confirmada = um evento
+        outbox.process_pending()                                                # o que sobrou de corrida é recuperável
+        self.assertEqual(ActivityEvent.objects.filter(processed_at__isnull=True).count(), 0)
+        self.assertEqual(ActivityStreak.objects.count(), 4)
+        self.assertTrue(audit.audit_rankings(at=T0)["ok"], audit.audit_rankings(at=T0)["findings"])
+
+    def test_two_actions_of_the_same_player_in_parallel_both_record_in_order(self):
+        from players import registry
+        from players.models import Player
+        from rankings import outbox
+        from rankings.models import ActivityEvent
+        p = self.players[0]
+        Player.objects.filter(pk=p.pk).update(energy=100)
+        res = self._run([lambda: registry.execute_action(p.pk, "leisure").ok for _ in range(2)])
+        self.assertEqual(sorted(res), [True, True])
+        self.assertEqual(ActivityEvent.objects.filter(player=p).count(), 2)
+        outbox.process_pending()
+        self.assertEqual(ActivityEvent.objects.filter(processed_at__isnull=True).count(), 0)
+        self.assertEqual(ActivityStreak.objects.get(player=p).last_action_at, T0)

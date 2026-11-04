@@ -74,3 +74,50 @@ class ActionObserverTests(TravelTestCase):
         registry.execute_action(b.pk, "leisure")
         ea, eb = Player.objects.get(pk=a.pk), Player.objects.get(pk=b.pk)
         self.assertEqual((ea.energy, ea.burnout, ea.processed_until), (eb.energy, eb.burnout, eb.processed_until))
+
+
+class ActionRecorderTests(TravelTestCase):
+    """Gravadores transacionais: dentro da transação da ação; a falha desfaz a ação; recusas não os chamam; ordem por nome."""
+
+    def setUp(self):
+        super().setUp()
+        self.saved = dict(registry._recorders)
+        registry._recorders.clear()
+        self.addCleanup(lambda: (registry._recorders.clear(), registry._recorders.update(self.saved)))
+        self.calls = []
+
+    def rec(self, name, fail=False):
+        def fn(pid, aid, res, at):
+            self.calls.append((name, pid, aid, at, res.ok))
+            if fail:
+                raise RuntimeError("gravador falhou")
+        registry.register_action_recorder(name, fn)
+
+    def test_called_inside_the_action_transaction_with_instant_and_result(self):
+        self.rec("a")
+        self.assertTrue(registry.execute_action(self.player.pk, "leisure").ok)
+        self.assertEqual(self.calls, [("a", self.player.pk, "leisure", self.clk.now(), True)])
+
+    def test_not_called_for_refusals(self):
+        self.rec("a")
+        self.assertEqual(registry.execute_action(self.player.pk, "fly").code, "UNKNOWN_ACTION")
+        Player.objects.filter(pk=self.player.pk).update(energy=0)
+        self.assertFalse(registry.execute_action(self.player.pk, "leisure").ok)
+        self.assertEqual(self.calls, [])
+
+    def test_failure_aborts_the_action_unlike_an_observer(self):
+        before = Player.objects.get(pk=self.player.pk).energy
+        self.rec("boom", fail=True)
+        with self.assertRaises(RuntimeError):
+            registry.execute_action(self.player.pk, "leisure")
+        self.assertEqual(Player.objects.get(pk=self.player.pk).energy, before)
+
+    def test_deterministic_order_by_name_and_duplicates_refused(self):
+        for n in ("b", "c", "a"):
+            self.rec(n)
+        registry.execute_action(self.player.pk, "leisure")
+        self.assertEqual([c[0] for c in self.calls], ["a", "b", "c"])
+        with self.assertRaises(ValueError):
+            self.rec("a")
+        registry.unregister_action_recorder("a")
+        self.assertEqual(registry.action_recorder_names(), ["b", "c"])
