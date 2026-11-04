@@ -4,6 +4,17 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-04 — P1.15a — outbox durável da atividade, créditos a receber detalhados, instrumentação de produção
+
+Decisões do Game Director de 2026-11-04 aplicadas no PR #32 (branch `dev/p1.15a-rankings-nucleo`; **sem merge**, sem rebase, sem force push). O lote #12 + #14 segue separado, aguardando autorização independente.
+
+- **Outbox de atividade (`ActivityEvent`, migração `0004`):** gravada **na mesma transação** da ação por um gravador transacional novo do Action Registry (`register_action_recorder`; falha do gravador desfaz a ação; recusas não geram evento; jogadores e bots pelo mesmo registro). Processador `rankings/outbox.py`: trava da linha do jogador, ordem `(at, id)`, savepoint por evento (sequência + marcação atômicas), falha deixa o evento pendente e para o jogador naquele evento, idempotente, recuperável. Passada imediata pós-commit, tick de 10 min do mundo e `manage.py process_activity_outbox`. O observer genérico permanece (integrações não críticas) e **não** é mais o caminho da atividade. Auditoria: pendentes, erros, mais antigo, atraso, evento processado não refletido.
+- **Créditos a receber:** valor **nominal** confirmado (sem solvência/provisão); detalhamento separa saldo, créditos a receber e obrigações a pagar, com regras condicionais de chave estável; página mostra as três linhas e a nota.
+- **Instrumentação:** `core/instrument.py` (`QueryCounter` via `connection.execute_wrapper`) substitui `CaptureQueriesContext` no runtime de QoL; teste garante que nenhum código de produção importa `django.test`.
+- **Teste de custo do registro** mantém o isolamento dos checkpoints; `CheckpointCostTests` mede o custo do checkpoint de QoL (0 / ≈8 / ≈14–15 consultas por 0 / 1 / 2+ referências atravessadas).
+- **Custos medidos** (PostgreSQL 16, `rankings/tests/bench_outbox.py`): gravador +1 consulta/+0,3 ms por ação; com passada imediata +11 consultas/+3,1 ms; processador ≈ 324 eventos/s (1 evento por jogador) e ≈ 581 eventos/s (atraso de 100 por jogador). Detalhes em `design/14a` §3.6.
+- **Riscos/pendências registrados:** sem poda dos eventos processados (cresce 1 linha por ação; política de retenção depende de decisão e medição); evento envenenado segura a sequência do jogador até correção (visível na auditoria); a ordem é por jogador, não global. `[PROV]`: `ACTIVITY_*` em `rankings/params.py`.
+
 ## 2026-11-03 — P1.15a (fatia 1) — Rankings (app `rankings`)
 
 Implementa parte do `design/14` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p1.15a-rankings-nucleo`, **baseada diretamente na `main`** (independente da pilha). **Não mergeada; aguarda revisão e autorização do Game Director.** O `14` continua FINAL — BOT TEST até integrar e validar na `main`. Detalhes: `design/14a-rankings-PROPOSTA.md`.
