@@ -98,6 +98,61 @@ class TaxpayerTests(RankingsTestCase):
         self.assertEqual(live.taxpayer_rows(), [])
 
 
+class ActiveTimeLiveTests(RankingsTestCase):
+    """Maior tempo ativo ao vivo (14.3.11; GD 2026-11-03): sequência CORRENTE ainda ativa; o recorde histórico usa a melhor."""
+
+    def act(self, player, *ats):
+        from rankings import activity
+        for at in ats:
+            activity.record_action(player.pk, at)
+
+    def test_value_is_query_time_minus_current_start_and_only_active_streaks_enter(self):
+        p2, p3 = self.make_player("p2"), self.make_player("p3")
+        self.act(self.player, T0, T0 + DAY)                               # corrente desde T0; última ação em T0+1d
+        self.act(p2, T0 + 12 * HOUR)                                      # corrente desde T0+12h
+        self.act(p3, T0 - 10 * DAY, T0 - 9 * DAY)                         # encerrada há muito: não entra
+        now = T0 + DAY + 10 * HOUR
+        rows = live.active_time_rows(at=now)
+        self.assertEqual([(r["name"], r["value"], r["rank"]) for r in rows], [("p1", DAY + 10 * HOUR, 1), ("p2", 22 * HOUR, 2)])
+
+    def test_inactive_when_gap_since_last_action_is_72h_or_more(self):
+        self.act(self.player, T0)
+        self.assertEqual([r["name"] for r in live.active_time_rows(at=T0 + 72 * HOUR - 1)], ["p1"])
+        self.assertEqual(live.active_time_rows(at=T0 + 72 * HOUR), [])          # exatamente 72 h: encerrada
+        self.assertEqual(live.active_time_rows(at=T0 + 100 * HOUR), [])
+
+    def test_ordered_by_current_not_best_and_best_is_informational(self):
+        old = self.player
+        new = self.make_player("p2")
+        self.act(old, T0 - 20 * DAY, T0 - 18 * DAY, T0 - 16 * DAY, T0 - 14 * DAY)   # melhor de 6 dias (encerrada)
+        self.act(old, T0)                                                  # corrente curta
+        self.act(new, T0 - 2 * DAY, T0)                                    # corrente de 2 dias
+        rows = live.active_time_rows(at=T0 + HOUR)
+        self.assertEqual([r["name"] for r in rows], ["p2", "p1"])
+        self.assertEqual(rows[1]["detail"]["best_length"], 6 * DAY)
+        self.assertEqual(rows[1]["value"], HOUR)
+
+    def test_ties_share_position_and_limit(self):
+        p2, p3 = self.make_player("p2"), self.make_player("p3")
+        for p in (self.player, p2):
+            self.act(p, T0)
+        self.act(p3, T0 + HOUR)
+        rows = live.active_time_rows(at=T0 + 2 * HOUR)
+        self.assertEqual([(r["name"], r["rank"]) for r in rows], [("p1", 1), ("p2", 1), ("p3", 3)])
+        self.assertEqual(len(live.active_time_rows(limit=1, at=T0 + 2 * HOUR)), 1)
+
+    def test_historical_record_is_unaffected_by_the_streak_ending(self):
+        from rankings.models import RankingHistorico
+        self.act(self.player, T0, T0 + 2 * DAY)
+        self.assertEqual(live.active_time_rows(at=T0 + 30 * DAY), [])             # ao vivo: ninguém ativo
+        self.assertEqual(RankingHistorico.objects.get(category="active_time_record").value, 2 * DAY)
+
+    def test_payload_label_and_display(self):
+        self.act(self.player, T0)
+        r = live.live_ranking(Cat.ACTIVE_TIME, at=T0 + DAY + HOUR)
+        self.assertEqual((r["label"], r["entries"][0]["display"]), ("Maior tempo ativo (sequência atual)", "1 d 1 h 0 min"))
+
+
 class OldestAccountTests(RankingsTestCase):
     def test_age_is_now_minus_creation_and_needs_no_activity(self):
         old = self.make_player("old", created_at=T0 - 100 * DAY)

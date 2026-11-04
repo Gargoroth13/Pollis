@@ -20,15 +20,17 @@ class NetWorthTests(RankingsTestCase):
         self.assertTrue(res.ok, res)
         return Obligation.objects.get(pk=res.detail["obligation_id"])
 
-    def test_net_worth_is_balance_minus_open_obligations_with_breakdown(self):
+    def test_net_worth_is_balance_plus_receivables_minus_payables_with_breakdown(self):
         a = self.acct()
         self.fund(a, 10_000)
-        self.owe(a, self.company(1), 3_000, "o1")
+        self.owe(a, self.company(1), 3_000, "o1")                 # a pagar
+        self.owe(self.company(2), a, 1_200, "o2")                 # a receber
         nw = live.net_worth_of(self.player.pk)
-        self.assertEqual((nw["value"], nw["balance"], nw["obligations_open"]), (7_000, 10_000, 3_000))
+        self.assertEqual((nw["value"], nw["balance"], nw["receivables"], nw["obligations_open"]), (8_200, 10_000, 1_200, 3_000))
         steps = {s["key"]: s for s in nw["explained"]["steps"]}
-        self.assertEqual((steps["balance"]["amount"], steps["open_obligations"]["amount"]), ("10000", "-3000"))
-        self.assertEqual(nw["explained"]["value"], "7000")
+        self.assertEqual([(k, steps[k]["amount"]) for k in ("balance", "receivables", "open_obligations")],
+                         [("balance", "10000"), ("receivables", "1200"), ("open_obligations", "-3000")])
+        self.assertEqual(nw["explained"]["value"], "8200")
 
     def test_partially_paid_obligation_counts_only_the_remainder(self):
         a = self.acct()
@@ -46,11 +48,27 @@ class NetWorthTests(RankingsTestCase):
         Obligation.objects.filter(pk=ob2.pk).update(status="cancelled")
         self.assertEqual(live.net_worth_of(self.player.pk)["value"], 5_000)
 
-    def test_receivables_are_not_counted(self):
+    def test_receivables_count_only_the_remainder_of_open_obligations(self):
+        """Decisão do GD (2026-11-03): créditos a receber entram; pago e cancelado não."""
         a = self.acct()
         self.fund(a, 1_000)
-        self.owe(self.company(1), a, 9_000, "o-receivable")           # outros devem ao jogador: não entra por padrão
+        ob = self.owe(self.company(1), a, 9_000, "o-receivable")
+        self.assertEqual(live.net_worth_of(self.player.pk)["value"], 10_000)
+        Obligation.objects.filter(pk=ob.pk).update(amount_paid=4_000)         # parcial: restam 5.000
+        self.assertEqual(live.net_worth_of(self.player.pk)["value"], 6_000)
+        Obligation.objects.filter(pk=ob.pk).update(status="paid", amount_paid=9_000)
         self.assertEqual(live.net_worth_of(self.player.pk)["value"], 1_000)
+        ob2 = self.owe(self.company(1), a, 700, "o-cancelled")
+        self.assertEqual(live.net_worth_of(self.player.pk)["value"], 1_700)
+        Obligation.objects.filter(pk=ob2.pk).update(status="cancelled")
+        self.assertEqual(live.net_worth_of(self.player.pk)["value"], 1_000)
+
+    def test_receivable_and_payable_between_two_players_are_counted_on_each_side(self):
+        p2 = self.make_player("p2")
+        self.fund(self.acct(), 1_000)
+        self.fund(self.acct(p2), 1_000)
+        self.owe(self.acct(p2), self.acct(), 400, "o")                # p2 deve 400 a p1
+        self.assertEqual((live.net_worth_of(self.player.pk)["value"], live.net_worth_of(p2.pk)["value"]), (1_400, 600))
 
     def test_reserved_money_still_counts(self):
         a = self.acct()

@@ -77,7 +77,8 @@ def check_net_worth_record(player_id: int, at: Optional[int] = None) -> RecordOu
     if rec is not None and value <= rec.value:
         return RecordOutcome(False, rec, "NOT_GREATER")
     return offer_value_record(Cat.NET_WORTH_RECORD, ENTITY_PLAYER, player_id, value, at,
-                              {"balance": nw["balance"], "obligations_open": nw["obligations_open"], "explained": nw["explained"]})
+                              {"balance": nw["balance"], "receivables": nw["receivables"], "obligations_open": nw["obligations_open"],
+                               "explained": nw["explained"]})
 
 
 def sweep_net_worth_record(at: Optional[int] = None) -> RecordOutcome:

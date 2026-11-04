@@ -70,7 +70,7 @@ _L, _H = Group.LIVE, Group.HISTORICAL
 
 CATEGORIES: Tuple[CategorySpec, ...] = (
     _S(Cat.NET_WORTH, 1, _L, "Maior patrimônio líquido", "14.3.1", Status.ACTIVE, "centavos",
-       source="ledger.Account.balance (saldo bruto, inclui o reservado) − Σ ledger.Obligation em aberto do devedor"),
+       source="ledger.Account.balance (saldo bruto, inclui o reservado) + créditos a receber − obrigações a pagar (ledger.Obligation abertas)"),
     _S(Cat.BIGGEST_COMPANY, 2, _L, "Maior empresa", "14.3.2", Status.PENDING_SOURCE,
        depends_on="estrelas e funcionários da empresa: P1.04a/b (PRs #15/#16), ainda não integrados à main"),
     _S(Cat.PRODUCTION, 3, _L, "Maior produção (14 dias)", "14.3.3", Status.PENDING_SOURCE, window_days=14,
@@ -89,8 +89,8 @@ CATEGORIES: Tuple[CategorySpec, ...] = (
        depends_on="membros de milícia: P1.17 (Militar), ainda não implementado"),
     _S(Cat.OLDEST_ACCOUNT, 10, _L, "Conta mais antiga", "14.3.10", Status.ACTIVE, "segundos",
        source="players.Player.created_at_game"),
-    _S(Cat.ACTIVE_TIME, 11, _L, "Maior tempo ativo", "14.3.11", Status.ACTIVE, "segundos",
-       source="rankings.ActivityStreak (ações bem-sucedidas do Action Registry)"),
+    _S(Cat.ACTIVE_TIME, 11, _L, "Maior tempo ativo (sequência atual)", "14.3.11", Status.ACTIVE, "segundos",
+       source="rankings.ActivityStreak: sequência corrente ainda ativa (< 72 h desde a última ação válida do Action Registry)"),
     _S(Cat.NET_WORTH_RECORD, 12, _H, "Maior patrimônio líquido já alcançado", "14.4.1", Status.ACTIVE, "centavos",
        source="rankings.RankingHistorico (atualizado em ações do jogador e na varredura diária)"),
     _S(Cat.COMPANY_RECORD, 13, _H, "Maior empresa já alcançada", "14.4.2", Status.PENDING_SOURCE,

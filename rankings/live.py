@@ -15,12 +15,12 @@ from django.db.models.functions import Coalesce
 
 from core import clock as game_clock
 from core.breakdown import Calc
-from ledger.constants import TAX_NATURES, AccountKind, ObligationStatus
-from ledger.models import Account, Entry, Obligation
+from ledger.constants import AccountKind, ObligationStatus
+from ledger.models import Account, Obligation
 from ledger.money import competence_day_of
 from players.models import Player
 
-from . import display, params
+from . import display, params, taxes
 from .constants import ENTITY_COMPANY, ENTITY_PLAYER, Cat, Group, Status, spec
 from .models import ActivityStreak, RankingHistorico
 
@@ -70,42 +70,61 @@ def assign_ranks(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 # --- patrimônio líquido (14.3.1) ----------------------------------------------------------------------------------------
 
-def net_worth_explained(balance: int, owed: int, at: int):
+def net_worth_explained(balance: int, receivable: int, owed: int, at: int):
     """
-    Patrimônio líquido = saldo bruto da conta (inclui o reservado: o dinheiro continua do jogador) − obrigações em aberto.
-    Só o que o ledger já reconhece (decisão do GD, 2026-11-02): sem imóveis, empresas ou estoque, que dependem de regras de
-    avaliação dos sistemas donos; créditos a receber NÃO entram. Valor em centavos, exato; pode ser negativo.
+    Patrimônio líquido = saldo bruto + créditos a receber − obrigações a pagar (decisão do GD, 2026-11-03).
+      saldo bruto         `Account.balance`, inclui o reservado (o dinheiro continua do jogador)
+      créditos a receber  restante (`amount_due − amount_paid`) das obrigações ABERTAS em que o jogador é credor
+      obrigações a pagar  restante das obrigações ABERTAS em que o jogador é devedor
+    Obrigações pagas ou canceladas não entram. Só o que o ledger reconhece: sem imóveis, empresas ou estoque, que dependem de
+    regras de avaliação dos sistemas donos. Valor em centavos, exato; pode ser negativo.
     """
-    return Calc("balance", balance).add("open_obligations", -owed).result(at)
+    return Calc("balance", balance).add("receivables", receivable).add("open_obligations", -owed).result(at)
 
 
-def _owed_subquery():
-    return (Obligation.objects.filter(debtor=OuterRef("pk"), status=ObligationStatus.OPEN.value)
-            .values("debtor").annotate(s=Sum(F("amount_due") - F("amount_paid"))).values("s"))
+def _open_sum(side: str):
+    """Soma do restante das obrigações abertas em que a conta (OuterRef pk) é `debtor` ou `creditor`."""
+    return (Obligation.objects.filter(**{side: OuterRef("pk")}, status=ObligationStatus.OPEN.value)
+            .values(side).annotate(s=Sum(F("amount_due") - F("amount_paid"))).values("s"))
 
 
 def _player_accounts():
     return (Account.objects.filter(kind=AccountKind.PLAYER.value, closed=False)
             .filter(Exists(Player.objects.filter(pk=OuterRef("owner_id"))))
-            .annotate(owed=Coalesce(Subquery(_owed_subquery()), 0), net=F("balance") - F("owed")))
+            .annotate(owed=Coalesce(Subquery(_open_sum("debtor")), 0), receivable=Coalesce(Subquery(_open_sum("creditor")), 0),
+                      net=F("balance") + F("receivable") - F("owed")))
+
+
+def _net_worth_payload(row: Dict[str, Any], at: int) -> Dict[str, Any]:
+    ex = net_worth_explained(row["balance"], row["receivable"], row["owed"], at)
+    return {"value": row["net"], "balance": row["balance"], "receivables": row["receivable"], "obligations_open": row["owed"],
+            "explained": ex.to_dict()}
+
+
+_NW_FIELDS = ("owner_id", "balance", "receivable", "owed", "net")
 
 
 def net_worth_of(player_id: int, at: Optional[int] = None) -> Optional[Dict[str, Any]]:
     """Patrimônio líquido do jogador com o detalhamento; None se o jogador não tem conta no ledger (ausente ≠ zero)."""
     at = game_clock.now() if at is None else at
-    row = _player_accounts().filter(owner_id=player_id).values("balance", "owed", "net").first()
-    if row is None:
-        return None
-    ex = net_worth_explained(row["balance"], row["owed"], at)
-    return {"value": row["net"], "balance": row["balance"], "obligations_open": row["owed"], "explained": ex.to_dict()}
+    row = _player_accounts().filter(owner_id=player_id).values(*_NW_FIELDS).first()
+    return None if row is None else _net_worth_payload(row, at)
+
+
+def net_worth_of_accounts(account_ids, at: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Patrimônio líquido dos jogadores donos das contas (as que não são de jogador são ignoradas), do maior ao menor."""
+    at = game_clock.now() if at is None else at
+    rows = _player_accounts().filter(pk__in=list(account_ids)).order_by("-net", "owner_id").values(*_NW_FIELDS)
+    return [{"player_id": r["owner_id"], **_net_worth_payload(r, at)} for r in rows]
 
 
 def net_worth_rows(limit: Optional[int] = None, at: Optional[int] = None) -> List[Dict[str, Any]]:
     at = game_clock.now() if at is None else at
-    rows = list(_player_accounts().order_by("-net", "owner_id").values("owner_id", "balance", "owed", "net")[:_limit(limit)])
+    rows = list(_player_accounts().order_by("-net", "owner_id").values(*_NW_FIELDS)[:_limit(limit)])
     names = _player_names(r["owner_id"] for r in rows)
     out = [{"entity_type": ENTITY_PLAYER, "entity_id": r["owner_id"], "name": entity_name(ENTITY_PLAYER, r["owner_id"], names),
-            "value": r["net"], "detail": net_worth_explained(r["balance"], r["owed"], at).to_dict()} for r in rows]
+            "value": r["net"], "detail": net_worth_explained(r["balance"], r["receivable"], r["owed"], at).to_dict()}
+           for r in rows]
     return assign_ranks(out)
 
 
@@ -117,21 +136,20 @@ def taxpayer_window(at: int) -> Dict[str, int]:
 
 
 def taxpayer_rows(limit: Optional[int] = None, at: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Imposto EFETIVAMENTE pago (lançamento tax_* não estornado) por conta pagadora (jogador ou empresa) na janela."""
+    """
+    Imposto EFETIVAMENTE pago (lançamento `tax_*` não estornado) por contribuinte na janela. Atribuição em `rankings.taxes`:
+    o imposto retido sobre remuneração é do jogador beneficiário; os demais, da conta pagadora (jogador ou empresa).
+    """
     at = game_clock.now() if at is None else at
     w = taxpayer_window(at)
-    rows = list(Entry.objects.filter(nature__in=[n.value for n in TAX_NATURES], reversed_by__isnull=True,
-                                     competence_day__range=(w["first_day"], w["last_day"]),
-                                     from_account__kind__in=[AccountKind.PLAYER.value, AccountKind.COMPANY.value])
-                .values("from_account__kind", "from_account__owner_id").annotate(total=Sum("amount"))
-                .order_by("-total", "from_account__kind", "from_account__owner_id")[:_limit(limit)])
-    names = _player_names(r["from_account__owner_id"] for r in rows if r["from_account__kind"] == AccountKind.PLAYER.value)
+    totals, unresolved = taxes.taxpayer_totals(w["first_day"], w["last_day"])
+    top = taxes.ranked(totals)[:_limit(limit)]
+    names = _player_names(owner for (kind, owner), _ in top if kind == AccountKind.PLAYER.value)
     out = []
-    for r in rows:
-        et = ENTITY_PLAYER if r["from_account__kind"] == AccountKind.PLAYER.value else ENTITY_COMPANY
-        eid = r["from_account__owner_id"]
-        out.append({"entity_type": et, "entity_id": eid, "name": entity_name(et, eid, names), "value": r["total"],
-                    "detail": {"window": w, "source": "ledger.Entry tax_*"}})
+    for (kind, owner), total in top:
+        et = ENTITY_PLAYER if kind == AccountKind.PLAYER.value else ENTITY_COMPANY
+        out.append({"entity_type": et, "entity_id": owner, "name": entity_name(et, owner, names), "value": total,
+                    "detail": {"window": w, "source": "ledger.Entry tax_*", "unresolved_in_window": unresolved}})
     return assign_ranks(out)
 
 
@@ -149,20 +167,21 @@ def oldest_account_rows(limit: Optional[int] = None, at: Optional[int] = None) -
 # --- maior tempo ativo (14.3.11) ----------------------------------------------------------------------------------------
 
 def active_time_rows(limit: Optional[int] = None, at: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Maior sequência já alcançada pela conta (14.3.11: "armazenar o maior período"). A sequência corrente é informativa."""
+    """
+    Ao vivo (decisão do GD, 2026-11-03): ordena pela sequência CORRENTE. Só entram contas cuja sequência ainda está ativa
+    (intervalo desde a última ação INFERIOR a 72 h). Valor = `consulta − current_start`. O recorde histórico (14.4.3) usa a
+    melhor sequência já alcançada (`best_length`): as duas categorias têm finalidades distintas.
+    """
     at = game_clock.now() if at is None else at
-    rows = list(ActivityStreak.objects.order_by("-best_length", "player_id")
+    rows = list(ActivityStreak.objects.filter(last_action_at__gt=at - params.STREAK_MAX_GAP_SECONDS, current_start__lte=at)
+                .order_by("current_start", "player_id")
                 .values("player_id", "player__user__username", "best_start", "best_end", "best_length", "current_start",
                         "last_action_at")[:_limit(limit)])
-    out = []
-    for r in rows:
-        active = at - r["last_action_at"] < params.STREAK_MAX_GAP_SECONDS
-        out.append({"entity_type": ENTITY_PLAYER, "entity_id": r["player_id"], "name": r["player__user__username"],
-                    "value": r["best_length"],
-                    "detail": {"best_start": r["best_start"], "best_end": r["best_end"],
-                               "current_start": r["current_start"], "last_action_at": r["last_action_at"],
-                               "current_length": r["last_action_at"] - r["current_start"], "streak_active": active,
-                               "max_gap_seconds": params.STREAK_MAX_GAP_SECONDS}})
+    out = [{"entity_type": ENTITY_PLAYER, "entity_id": r["player_id"], "name": r["player__user__username"],
+            "value": at - r["current_start"],
+            "detail": {"current_start": r["current_start"], "last_action_at": r["last_action_at"], "as_of": at,
+                       "best_start": r["best_start"], "best_end": r["best_end"], "best_length": r["best_length"],
+                       "max_gap_seconds": params.STREAK_MAX_GAP_SECONDS}} for r in rows]
     return assign_ranks(out)
 
 
