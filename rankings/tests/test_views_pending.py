@@ -86,8 +86,10 @@ class PageTests(RankingsTestCase):
 
     def test_reading_the_page_does_not_write_anything(self):
         self.fund(self.acct(), 500)
+        before = list(RankingHistorico.objects.values())
         self.client.get("/rankings/")
-        self.assertFalse(RankingHistorico.objects.exists())
+        self.client.get("/rankings/data/")
+        self.assertEqual(list(RankingHistorico.objects.values()), before)
         self.assertFalse(ActivityStreak.objects.exists())
 
 
@@ -111,8 +113,8 @@ class AuditTests(RankingsTestCase):
         from rankings import activity
         activity.record_action(self.player.pk, T0)
         activity.record_action(self.player.pk, T0 + DAY)
-        RankingHistorico.objects.all().delete()           # recorde perdido
         self.fund(self.acct(), 1_000)
+        RankingHistorico.objects.all().delete()           # recorde perdido
         codes = sorted((f["code"], f["category"]) for f in audit.audit_rankings()["findings"])
         self.assertEqual(codes, [("RECORD_BEHIND_SOURCE", "active_time_record"), ("RECORD_BEHIND_SOURCE", "net_worth_record")])
 

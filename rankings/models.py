@@ -57,3 +57,21 @@ class ActivityStreak(models.Model):
 
     def __str__(self):
         return f"ActivityStreak(player={self.player_id}, best={self.best_length}s)"
+
+
+class NetWorthCandidate(models.Model):
+    """
+    Candidato a recorde de patrimônio que NÃO pôde ser aplicado no fim da operação do ledger (ex.: falha ao gravar o recorde).
+    Gravado na MESMA transação da operação financeira, para que a atualização nunca se perca em silêncio; reaplicado pela
+    tarefa horária (`drain_net_worth_candidates`) com o valor e o instante que existiam na operação, e então removido.
+    """
+
+    player_id = models.BigIntegerField()
+    value = models.BigIntegerField()
+    at = models.BigIntegerField()                     # instante da operação financeira
+    metadata = models.JSONField(default=dict)
+    attempts = models.IntegerField(default=0)
+    last_error = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        indexes = [models.Index(fields=["at", "id"], name="nwcandidate_order_idx")]

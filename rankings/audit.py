@@ -11,7 +11,7 @@ from core import clock as game_clock
 
 from . import live, params
 from .constants import ENTITY_TYPES, Cat, Group, spec as category_spec
-from .models import ActivityStreak, RankingHistorico
+from .models import ActivityStreak, NetWorthCandidate, RankingHistorico
 
 
 def audit_rankings(at: int = None) -> Dict[str, Any]:
@@ -42,7 +42,7 @@ def audit_rankings(at: int = None) -> Dict[str, Any]:
 
     ar = records.get(Cat.ACTIVE_TIME_RECORD.value)
     best = max(streaks, key=lambda s: (s.best_length, -s.player_id), default=None)
-    if best is not None and (ar is None or best.best_length > ar.value):
+    if best is not None and best.best_length > 0 and (ar is None or best.best_length > ar.value):         # 0 s não é recorde
         findings.append({"code": "RECORD_BEHIND_SOURCE", "category": Cat.ACTIVE_TIME_RECORD.value,
                          "record": None if ar is None else ar.value, "source": best.best_length, "player_id": best.player_id})
     if ar is not None:
@@ -57,6 +57,12 @@ def audit_rankings(at: int = None) -> Dict[str, Any]:
         findings.append({"code": "RECORD_BEHIND_SOURCE", "category": Cat.NET_WORTH_RECORD.value,
                          "record": None if nr is None else nr.value, "source": top[0]["value"],
                          "player_id": top[0]["entity_id"]})
+
+    pending = NetWorthCandidate.objects.count()
+    stats["net_worth_candidates_pending"] = pending
+    if pending:
+        findings.append({"code": "NET_WORTH_CANDIDATES_PENDING", "count": pending,
+                         "oldest_at": NetWorthCandidate.objects.order_by("at").values_list("at", flat=True).first()})
 
     pr = records.get(Cat.PRESIDENT_VOTE_RECORD.value)
     if pr is not None:

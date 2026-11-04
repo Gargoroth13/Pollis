@@ -4,7 +4,7 @@ from decimal import Decimal
 from core import ticks
 from core.models import WorldClock
 from core.timeline import TickKind
-from ledger import obligations, services as ledger
+from ledger import hooks as ledger_hooks, obligations, services as ledger
 from ledger.constants import Nature
 from ledger.models import Account, Entry, Obligation
 from rankings import live, records, wiring
@@ -116,34 +116,39 @@ class NetWorthTests(RankingsTestCase):
 
 
 class NetWorthRecordTests(RankingsTestCase):
+    """Recorde de patrimônio (14.4.1): mantido pelo gancho de fim de operação do ledger (ver test_net_worth_record_ledger)."""
+
     def rec(self):
         return RankingHistorico.objects.get(category=Cat.NET_WORTH_RECORD.value)
 
     def test_record_grows_and_persists_after_the_fall(self):
         a = self.acct()
         self.fund(a, 10_000)
-        out = records.check_net_worth_record(self.player.pk)
-        self.assertEqual(out.reason, "CREATED")
         r = self.rec()
         self.assertEqual((r.entity_id, r.value, r.recorded_at), (self.player.pk, 10_000, T0))
-        self.assertEqual(r.metadata["balance"], 10_000)
+        self.assertEqual((r.metadata["balance"], r.metadata["receivables"], r.metadata["obligations_open"]), (10_000, 0, 0))
         self.fund(a, 5_000)
-        self.assertEqual(records.check_net_worth_record(self.player.pk).reason, "REPLACED")
         self.assertEqual(self.rec().value, 15_000)
         self.assertTrue(self.pay(a, self.company(1), 14_000).ok)          # patrimônio cai para 1.000
-        self.assertEqual(records.check_net_worth_record(self.player.pk).reason, "NOT_GREATER")
         self.assertEqual(self.rec().value, 15_000)
         self.assertEqual(live.net_worth_of(self.player.pk)["value"], 1_000)
+        self.assertEqual(records.check_net_worth_record(self.player.pk).reason, "NOT_GREATER")
 
-    def test_idempotent_and_tie_keeps_first_holder(self):
+    def test_tie_keeps_the_first_holder_and_replaying_is_idempotent(self):
         p2 = self.make_player("p2")
         self.fund(self.acct(), 7_000)
+        self.clk.advance(hours=1)
         self.fund(self.acct(p2), 7_000)
-        records.check_net_worth_record(self.player.pk)
-        records.check_net_worth_record(self.player.pk)
+        self.assertEqual(self.rec().entity_id, self.player.pk)
+        self.assertEqual(records.check_net_worth_record(self.player.pk).reason, "NOT_GREATER")
         self.assertEqual(records.check_net_worth_record(p2.pk).reason, "NOT_GREATER")
         self.assertEqual(RankingHistorico.objects.count(), 1)
-        self.assertEqual(self.rec().entity_id, self.player.pk)
+
+    def test_tie_goes_to_whoever_reached_it_earlier_even_if_applied_later(self):
+        records.offer_value_record(Cat.NET_WORTH_RECORD, "player", 2, 500, T0 + HOUR)
+        out = records.offer_value_record(Cat.NET_WORTH_RECORD, "player", 1, 500, T0)          # chegou antes
+        self.assertEqual((out.reason, self.rec().entity_id), ("REPLACED", 1))
+        self.assertEqual(records.offer_value_record(Cat.NET_WORTH_RECORD, "player", 3, 500, T0 + 2 * HOUR).reason, "NOT_GREATER")
 
     def test_zero_or_negative_net_worth_creates_no_record(self):
         self.acct()
@@ -154,10 +159,14 @@ class NetWorthRecordTests(RankingsTestCase):
         Account.objects.filter(kind="player", owner_id=self.player.pk).delete()
         self.assertFalse(records.check_net_worth_record(self.player.pk).changed)
 
-    def test_sweep_looks_only_at_the_current_top(self):
+    def test_sweep_reconciles_when_the_hook_was_absent(self):
+        """O gancho mantém o recorde; a varredura só reconcilia o que escapou (ex.: gancho desligado)."""
+        ledger_hooks.unregister_operation_hook(wiring.LEDGER_HOOK_NET_WORTH)
+        self.addCleanup(wiring.connect)
         p2 = self.make_player("p2")
         self.fund(self.acct(), 3_000)
         self.fund(self.acct(p2), 8_000)
+        self.assertFalse(RankingHistorico.objects.exists())
         out = records.sweep_net_worth_record()
         self.assertEqual((out.reason, self.rec().entity_id, self.rec().value), ("CREATED", p2.pk, 8_000))
         self.assertEqual(records.sweep_net_worth_record().reason, "NOT_GREATER")
@@ -165,9 +174,11 @@ class NetWorthRecordTests(RankingsTestCase):
     def test_sweep_with_nobody_is_a_noop(self):
         self.assertFalse(records.sweep_net_worth_record().changed)
 
-    def test_daily_world_tick_runs_the_sweep(self):
-        names = [r.name for r in ticks.registry.handlers_for(ticks.WORLD, TickKind.DAILY)]
-        self.assertIn(wiring.TICK_NAME, names)
+    def test_daily_world_tick_runs_the_sweep_and_hourly_tick_drains_candidates(self):
+        self.assertIn(wiring.TICK_SWEEP, [r.name for r in ticks.registry.handlers_for(ticks.WORLD, TickKind.DAILY)])
+        self.assertIn(wiring.TICK_RETRY, [r.name for r in ticks.registry.handlers_for(ticks.WORLD, TickKind.HOURLY)])
+        ledger_hooks.unregister_operation_hook(wiring.LEDGER_HOOK_NET_WORTH)
+        self.addCleanup(wiring.connect)
         self.fund(self.acct(), 2_500)
         WorldClock.load()
         WorldClock.objects.filter(pk=1).update(world_processed_until=T0)
@@ -178,8 +189,10 @@ class NetWorthRecordTests(RankingsTestCase):
     def test_wiring_is_idempotent(self):
         wiring.connect()
         wiring.connect()
-        names = [r.name for r in ticks.registry.handlers_for(ticks.WORLD, TickKind.DAILY)]
-        self.assertEqual(names.count(wiring.TICK_NAME), 1)
+        for kind, name in ((TickKind.DAILY, wiring.TICK_SWEEP), (TickKind.HOURLY, wiring.TICK_RETRY)):
+            names = [r.name for r in ticks.registry.handlers_for(ticks.WORLD, kind)]
+            self.assertEqual(names.count(name), 1)
+        self.assertEqual(ledger_hooks.operation_hook_names().count(wiring.LEDGER_HOOK_NET_WORTH), 1)
 
     def test_rankings_never_create_or_move_money(self):
         self.fund(self.acct(), 1_000)

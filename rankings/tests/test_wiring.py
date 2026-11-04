@@ -11,9 +11,11 @@ from .base import DAY, HOUR, T0, RankingsTestCase
 
 
 class RegistryIntegrationTests(RankingsTestCase):
-    def test_observers_are_registered_by_the_app(self):
-        self.assertEqual(set(registry.action_observer_names()) & {wiring.OBSERVER_ACTIVITY, wiring.OBSERVER_NET_WORTH},
-                         {wiring.OBSERVER_ACTIVITY, wiring.OBSERVER_NET_WORTH})
+    def test_observer_and_ledger_hook_are_registered_by_the_app(self):
+        from ledger import hooks as ledger_hooks
+        self.assertIn(wiring.OBSERVER_ACTIVITY, registry.action_observer_names())
+        self.assertIn(wiring.LEDGER_HOOK_NET_WORTH, ledger_hooks.operation_hook_names())
+        self.assertNotIn("rankings_net_worth", registry.action_observer_names())     # patrimônio não depende de ação do jogador
 
     # Esperar dias reais de jogo sem comer hospitaliza o jogador (04), então o passado da sequência é semeado por
     # `activity.record_action` com instantes anteriores e a ação real acontece AGORA, pelo registro.
@@ -49,12 +51,6 @@ class RegistryIntegrationTests(RankingsTestCase):
         self.assertTrue(res.ok)
         self.assertFalse(ActivityStreak.objects.exists())
         self.assertLess(Player.objects.get(pk=self.player.pk).energy, 100)      # a ação continua aplicada
-
-    def test_action_updates_net_worth_record_of_the_actor(self):
-        self.fund(self.acct(), 6_000)
-        registry.execute_action(self.player.pk, "leisure")
-        r = RankingHistorico.objects.get(category=Cat.NET_WORTH_RECORD.value)
-        self.assertEqual((r.entity_id, r.value), (self.player.pk, 6_000))
 
     def test_login_or_page_views_do_not_count(self):
         self.client.get("/rankings/")
