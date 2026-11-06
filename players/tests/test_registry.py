@@ -461,7 +461,15 @@ class LazyAndQueryCostTests(TravelTestCase):
 
     def test_availability_adds_a_constant_cost_on_top_of_the_lazy_sync(self):
         """O catch-up lazy (existente) custa o que custar; o registro soma um custo FIXO, independente do tempo decorrido."""
+        from players import hooks as player_hooks
         from players.services import locked_player
+
+        # O catch-up lazy também roda os checkpoints registrados por outros sistemas (ex.: snapshot horário de QoL, cujo custo
+        # CRESCE com o tempo e é assimétrico entre gêmeos: o primeiro abre as linhas do snapshot, o segundo só as reusa). Este
+        # teste mede o custo do REGISTRO; o custo dos checkpoints é medido nos testes do sistema dono (rankings).
+        saved = dict(player_hooks._checkpoints)
+        self.addCleanup(lambda: (player_hooks._checkpoints.clear(), player_hooks._checkpoints.update(saved)))
+        player_hooks._checkpoints.clear()
 
         def sync(player):
             def run():

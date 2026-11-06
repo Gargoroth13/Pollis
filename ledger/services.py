@@ -23,6 +23,7 @@ from core import clock as game_clock
 from core.breakdown import Calc, Explained
 from players.services import ActionResult
 
+from . import hooks
 from .constants import (GRANT_ROLE_KINDS, MAX_AMOUNT, OPERATIONAL_KINDS, REMUNERATION_NATURES, RETENTION_IN_NATURES,
                         RETENTION_OUT_NATURES, SINGLETON_KINDS, SINK_NATURES, TAX_NATURES, AccountKind, HoldStatus,
                         Nature, ObligationStatus)
@@ -377,8 +378,9 @@ def post_transaction(legs: Sequence[Leg], *, key: str, reference_kind: str, refe
             existing = _existing_transaction(key)
             if existing is not None:
                 return _same_key_result(existing, payload_hash)
-            return _post(legs, key, payload, payload_hash, reference_kind, reference_id, at, day, actor, list(uses), reverses,
-                         _grant)
+            with hooks.operation():          # o gancho de fim de operação roda dentro desta transação, com o estado final
+                return _post(legs, key, payload, payload_hash, reference_kind, reference_id, at, day, actor, list(uses),
+                             reverses, _grant)
     except _Refuse as r:
         return r.result
     except _KeyRace:
@@ -455,6 +457,7 @@ def _post(legs: List[Leg], key: str, payload: Dict[str, Any], payload_hash: str,
     for i in ids:
         if running[i] != locked[i].balance:
             Account.objects.filter(pk=i).update(balance=running[i])
+            hooks.touch(i, at)
     return _result_of(tx, False)
 
 

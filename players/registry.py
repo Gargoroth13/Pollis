@@ -24,12 +24,15 @@ Máscara de ações para bots (21 §21) NÃO é deste módulo: é o bloco P1.19,
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from core import clock as game_clock
+
+from django.db import transaction
 
 from . import rules, services
 from .actions import Action
@@ -218,7 +221,81 @@ def execute_action(player_id: int, action_id: str, target: Any = None, **params)
     problem = _target_problem(entry.descriptor, target, executing=True)
     if problem is not None:
         return problem
-    return entry.execute(player_id, target)
+    # Ação e gravadores obrigatórios na MESMA transação: se um gravador falhar, a ação inteira é desfeita (a exceção sobe).
+    # Recusas não executam gravadores. A recusa em si não escreve nada além do catch-up lazy, que sempre foi confirmado.
+    with transaction.atomic():
+        result = entry.execute(player_id, target)
+        if result.ok and _recorders:
+            at = game_clock.now()
+            for name in sorted(_recorders):
+                _recorders[name](player_id, action_id, result, at)
+    if result.ok:
+        _notify_observers(player_id, action_id, result)
+    return result
+
+
+# --- gravadores transacionais (registro que NÃO PODE se perder: roda dentro da transação da ação) -------------------------
+
+ActionRecorder = Callable[[int, str, ActionResult, int], None]
+_recorders: Dict[str, ActionRecorder] = {}
+
+
+def register_action_recorder(name: str, recorder: ActionRecorder) -> None:
+    """
+    Registra `recorder(player_id, action_id, result, at)`, chamado DENTRO da transação de TODA execução BEM-SUCEDIDA pelo
+    registro (mesma regra para jogadores e bots). Diferente do observador: se o gravador levantar exceção, a ação NÃO é
+    confirmada. Para registros obrigatórios (ex.: outbox de atividade); deve ser barato e só escrever o próprio registro.
+    """
+    if name in _recorders:
+        raise ValueError(f"gravador duplicado: {name}")
+    _recorders[name] = recorder
+
+
+def unregister_action_recorder(name: str) -> None:
+    _recorders.pop(name, None)
+
+
+def action_recorder_names() -> List[str]:
+    return sorted(_recorders)
+
+
+# --- observadores de ações (qualquer sistema que precise saber que UMA AÇÃO VÁLIDA aconteceu) ---------------------------
+
+ActionObserver = Callable[[int, str, ActionResult], None]
+_observers: Dict[str, ActionObserver] = {}
+_log = logging.getLogger(__name__)
+
+
+def register_action_observer(name: str, observer: ActionObserver) -> None:
+    """
+    Registra `observer(player_id, action_id, result)`, chamado DEPOIS de toda execução BEM-SUCEDIDA pelo registro (as mesmas
+    ações de jogadores e bots; recusas não disparam). Ordem determinística (por nome). Não é um caminho de ação: não altera o
+    resultado. Uma falha do observador é registrada em log e isolada (savepoint): NUNCA desfaz nem recusa a ação já executada.
+    """
+    if name in _observers:
+        raise ValueError(f"observador duplicado: {name}")
+    _observers[name] = observer
+
+
+def unregister_action_observer(name: str) -> None:
+    _observers.pop(name, None)
+
+
+def clear_action_observers() -> None:       # para testes
+    _observers.clear()
+
+
+def action_observer_names() -> List[str]:
+    return sorted(_observers)
+
+
+def _notify_observers(player_id: int, action_id: str, result: ActionResult) -> None:
+    for name in sorted(_observers):
+        try:
+            with transaction.atomic():
+                _observers[name](player_id, action_id, result)
+        except Exception:    # noqa: BLE001 - a ação já foi executada; o observador não pode derrubá-la
+            _log.exception("observador de ação %r falhou (player=%s action=%s)", name, player_id, action_id)
 
 
 # --- ações do próprio players (Trabalhar, Estudar, Lazer: 04 §2.2, §7) ---------
