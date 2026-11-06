@@ -4,6 +4,15 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-06 — P1.15a — fairness do processador da outbox, retenção decidida, documentação
+
+Revisão do Game Director sobre o PR #32 (sem merge, rebase ou force push; base inalterada; lote #12 + #14 independente).
+
+- **Starvation corrigido:** `process_pending` escolhia os `max_players` jogadores de menor id de evento, então jogadores com eventos problemáticos podiam ocupar todas as vagas para sempre. Agora: escalonamento **menos recentemente tentado primeiro** (`next_candidates`, ordem `(última falha NULL primeiro, menor id)` com o carimbo real `attempted_wall_at`, migração `0005`), rodízio entre jogadores com falha e reivindicação por jogador com `SKIP LOCKED` (vários workers não esperam nem repetem o jogador que outro trata). A falha continua pendente/retentável e bloqueia só os eventos posteriores do próprio jogador.
+- **Testes:** `FairnessTests` (inclui o cenário `max_players=2`: dois jogadores com falha + um saudável processado sem corrigir os primeiros; depois a falha sai e tudo é recuperado em ordem), e `OutboxFairnessConcurrencyTests` em PostgreSQL (vários workers com lote pequeno; jogador preso por outro processador é pulado).
+- **Retenção:** decisão do GD — eventos processados mantidos sem poda durante o Bot Test; pendentes/com falha nunca removidos por limpeza automática. Registrado em `design/14a` §3.6 que uma poda futura precisa preservar a auditoria `ACTIVITY_PROCESSED_NOT_REFLECTED`. Nada implementado.
+- **Passada imediata:** documentação corrigida — `transaction.on_commit()` a executa no mesmo fluxo síncrono após o commit (não é worker assíncrono); worker dedicado e tick são os mecanismos de segundo plano. `ACTIVITY_INLINE_PROCESSING` mantido como está.
+
 ## 2026-11-04 — P1.15a — outbox durável da atividade, créditos a receber detalhados, instrumentação de produção
 
 Decisões do Game Director de 2026-11-04 aplicadas no PR #32 (branch `dev/p1.15a-rankings-nucleo`; **sem merge**, sem rebase, sem force push). O lote #12 + #14 segue separado, aguardando autorização independente.

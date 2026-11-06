@@ -44,7 +44,10 @@ class ActivityEvent(models.Model):
     processed_at = models.BigIntegerField(null=True, blank=True)   # NULL = pendente
     attempts = models.PositiveIntegerField(default=0)           # tentativas de processamento que FALHARAM
     last_error = models.CharField(max_length=500, blank=True, default="")
-    last_attempt_at = models.BigIntegerField(null=True, blank=True)
+    last_attempt_at = models.BigIntegerField(null=True, blank=True)      # instante de JOGO da última tentativa que falhou
+    # Relógio REAL (não de jogo) da última tentativa que falhou: serve só ao escalonamento justo do processador
+    # (menos recentemente tentado primeiro). Metadado operacional; não é estado de jogo.
+    attempted_wall_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         indexes = [

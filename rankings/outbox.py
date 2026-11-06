@@ -10,8 +10,13 @@ sequência de atividade — não é um barramento de eventos.
   atomia    a atualização da sequência e a marcação `processed_at` acontecem no mesmo savepoint; reprocessar não duplica nada
             (`activity.record_action` ignora instantes não posteriores à última ação contada).
   falhas    deixam o evento pendente (`attempts`, `last_error`), sem desfazer a ação já confirmada; o próximo ciclo tenta de novo.
-Quem processa: tick do mundo (depois do commit), `manage.py process_activity_outbox` (worker dedicado, retomável após
-reinicialização) e uma passada imediata do próprio jogador após o commit da ação (melhor esforço).
+Quem processa: o tick do mundo (depois do commit) e `manage.py process_activity_outbox` (worker dedicado, retomável após
+reinicialização) são os mecanismos de processamento EM SEGUNDO PLANO. Além deles há a passada imediata do próprio jogador:
+`transaction.on_commit()` a executa no MESMO fluxo síncrono, logo depois do commit da ação e antes de a chamada retornar — não é
+um worker assíncrono e seu custo é pago por quem agiu (melhor esforço: falha só é registrada; o evento já está durável).
+Escalonamento justo (`next_candidates`): menos recentemente tentado primeiro, para que eventos com falha não ocupem as vagas do
+lote; `process_pending` pula (`skip_locked`) jogadores que outro processador está tratando. Eventos NUNCA são removidos por
+limpeza automática (decisão do GD, 2026-11-06: sem poda durante o Bot Test).
 """
 from __future__ import annotations
 
@@ -21,7 +26,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from django.db import transaction
-from django.db.models import F, Min
+from django.db.models import F, Max, Min
+from django.utils import timezone
 
 from core import clock as game_clock
 from core.instrument import QueryCounter
@@ -64,6 +70,7 @@ class PlayerResult:
 @dataclass
 class RunSummary:
     players: int = 0
+    skipped_locked: int = 0     # jogadores que outro processador estava tratando
     events_processed: int = 0
     events_failed: int = 0
     players_with_failures: int = 0
@@ -80,18 +87,24 @@ class RunSummary:
         return d
 
 
-def process_player(player_id: int, *, limit: Optional[int] = None, now: Optional[int] = None) -> PlayerResult:
+def process_player(player_id: int, *, limit: Optional[int] = None, now: Optional[int] = None,
+                   skip_if_locked: bool = False) -> Optional[PlayerResult]:
     """
     Processa os eventos pendentes do jogador em ordem. Toda a passada roda sob a trava da linha do jogador, lida DEPOIS de
     obtida a trava (o que outro processador confirmou nesse meio-tempo já aparece como processado). Cada evento tem o seu
     savepoint: a falha de um deixa os anteriores confirmados e PARA o jogador (sem pular para um evento posterior).
+    `skip_if_locked` (usado pelo worker): se OUTRO processador (ou uma ação do jogador) segura a trava, devolve `None` em vez de
+    esperar — o outro já cuida do jogador e o worker segue para o próximo candidato.
     """
     limit = params.ACTIVITY_OUTBOX_PLAYER_BATCH if limit is None else limit
     now = game_clock.now() if now is None else now
     out = PlayerResult(player_id)
     with transaction.atomic():
-        if not Player.objects.select_for_update().filter(pk=player_id).exists():
-            return out
+        locked = Player.objects.select_for_update(skip_locked=skip_if_locked).filter(pk=player_id).values_list("pk", flat=True).first()
+        if locked is None:
+            if skip_if_locked and Player.objects.filter(pk=player_id).exists():
+                return None                                          # existe, mas está travado por outro
+            return out                                               # jogador inexistente
         pending = list(ActivityEvent.objects.filter(player_id=player_id, processed_at__isnull=True)
                        .order_by("at", "id")[:limit])
         for event in pending:
@@ -104,7 +117,8 @@ def process_player(player_id: int, *, limit: Optional[int] = None, now: Optional
                         raise RuntimeError(f"evento {event.pk} já estava processado")
             except Exception as exc:    # noqa: BLE001 - a ação já foi confirmada; o evento fica pendente para retry
                 ActivityEvent.objects.filter(pk=event.pk).update(
-                    attempts=F("attempts") + 1, last_error=f"{type(exc).__name__}: {exc}"[:500], last_attempt_at=now)
+                    attempts=F("attempts") + 1, last_error=f"{type(exc).__name__}: {exc}"[:500], last_attempt_at=now,
+                    attempted_wall_at=timezone.now())
                 _log.warning("outbox de atividade: evento %s falhou (%s); jogador %s fica parado nele", event.pk, exc, player_id)
                 out.failed = 1
                 break
@@ -118,10 +132,27 @@ def pending_count() -> int:
     return ActivityEvent.objects.filter(processed_at__isnull=True).count()
 
 
+def next_candidates(exclude: set, limit: int) -> List[int]:
+    """
+    Escalonamento JUSTO: jogadores com evento pendente, **menos recentemente tentado primeiro** — quem nunca falhou (nenhuma
+    tentativa registrada: `NULL`) vem antes de quem já falhou, desempatando pelo evento pendente mais antigo; entre os que já
+    falharam, o de tentativa mais antiga vem primeiro (rodízio). Assim jogadores com eventos problemáticos não ocupam as vagas do
+    lote indefinidamente nem impedem os saudáveis de progredir. Sem estado compartilhado: o estado do rodízio está nas linhas dos
+    próprios eventos, então vários workers concordam sem coordenação.
+    """
+    qs = ActivityEvent.objects.filter(processed_at__isnull=True)
+    if exclude:
+        qs = qs.exclude(player_id__in=exclude)
+    return list(qs.values("player_id").annotate(first=Min("id"), last_try=Max("attempted_wall_at"))
+                .order_by(F("last_try").asc(nulls_first=True), "first").values_list("player_id", flat=True)[:limit])
+
+
 def process_pending(*, max_players: Optional[int] = None, now: Optional[int] = None) -> RunSummary:
     """
-    Uma passada do worker: jogadores com eventos pendentes, do evento pendente mais antigo para o mais novo. Cada jogador em
-    transação própria (nada de uma transação gigante). Seguro com vários workers ao mesmo tempo (trava por jogador).
+    Uma passada do worker: até `max_players` jogadores com evento pendente, em ordem justa (`next_candidates`). Cada jogador em
+    transação própria. Seguro com vários workers ao mesmo tempo: um jogador que outro processador está tratando é PULADO (não
+    espera, não repete a tentativa) e a vaga é preenchida pelo próximo candidato. Jogadores que falham nesta passada contam
+    para o limite e não são retentados nela (o rodízio os leva ao fim da fila). Nunca remove eventos.
     """
     max_players = params.ACTIVITY_OUTBOX_MAX_PLAYERS if max_players is None else max_players
     now = game_clock.now() if now is None else now
@@ -129,15 +160,22 @@ def process_pending(*, max_players: Optional[int] = None, now: Optional[int] = N
     started = time.perf_counter()
     with QueryCounter() as q:
         summary.pending_before = pending_count()
-        players = list(ActivityEvent.objects.filter(processed_at__isnull=True).values("player_id")
-                       .annotate(first=Min("id")).order_by("first").values_list("player_id", flat=True)[:max_players])
-        for pid in players:
-            r = process_player(pid, now=now)
-            summary.players += 1
-            summary.events_processed += r.processed
-            summary.events_failed += r.failed
-            summary.players_with_failures += 1 if r.failed else 0
-            summary.per_player.append(r)
+        seen: set = set()
+        while summary.players < max_players:
+            batch = next_candidates(seen, max_players - summary.players)
+            if not batch:
+                break
+            for pid in batch:
+                seen.add(pid)
+                r = process_player(pid, now=now, skip_if_locked=True)
+                if r is None:
+                    summary.skipped_locked += 1
+                    continue
+                summary.players += 1
+                summary.events_processed += r.processed
+                summary.events_failed += r.failed
+                summary.players_with_failures += 1 if r.failed else 0
+                summary.per_player.append(r)
         summary.pending_after = pending_count()
     summary.duration_ms = round((time.perf_counter() - started) * 1000, 2)
     summary.queries, summary.db_ms = q.count, round(q.db_seconds * 1000, 2)

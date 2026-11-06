@@ -418,3 +418,109 @@ class OutboxConcurrencyTests(TransactionTestCase):
         outbox.process_pending()
         self.assertEqual(ActivityEvent.objects.filter(processed_at__isnull=True).count(), 0)
         self.assertEqual(ActivityStreak.objects.get(player=p).last_action_at, T0)
+
+
+class OutboxFairnessConcurrencyTests(TransactionTestCase):
+    """
+    Escalonamento justo com VÁRIOS workers (decisão do GD, 2026-11-06): jogadores problemáticos não ocupam as vagas do lote e não
+    travam os demais; um jogador que outro processador segura é pulado (não esperado, não retentado).
+    """
+
+    setUp = OutboxConcurrencyTests.setUp
+    _run = OutboxConcurrencyTests._run
+    _seed = OutboxConcurrencyTests._seed
+    _logging_record_action = OutboxConcurrencyTests._logging_record_action
+
+    def _poison(self, bad_ids):
+        original = activity.record_action
+
+        def wrapper(pid, at=None):
+            with self.calls_lock:
+                self.calls.append(("start", pid, at))
+            if pid in bad_ids:
+                raise RuntimeError("evento problemático")
+            return original(pid, at)
+        return wrapper
+
+    @unittest.skipUnless(ON_PG, "vários processadores disputando travas de linha: só tem efeito em PostgreSQL")
+    def test_workers_with_small_batches_let_healthy_players_progress_past_failing_ones(self):
+        from unittest import mock
+        from rankings import outbox
+        from rankings.models import ActivityEvent
+        bad = {self.players[0].pk, self.players[1].pk}                     # os de menor id de evento: os que fariam o lote passar fome o lote
+        for p in self.players:
+            self._seed(p, [T0 - 3 * HOUR, T0 - 2 * HOUR, T0 - HOUR])
+        with mock.patch.object(activity, "record_action", self._poison(bad)), mock.patch.object(outbox._log, "warning"):
+            for _ in range(2):
+                self._run([lambda: outbox.process_pending(max_players=2) for _ in range(3)])      # 3 workers, lote de 2
+        healthy = [p for p in self.players if p.pk not in bad]
+        for p in healthy:                                                   # os saudáveis terminaram apesar dos problemáticos
+            st = ActivityStreak.objects.get(player=p)
+            self.assertEqual((st.current_start, st.last_action_at), (T0 - 3 * HOUR, T0 - HOUR))
+        for pid in bad:                                                     # os problemáticos seguem pendentes e bloqueados
+            pend = ActivityEvent.objects.filter(player_id=pid, processed_at__isnull=True)
+            self.assertEqual(pend.count(), 3)
+            self.assertGreaterEqual(pend.order_by("at", "id").first().attempts, 1)
+            self.assertEqual(pend.exclude(attempts=0).count(), 1)           # só o primeiro foi tentado: os posteriores seguem bloqueados
+        starts = [(pid, at) for kind, pid, at in self.calls if kind == "start" and pid not in bad]
+        for p in healthy:
+            seq = [at for pid, at in starts if pid == p.pk]
+            self.assertEqual(seq, [T0 - 3 * HOUR, T0 - 2 * HOUR, T0 - HOUR])           # cada evento uma vez, em ordem
+        # a falha é removida: tudo é recuperado em ordem, ainda com lote pequeno e vários workers
+        self.calls.clear()
+        with mock.patch.object(activity, "record_action", self._logging_record_action()):
+            for _ in range(3):
+                self._run([lambda: outbox.process_pending(max_players=2) for _ in range(3)])
+        self.assertEqual(ActivityEvent.objects.filter(processed_at__isnull=True).count(), 0)
+        starts = [(pid, at) for kind, pid, at in self.calls if kind == "start"]
+        for pid in bad:
+            seq = [at for p, at in starts if p == pid]
+            self.assertEqual(seq, [T0 - 3 * HOUR, T0 - 2 * HOUR, T0 - HOUR])
+            self.assertEqual(ActivityStreak.objects.get(player_id=pid).last_action_at, T0 - HOUR)
+        self.assertTrue(audit.audit_rankings(at=T0)["ok"], audit.audit_rankings(at=T0)["findings"])
+
+    @unittest.skipUnless(ON_PG, "SELECT ... FOR UPDATE SKIP LOCKED: só PostgreSQL")
+    def test_a_player_held_by_another_processor_is_skipped_not_waited_for(self):
+        from unittest import mock
+        from core.clock import use_clock
+        from rankings import outbox
+        held = self.players[0]
+        for p in self.players:
+            self._seed(p, [T0 - HOUR])
+        in_first, release = threading.Event(), threading.Event()
+        original = activity.record_action
+
+        def hold_first(pid, at=None):
+            if pid == held.pk and not in_first.is_set():
+                in_first.set()
+                release.wait(timeout=20)
+            return original(pid, at)
+        errors = []
+
+        def holder():
+            try:
+                with use_clock(self.clk):
+                    outbox.process_player(held.pk)
+            except Exception as exc:    # noqa: BLE001
+                errors.append(exc)
+            finally:
+                close_old_connections()
+                connection.close()
+
+        with mock.patch.object(activity, "record_action", hold_first):
+            a = threading.Thread(target=holder)
+            try:
+                a.start()
+                self.assertTrue(in_first.wait(timeout=20))
+                started = time.perf_counter()
+                summary = outbox.process_pending(max_players=4)         # o jogador `held` está preso por A
+                waited = time.perf_counter() - started
+            finally:
+                release.set()
+                a.join(timeout=30)
+        self.assertEqual(errors, [])
+        self.assertLess(waited, 5)                                      # não esperou A terminar (A segurava até ser liberado)
+        self.assertEqual(summary.skipped_locked, 1)
+        self.assertEqual((summary.players, summary.events_processed), (3, 3))
+        self.assertEqual(ActivityStreak.objects.count(), 4)             # A terminou o seu depois de liberado
+        self.assertTrue(audit.audit_rankings(at=T0)["ok"])

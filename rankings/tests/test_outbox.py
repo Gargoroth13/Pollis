@@ -83,7 +83,7 @@ class RecordingInTheActionTransactionTests(RankingsTestCase):
         a, b = ActivityEvent.objects.order_by("id")
         self.assertEqual((a.action_id, a.at, a.attempts), (b.action_id, b.at, b.attempts))
         self.assertEqual({f.name for f in ActivityEvent._meta.get_fields()},
-                         {"id", "player", "action_id", "at", "processed_at", "attempts", "last_error", "last_attempt_at"})
+                         {"id", "player", "action_id", "at", "processed_at", "attempts", "last_error", "last_attempt_at", "attempted_wall_at"})
         self.assertIn(wiring.RECORDER_ACTIVITY, registry.action_recorder_names())
 
     def test_login_and_page_views_do_not_write_events(self):
@@ -283,6 +283,114 @@ class ProcessingTests(RankingsTestCase):
 
     def test_unknown_player_is_ignored(self):
         self.assertEqual(outbox.process_player(10**9).processed, 0)
+
+
+class FairnessTests(RankingsTestCase):
+    """
+    Escalonamento justo (decisão do GD, 2026-11-06): eventos com falha não podem ocupar as vagas do lote para sempre. A falha
+    continua segurando só o PRÓPRIO jogador; jogadores saudáveis além do limite progridem; tudo é recuperado em ordem depois.
+    """
+
+    def poison(self, *player_ids):
+        original = activity.record_action
+        ids = set(player_ids)
+
+        def flaky(pid, at=None):
+            if pid in ids:
+                raise RuntimeError("evento problemático")
+            return original(pid, at)
+        return mock.patch.object(activity, "record_action", flaky)
+
+    def quiet(self):
+        return mock.patch.object(outbox._log, "warning")
+
+    def test_two_failing_players_do_not_starve_a_healthy_third_with_max_players_2_and_everything_recovers_in_order(self):
+        a, b, c = self.player, self.new_player("b"), self.new_player("c")
+        for p in (a, b, c):
+            seed_events(p, [T0 - 3 * HOUR, T0 - 2 * HOUR, T0 - HOUR])           # a e b têm os menores ids de evento
+        with self.poison(a.pk, b.pk), self.quiet():
+            s1 = outbox.process_pending(max_players=2)
+            self.assertEqual((s1.players, s1.events_processed, s1.events_failed), (2, 0, 2))      # só a e b tentados
+            self.assertFalse(ActivityStreak.objects.filter(player=c).exists())
+            s2 = outbox.process_pending(max_players=2)                                              # c vem ANTES de a e b
+        self.assertEqual(s2.events_processed, 3)
+        st = ActivityStreak.objects.get(player=c)
+        self.assertEqual((st.current_start, st.last_action_at), (T0 - 3 * HOUR, T0 - HOUR))
+        for p in (a, b):                                                                           # a falha continua ali, bloqueando só o dono
+            pend = list(ActivityEvent.objects.filter(player=p, processed_at__isnull=True).order_by("at", "id"))
+            self.assertEqual(len(pend), 3)
+            self.assertGreaterEqual(pend[0].attempts, 1)
+            self.assertEqual([e.attempts for e in pend[1:]], [0, 0])                                # os posteriores nem foram tentados
+            self.assertFalse(ActivityStreak.objects.filter(player=p).exists())
+        # remove a falha: os eventos anteriores são recuperados, em ordem, sem precisar de ajuste manual
+        calls = []
+        original = activity.record_action
+        with mock.patch.object(activity, "record_action", lambda pid, at=None: (calls.append((pid, at)), original(pid, at))[1]):
+            for _ in range(3):
+                outbox.process_pending(max_players=2)
+        self.assertEqual(ActivityEvent.objects.filter(processed_at__isnull=True).count(), 0)
+        for p in (a, b):
+            seq = [at for pid, at in calls if pid == p.pk]
+            self.assertEqual(seq, [T0 - 3 * HOUR, T0 - 2 * HOUR, T0 - HOUR])
+            st = ActivityStreak.objects.get(player=p)
+            self.assertEqual((st.current_start, st.last_action_at), (T0 - 3 * HOUR, T0 - HOUR))
+        self.assertTrue(audit.audit_rankings(at=T0)["ok"])
+
+    def test_failed_event_stays_pending_and_is_retried_and_nothing_is_ever_deleted(self):
+        seed_events(self.player, [T0 - HOUR, T0])
+        total = ActivityEvent.objects.count()
+        with self.poison(self.player.pk), self.quiet():
+            for _ in range(3):
+                outbox.process_pending()
+        self.assertEqual(ActivityEvent.objects.count(), total)                                     # sem limpeza automática
+        first = ActivityEvent.objects.order_by("at", "id").first()
+        self.assertEqual((first.processed_at, first.attempts), (None, 3))
+        outbox.process_pending()
+        self.assertEqual(ActivityEvent.objects.count(), total)
+        self.assertEqual(ActivityEvent.objects.filter(processed_at__isnull=True).count(), 0)
+
+    def test_candidates_are_never_attempted_first_then_oldest_attempt(self):
+        ps = [self.player] + [self.new_player(n) for n in "bcd"]
+        for p in ps:
+            seed_events(p, [T0 - HOUR])
+        ids = [p.pk for p in ps]
+        self.assertEqual(outbox.next_candidates(set(), 10), ids)                                    # ninguém tentado: pelo id do evento
+        with self.poison(ids[0]), self.quiet():
+            outbox.process_pending(max_players=1)                                                   # falha em ps[0]
+        self.assertEqual(outbox.next_candidates(set(), 10), [ids[1], ids[2], ids[3], ids[0]])      # quem falhou vai para o fim
+        with self.poison(ids[0], ids[1]), self.quiet():
+            outbox.process_pending(max_players=2)                                                   # ps[1] falha; ps[2] é processado
+        self.assertEqual(outbox.next_candidates(set(), 10), [ids[3], ids[0], ids[1]])              # nunca tentado, depois a tentativa mais antiga
+        self.assertEqual(outbox.next_candidates({ids[3]}, 10), [ids[0], ids[1]])                   # `exclude` respeitado
+        self.assertEqual(outbox.next_candidates(set(), 1), [ids[3]])                               # limite respeitado
+
+    def test_rotation_among_failing_players_gives_everyone_attempts(self):
+        ps = [self.player] + [self.new_player(n) for n in "bc"]
+        for p in ps:
+            seed_events(p, [T0 - HOUR])
+        with self.poison(*[p.pk for p in ps]), self.quiet():
+            for _ in range(3):
+                outbox.process_pending(max_players=2)
+        attempts = sorted(ActivityEvent.objects.values_list("attempts", flat=True))
+        self.assertEqual(attempts, [2, 2, 2])                                                      # rodízio: ninguém é esquecido
+
+    def test_player_with_old_failure_and_fresh_later_event_counts_as_already_attempted(self):
+        other = self.new_player("o")
+        seed_events(self.player, [T0 - 3 * HOUR])
+        seed_events(other, [T0 - 2 * HOUR])
+        with self.poison(self.player.pk), self.quiet():
+            outbox.process_pending(max_players=1)                                                  # falha no primeiro jogador
+        seed_events(self.player, [T0 - HOUR])                                                      # evento novo (nunca tentado) dele
+        self.assertEqual(outbox.next_candidates(set(), 2), [other.pk, self.player.pk])
+
+    def test_a_locked_player_is_skipped_and_the_slot_goes_to_the_next_candidate(self):
+        """Em SQLite não há trava de linha; o caminho é exercitado só no teste de concorrência PostgreSQL."""
+        seed_events(self.player, [T0])
+        r = outbox.process_player(self.player.pk, skip_if_locked=True)
+        self.assertEqual(r.processed, 1)                                                           # sem trava alheia: processa normalmente
+
+    def test_summary_reports_skipped_locked(self):
+        self.assertEqual(outbox.process_pending().to_dict()["skipped_locked"], 0)
 
 
 class ImmediatePassAndTickTests(RankingsTestCase):
