@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "contracts",  # contratos: fornecimento, empréstimo e o motor dos demais tipos (design/18)
     "properties",  # imóveis: propriedade de lotes, leilões, venda e obra com lote (design/10)
     "bots",  # Bot Test: infraestrutura (design/21; sem modelo neural)
+    "history",  # Histórico do Mundo: notícias automáticas, marcos e arquivo permanente (design/12)
     "legislation",  # processo legislativo: propostas, Câmara, sanção, veto, vigor (design/07)
     "budget",  # orçamento público: repasses, plano municipal, pisos, visão fiscal (design/09)
 ]

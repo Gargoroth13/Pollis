@@ -6,6 +6,7 @@ from players.models import Player
 from players.services import ActionResult
 
 from .constants import EventKind
+from . import news
 from .models import Proposal, ProposalEvent
 
 
@@ -22,7 +23,9 @@ def player_exists(player_id: Any) -> bool:
 
 
 def event(proposal: Proposal, ev: EventKind, at: int, actor_id: Optional[int] = None, **data) -> ProposalEvent:
-    return ProposalEvent.objects.create(proposal=proposal, kind=ev.value, at=at, actor_id=actor_id, data=data)
+    created = ProposalEvent.objects.create(proposal=proposal, kind=ev.value, at=at, actor_id=actor_id, data=data)
+    news.on_event(proposal, ev, at, data)                 # Histórico do Mundo (design/12 §12.14): só leis marcadas como noticiáveis no catálogo
+    return created
 
 
 def keys_refusal(target: Any, required: frozenset, optional: frozenset = frozenset()) -> Optional[ActionResult]:
