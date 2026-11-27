@@ -232,7 +232,7 @@ Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos 
 
 > **Herdado do P1.03:** Trabalho sem emprego continua permitido hoje (P0.04). Empresas deve acrescentar emprego/contexto de atividade via provedor de bloqueio e `ActivityContext`, usando o Action Registry existente (sem caminho paralelo). Decisão do GD (2026-10-12) em `CHANGELOG_DEV.md`.
 
-> **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FINISHINGS_UNDEFINED`, `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. A produção deve consultar `catalog.services.check_production_ready` e **recusar** enquanto houver `UNSPECIFIED_DESIGN_VALUE`. Ver `CHANGELOG_DEV.md` (2026-10-11).
+> **Pendências herdadas do P1.01 — conferidas em 2026-11-27:** `GAP_FINISHINGS_UNDEFINED` (Q7), `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED` e `GAP_COMMERCIAL_USES_UNDECLARED` foram **resolvidas na P0.02** (decisões Q3–Q8 do GD, 2026-10-14, com valores `[PROV]` calibráveis; `CHANGELOG_DEV.md`, 2026-10-15) e saíram de `KNOWN_GAPS`. Segue como limitação conhecida aprovada (Q10) `GAP_OPERATIONAL_MATERIALS_UNDEFINED`. A produção continua consultando `catalog.services.check_production_ready`, que recusa enquanto houver `UNSPECIFIED_DESIGN_VALUE`.
 
 **Decisão do GD (2026-10-15):** os produtos militares do Exército são produzidos por empresas **Industrial / Produção** (usar `catalog.services.producer_sector_of`); permanecem distintos dos produtos improvisados da milícia.
 
@@ -242,7 +242,7 @@ Implementar `02` utilizando `22` como fonte de produtos/receitas.
 
 **Depende de P0.07.**
 
-> **Pendências herdadas do P1.01:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED` (`CHANGELOG_DEV.md`, 2026-10-11).
+> **Pendências herdadas do P1.01 — conferidas em 2026-11-27:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED` e `GAP_COMMERCIAL_USES_UNDECLARED` foram resolvidas na P0.02 (Q3–Q8; preço-base `[PROV]` como referência, não preço de mercado). O mecanismo de preço, ofertas e taxas do Mercado segue em aberto (`design/17a` §2).
 
 Implementar mercado e estatísticas de `17`.
 
@@ -256,7 +256,7 @@ Implementar `03`.
 
 > **Herdado do P0.06/P0.06.1:** a localização do jogador (lote atual) e a viagem já existem (`travel`). Este bloco precisa do vínculo de **residência/moradia** (`05` "Residência ativa"), distinto da localização, de que dependem moradia/QoL estrutural. Ver `CHANGELOG_DEV.md` (2026-10-06).
 
-> **Pendência herdada do P1.01:** `GAP_FINISHINGS_UNDEFINED` (Acabamentos da Construtora; `CHANGELOG_DEV.md`, 2026-10-11).
+> **Pendência herdada do P1.01 — conferida em 2026-11-27:** `GAP_FINISHINGS_UNDEFINED` foi resolvida na P0.02 (Q7: não existe produto Acabamentos; a Construtora usa Tábuas e Vidro diretamente).
 
 Implementar `10`.
 
