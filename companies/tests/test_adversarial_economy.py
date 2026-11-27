@@ -447,6 +447,21 @@ class LaborConcentrationTests(AdversarialBase):
         self.assertEqual(self.firm_money(), 0)                          # e nenhuma exigência de caixa para isso
         self.clean()
 
+    def test_the_stock_capacity_of_the_star_is_a_real_brake_on_how_much_labor_can_be_used(self):
+        """Freio estrutural que JÁ existe: com o estoque cheio (500 × estrela) o Trabalho de produção é bloqueado antes de gastar Energia,
+        com ou sem funcionários demais. Sem canal de venda (P1.05b) a produção de uma empresa 1★ para em poucos dias."""
+        company = Company.objects.get(pk=self.firm)
+        room = int(stock.capacity_of(company.stars).value) - stock.used_of(self.firm)
+        moved = stock.apply_locked(company, catalog.get_product("flour"), room, StockOperation.PURCHASE, origin="test",
+                                   destination=f"company:{self.firm}", key="adv:fill", reference_kind="t", reference_id="fill",
+                                   at=self.clk.now(), quality=D(1))
+        self.assertTrue(moved.ok, moved)
+        self.refill(self.worker)
+        res = registry.execute_action(self.worker.pk, "work", None)
+        note("S8.stock_full_brake", capacity=int(stock.capacity_of(company.stars).value), used=stock.used_of(self.firm), code=res.code)
+        self.assertEqual((res.ok, res.code), (False, "STOCK_FULL"))
+        self.assertEqual(WorkWage.objects.count(), 0)
+
     def test_a_player_still_has_one_job_and_cannot_be_hired_twice(self):
         other = self.found(self.third, "industrial", "Rival", 0)
         pos = jobs.open_position(self.third.pk, other, "worker", 1_000, {}).detail["position"]
