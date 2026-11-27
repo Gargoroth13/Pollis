@@ -202,7 +202,7 @@ Implementar a estrutura central de `22`.
 
 **Entregue:** app `catalog` (`Product`, `Recipe`, `RecipeInput`, `FoodProfile`; ids estáveis; `sync_catalog`/`check_catalog`; consultas derivadas; integridade com erro x pendência de design). O `22` atual é **incompleto**: só entrou o que ele declara; lacunas e pendências em `CHANGELOG_DEV.md` (2026-10-11). Valores não especificados (quantidades, rendimento, Nutrição, intensidade de QoL, estrelas das Matrizes) ficam `NULL`, **distintos de zero**, e quem os usa recusa com `UNSPECIFIED_DESIGN_VALUE`.
 
-## [x] P1.02 — Inventário  *(implementado em 2026-10-18, branch `dev/p1.02-inventario`; PR #12 aberto; aguarda revisão e autorização do GD)*
+## [x] P1.02 — Inventário  *(implementado em 2026-10-18; PR #12 mergeado em `main` em 2026-11-27)*
 
 **Depende de P0.07.**
 
@@ -210,7 +210,7 @@ Implementar a estrutura central de `22`.
 
 Implementar `05`.
 
-## [x] P1.02a — Auto-consumo de alimentos  *(implementado em 2026-10-19, branch `dev/p1.02a-auto-consumo`, PR empilhado sobre o #12; aguarda revisão e autorização do GD; obrigatório no primeiro Bot Test; regra em `design/04` §16)*
+## [x] P1.02a — Auto-consumo de alimentos  *(implementado em 2026-10-19; PR #14 mergeado em `main` em 2026-11-27; obrigatório no primeiro Bot Test; regra em `design/04` §16)*
 
 Implementar o §16 integralmente: o jogador habilita o Auto-consumo no Inventário e escolhe um alimento preferido; quando `Nutrição < 10`, durante o processamento lazy, o sistema consome automaticamente (1º alimento preferido, se houver; 2º o alimento disponível de menor ganho de Nutrição), repete enquanto Nutrição < 10 e houver alimento elegível, para ao atingir/ultrapassar 10, não faz nada sem alimento elegível, usa exatamente as regras do consumo manual (sem bônus) e o efeito de Comida substitui o anterior. Sem verificação contínua por jogador.
 
@@ -232,7 +232,7 @@ Criar registro compartilhado das ações de jogo, com requisitos, custos, alvos 
 
 > **Herdado do P1.03:** Trabalho sem emprego continua permitido hoje (P0.04). Empresas deve acrescentar emprego/contexto de atividade via provedor de bloqueio e `ActivityContext`, usando o Action Registry existente (sem caminho paralelo). Decisão do GD (2026-10-12) em `CHANGELOG_DEV.md`.
 
-> **Pendências herdadas do P1.01 (decisões do GD antes de implementar; consultar antes de escolher `[PROV]`):** `GAP_FINISHINGS_UNDEFINED`, `GAP_OPERATIONAL_MATERIALS_UNDEFINED`, `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED`. A produção deve consultar `catalog.services.check_production_ready` e **recusar** enquanto houver `UNSPECIFIED_DESIGN_VALUE`. Ver `CHANGELOG_DEV.md` (2026-10-11).
+> **Pendências herdadas do P1.01 — conferidas em 2026-11-27:** `GAP_FINISHINGS_UNDEFINED` (Q7), `GAP_MATRIZ_STARS_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED` e `GAP_COMMERCIAL_USES_UNDECLARED` foram **resolvidas na P0.02** (decisões Q3–Q8 do GD, 2026-10-14, com valores `[PROV]` calibráveis; `CHANGELOG_DEV.md`, 2026-10-15) e saíram de `KNOWN_GAPS`. Segue como limitação conhecida aprovada (Q10) `GAP_OPERATIONAL_MATERIALS_UNDEFINED`. A produção continua consultando `catalog.services.check_production_ready`, que recusa enquanto houver `UNSPECIFIED_DESIGN_VALUE`.
 
 **Decisão do GD (2026-10-15):** os produtos militares do Exército são produzidos por empresas **Industrial / Produção** (usar `catalog.services.producer_sector_of`); permanecem distintos dos produtos improvisados da milícia.
 
@@ -242,7 +242,7 @@ Implementar `02` utilizando `22` como fonte de produtos/receitas.
 
 **Depende de P0.07.**
 
-> **Pendências herdadas do P1.01:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED`, `GAP_COMMERCIAL_USES_UNDECLARED` (`CHANGELOG_DEV.md`, 2026-10-11).
+> **Pendências herdadas do P1.01 — conferidas em 2026-11-27:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED` e `GAP_COMMERCIAL_USES_UNDECLARED` foram resolvidas na P0.02 (Q3–Q8; preço-base `[PROV]` como referência, não preço de mercado). O mecanismo de preço, ofertas e taxas do Mercado segue em aberto (seis lacunas em `design/17a` §2, proposta que existe só no PR #20, ainda fora da `main`).
 
 Implementar mercado e estatísticas de `17`.
 
@@ -256,7 +256,7 @@ Implementar `03`.
 
 > **Herdado do P0.06/P0.06.1:** a localização do jogador (lote atual) e a viagem já existem (`travel`). Este bloco precisa do vínculo de **residência/moradia** (`05` "Residência ativa"), distinto da localização, de que dependem moradia/QoL estrutural. Ver `CHANGELOG_DEV.md` (2026-10-06).
 
-> **Pendência herdada do P1.01:** `GAP_FINISHINGS_UNDEFINED` (Acabamentos da Construtora; `CHANGELOG_DEV.md`, 2026-10-11).
+> **Pendência herdada do P1.01 — conferida em 2026-11-27:** `GAP_FINISHINGS_UNDEFINED` foi resolvida na P0.02 (Q7: não existe produto Acabamentos; a Construtora usa Tábuas e Vidro diretamente).
 
 Implementar `10`.
 
@@ -304,7 +304,7 @@ Implementar `12`.
 
 ## [~] P1.15 — Rankings
 
-Implementar `14`. Fatia 1 (P1.15a) implementada em PR independente sobre a `main`. Restam: fatia 2 (empresa/empregador/produção/recorde de empresa, após #15–#17), 3 (escola, #21), 4 (organização, P1.17), 5 (recorde presidencial, P1.11) A sequência de atividade usa outbox durável (implementada no PR #32; eventos processados mantidos sem poda durante o Bot Test — decisão do GD; reavaliar após as medições, preservando a auditoria `ACTIVITY_PROCESSED_NOT_REFLECTED`). QoL: implementada por snapshots (PR #32).
+Implementar `14`. Fatia 1 (P1.15a) implementada e **integrada na `main`** (PR #32, 2026-11-27); as fatias 2–5 continuam pendentes. Restam: fatia 2 (empresa/empregador/produção/recorde de empresa, após #15–#17), 3 (escola, #21), 4 (organização, P1.17), 5 (recorde presidencial, P1.11) A sequência de atividade usa outbox durável (implementada e integrada, PR #32; eventos processados mantidos sem poda durante o Bot Test — decisão do GD; reavaliar após as medições, preservando a auditoria `ACTIVITY_PROCESSED_NOT_REFLECTED`). QoL: implementada por snapshots (PR #32, integrada).
 
 ## [ ] P1.16 — Sitemap / UI shell
 
