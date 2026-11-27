@@ -806,3 +806,8 @@ E tem uma mudança de processo importante: **depois de salvar esse no GitHub, eu
 **nova decisão de design** → volta para nós, abrimos o documento novamente como `REVIEW`.
 
 Isso evita exatamente o retrabalho que você estava tentando eliminar desde o começo.
+
+
+## Complemento de design — capacidade administrativa e insolvência (2026-11-27)
+
+As decisões aprovadas no [25 — Insolvência, Recuperação e Falência Empresarial](25-Insolvencia-Recuperacao-Falencia-REVIEW.md) complementam este documento: sem limite rígido geral de funcionários por estrela; capacidade administrativa com retornos decrescentes, remuneração preservada e limites específicos de suporte mantidos. O 25 define estados financeiros, proteções de contratação e patrimônio, prioridade de pagamentos, responsabilidade limitada, liquidação, cooldown e transferência de propriedade. Detalhes em REVIEW não autorizam implementação antecipada.

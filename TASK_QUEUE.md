@@ -426,3 +426,8 @@ Ajustar arquitetura, recompensa, exploração e memória com base nos dados reai
 - NPCs econômicos;
 - sistemas judiciais completos;
 - outras extensões explicitamente marcadas como FUTURO nos documentos.
+
+
+## [ ] P1 — Capacidade administrativa e insolvência empresarial (design 25, REVIEW)
+
+Escopo do primeiro Bot Test: retornos decrescentes por capacidade administrativa, estados financeiros, proteção contra exploração de salários pendentes, recuperação, falência, liquidação e cooldown. Dependências: Empresas, Ledger, Contratos, Mercado, Imóveis, Action Registry e ticks; integrações com Rankings e Histórico do Mundo. Fechar as pendências do 25 §25.8 (as decisões F1–F10 do §25.7 já estão aprovadas) com o GD antes de implementar as partes afetadas. Não interromper a auditoria e consolidação dos PRs existentes; definir posição exata na fila após a análise de dependências. Não tratar como concluído.
