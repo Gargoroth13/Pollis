@@ -4,6 +4,17 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-27 — Auditoria adversarial da Onda 1 (Empresas) e correções A-02..A-05
+
+Registro documental; sem decisão de design nova. PR #36 (testes adversariais, empilhado sobre #19) e PR #37 (correções, empilhado sobre #36); **nenhum mergeado**.
+
+- **Achados confirmados por testes executados:** A-01 (empresa sem caixa contrata e produz acumulando obrigações) e A-06 (concentração de contratação/folha) — a resolução estrutural pertence ao `design/25` (PR #34, decisões aprovadas vinculantes); **sem solução temporária**. A-02 (bônus de suporte multiplicado por demissão/recontratação), A-03 (Trabalho aceito sem insumo sob concorrência), A-04 (salário novo à frente de obrigação mais antiga), A-05 (Dono em vaga remunerada própria) — corrigidos no #37, com os testes que demonstravam o exploit convertidos em regressões.
+- **Interpretações técnicas para confirmação do GD** (no #37): A-02 vale no Trabalhar (vagas usadas no dia contam mesmo após demissão; substituto contratável); A-04 é regra genérica de fila por competência para todo pagador `PENDING` (o `design/25` §25.4 a refina por categoria, o que exige emenda do `design/24` §24.9/R4 e decisão sobre naturezas, §24.8); A-05 proíbe só dentro da mesma empresa.
+- **Pontos de integração 24 × 25 registrados** (comentário no #34): categoria de prioridade da obrigação, lista fechada de naturezas, definição operacional de "obrigação vencida", episódio de inadimplência.
+- **Verificação do #37:** PostgreSQL 16 e SQLite, suíte completa 1505 OK (SQLite: 16 pulados que exigem PostgreSQL); concorrência 3× no PostgreSQL.
+
+---
+
 ## 2026-11-27 — Consolidação: merges de #12, #14 e #32 na `main`
 
 Autorização do Game Director (2026-11-27): merges na ordem #12 → #14 → #32, com merge commits, sem rebase nem force push.
