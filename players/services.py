@@ -55,12 +55,23 @@ def _locked(player_id: int) -> Player:
     return Player.objects.select_for_update().get(pk=player_id)
 
 
-def _catch_up(player: Player, now: int) -> None:
+def _catch_up(player: Player, now: int, *, access_hooks: bool = True) -> None:
     """Processa os ciclos de 10 min pendentes (lazy, 04 §22) e roda os hooks de acesso (On Access)."""
-    ctx = CycleContext(player, get_balance())
+    bal = get_balance()
+    ctx = CycleContext(player, bal)
+    # Checkpoints (hooks.register_checkpoint): o catch-up é dividido nos instantes pedidos para que o estado exato de cada um
+    # possa ser lido antes de qualquer mudança posterior. Dividir é NEUTRO para o jogo: só os CICLOS (que já são divisíveis)
+    # são processados até `t`; os hooks de acesso (Auto-consumo, chegada de viagem...) continuam rodando UMA vez, no acesso
+    # real (`now`), exatamente como sem checkpoints — quem lê um instante não pode alterar o resultado do jogo (design/14 §14.11).
+    for t, callbacks in hooks.checkpoints_between(player, player.processed_until, now):
+        result = catch_up(PLAYER, player.processed_until, ctx, until=t)
+        player.processed_until = max(player.processed_until, result.processed_until)
+        for callback in callbacks:
+            callback(player, t, bal)
     result = catch_up(PLAYER, player.processed_until, ctx, until=now)
     player.processed_until = max(player.processed_until, result.processed_until)
-    hooks.run_access_hooks(player, now)  # ex.: concluir o que venceu entre o último ciclo e `now`
+    if access_hooks:
+        hooks.run_access_hooks(player, now)  # ex.: concluir o que venceu entre o último ciclo e `now`
 
 
 @contextmanager
@@ -124,6 +135,23 @@ def create_player(user, *, now: Optional[int] = None) -> Player:
     rules.update_health_flags(player, now, bal)
     player.save()
     hooks.run_player_created_hooks(player, now)
+    return player
+
+
+@transaction.atomic
+def sync_player_until(player_id: int, until: int) -> Player:
+    """
+    Processa o jogador só até `until` (<= agora; instante passado/atual), idempotente. Para tarefas do mundo que precisam do
+    estado exato de um instante (snapshot de QoL): quem já foi processado além de `until` não é alterado.
+    NEUTRO para o jogo: só processa os ciclos até `until`; os hooks de acesso (Auto-consumo, viagem...) NÃO rodam aqui — rodam
+    no próximo acesso real do jogador, como se esta chamada não tivesse existido (design/14 §14.11).
+    """
+    if until > game_clock.now():
+        raise ValueError("`until` não pode estar no futuro")
+    player = _locked(player_id)
+    if player.processed_until <= until:
+        _catch_up(player, until, access_hooks=False)
+        player.save()
     return player
 
 

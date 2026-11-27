@@ -4,6 +4,44 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-27 — P1.15a — auditoria final de integração: checkpoints/varredura de QoL neutros para hooks de acesso
+
+Auditoria final do PR #32 antes do merge (sem merge, rebase ou force push). Achado **MAJOR** na integração com a #14 (Auto-consumo, hook de acesso): os checkpoints do catch-up e a varredura `sync_player_until` rodavam também os hooks de acesso nos instantes de referência, de modo que **a presença do ranking de QoL mudava o resultado do jogo** (probe com a #14 integrada, jogador ocioso 20 h com Auto-consumo e 40 sucos: sem o ranking, 2 consumos e internação em 1791300000; com o ranking, 12 consumos e internação em 1791306000), contra design/14 §14.11 ("o ranking não deve alterar QoL") e CLAUDE.md §12. Correção mínima: `_catch_up` divide só os **ciclos**; os hooks de acesso rodam uma vez, no acesso real; `sync_player_until` não roda hooks. Testes de regressão independentes da #14 (hook de acesso que altera o estado): chamadas só no acesso real e resultado idêntico com e sem checkpoints; ambos derrubam a mutação que restaura o comportamento antigo. Nenhuma decisão de design alterada.
+
+- **Integração (após os merges de #12 e #14):** teste permanente `rankings/tests/test_qol_autoconsumption.py` — dois jogadores idênticos, um levado com checkpoints e varredura das snapshots de QoL e outro sem; o estado final (Nutrição, saúde, hospitalização, estoque, movimentos de auto-consumo) tem de ser idêntico. Verificado por mutação (hooks de acesso nos checkpoints → 2 falhas).
+
+## 2026-11-06 — P1.15a — fairness do processador da outbox, retenção decidida, documentação
+
+Revisão do Game Director sobre o PR #32 (sem merge, rebase ou force push; base inalterada; lote #12 + #14 independente).
+
+- **Starvation corrigido:** `process_pending` escolhia os `max_players` jogadores de menor id de evento, então jogadores com eventos problemáticos podiam ocupar todas as vagas para sempre. Agora: escalonamento **menos recentemente tentado primeiro** (`next_candidates`, ordem `(última falha NULL primeiro, menor id)` com o carimbo real `attempted_wall_at`, migração `0005`), rodízio entre jogadores com falha e reivindicação por jogador com `SKIP LOCKED` (vários workers não esperam nem repetem o jogador que outro trata). A falha continua pendente/retentável e bloqueia só os eventos posteriores do próprio jogador.
+- **Testes:** `FairnessTests` (inclui o cenário `max_players=2`: dois jogadores com falha + um saudável processado sem corrigir os primeiros; depois a falha sai e tudo é recuperado em ordem), e `OutboxFairnessConcurrencyTests` em PostgreSQL (vários workers com lote pequeno; jogador preso por outro processador é pulado).
+- **Retenção:** decisão do GD — eventos processados mantidos sem poda durante o Bot Test; pendentes/com falha nunca removidos por limpeza automática. Registrado em `design/14a` §3.6 que uma poda futura precisa preservar a auditoria `ACTIVITY_PROCESSED_NOT_REFLECTED`. Nada implementado.
+- **Passada imediata:** documentação corrigida — `transaction.on_commit()` a executa no mesmo fluxo síncrono após o commit (não é worker assíncrono); worker dedicado e tick são os mecanismos de segundo plano. `ACTIVITY_INLINE_PROCESSING` mantido como está.
+
+## 2026-11-04 — P1.15a — outbox durável da atividade, créditos a receber detalhados, instrumentação de produção
+
+Decisões do Game Director de 2026-11-04 aplicadas no PR #32 (branch `dev/p1.15a-rankings-nucleo`; **sem merge**, sem rebase, sem force push). O lote #12 + #14 segue separado, aguardando autorização independente.
+
+- **Outbox de atividade (`ActivityEvent`, migração `0004`):** gravada **na mesma transação** da ação por um gravador transacional novo do Action Registry (`register_action_recorder`; falha do gravador desfaz a ação; recusas não geram evento; jogadores e bots pelo mesmo registro). Processador `rankings/outbox.py`: trava da linha do jogador, ordem `(at, id)`, savepoint por evento (sequência + marcação atômicas), falha deixa o evento pendente e para o jogador naquele evento, idempotente, recuperável. Passada imediata pós-commit, tick de 10 min do mundo e `manage.py process_activity_outbox`. O observer genérico permanece (integrações não críticas) e **não** é mais o caminho da atividade. Auditoria: pendentes, erros, mais antigo, atraso, evento processado não refletido.
+- **Créditos a receber:** valor **nominal** confirmado (sem solvência/provisão); detalhamento separa saldo, créditos a receber e obrigações a pagar, com regras condicionais de chave estável; página mostra as três linhas e a nota.
+- **Instrumentação:** `core/instrument.py` (`QueryCounter` via `connection.execute_wrapper`) substitui `CaptureQueriesContext` no runtime de QoL; teste garante que nenhum código de produção importa `django.test`.
+- **Teste de custo do registro** mantém o isolamento dos checkpoints; `CheckpointCostTests` mede o custo do checkpoint de QoL (0 / ≈8 / ≈14–15 consultas por 0 / 1 / 2+ referências atravessadas).
+- **Custos medidos** (PostgreSQL 16, `rankings/tests/bench_outbox.py`): gravador +1 consulta/+0,3 ms por ação; com passada imediata +11 consultas/+3,1 ms; processador ≈ 324 eventos/s (1 evento por jogador) e ≈ 581 eventos/s (atraso de 100 por jogador). Detalhes em `design/14a` §3.6.
+- **Riscos/pendências registrados:** sem poda dos eventos processados (cresce 1 linha por ação; política de retenção depende de decisão e medição); evento envenenado segura a sequência do jogador até correção (visível na auditoria); a ordem é por jogador, não global. `[PROV]`: `ACTIVITY_*` em `rankings/params.py`.
+
+## 2026-11-03 — P1.15a (fatia 1) — Rankings (app `rankings`)
+
+Implementa parte do `design/14` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p1.15a-rankings-nucleo`, **baseada diretamente na `main`** (independente da pilha). **Não mergeada; aguarda revisão e autorização do Game Director.** O `14` continua FINAL — BOT TEST até integrar e validar na `main`. Detalhes: `design/14a-rankings-PROPOSTA.md`.
+
+- **Ativos:** (1) patrimônio líquido, (4) QoL por snapshots, (7) contribuinte 30 dias, (10) conta mais antiga, (11) tempo ativo (sequência atual), (12) recorde de patrimônio, (14) recorde de tempo ativo; (15) interface do recorde presidencial, sem chamador.
+- **Pendentes de fonte (explícitos, sem dados inventados):** Maior empresa (2), produção (3), empregador (6), escola (8), organização (9), recorde de empresa (13). **Fora do Bot Test:** influência política (5).
+- **Decisões do GD (2026-11-03) aplicadas no PR #32:** (D1) snapshots de QoL a cada 1 h parametrizado, últimas 24 COMPLETE, COMPLETE só com todos os elegíveis no mesmo `reference_at`, INCOMPLETE preserva a última COMPLETE, métricas e testes de concorrência; (D2) patrimônio = saldo bruto + créditos a receber − obrigações a pagar; (D3) imposto retido sobre remuneração atribuído ao jogador beneficiário (por natureza + transação/referência), demais impostos à conta pagadora; (D4) tempo ativo ao vivo pela sequência corrente ativa (< 72 h), histórico pela melhor.
+- **Recorde de patrimônio confiável:** `ledger/hooks.py` (extensão pequena, sem alterar regra monetária): gancho de fim de operação, uma vez por operação completa, com o estado final, dentro da transação; `NetWorthCandidate` durável + retry horário; falha total desfaz a operação. A varredura diária virou reconciliação.
+- **Ganchos genéricos novos:** `players.registry.register_action_observer`, `players.hooks.register_checkpoint` (catch-up dividido só quando há checkpoint; equivalência testada) e `players.services.sync_player_until`.
+- **Limitação registrada:** a falha do observer de ação preserva a ação mas o log não recupera a ação perdida na sequência de atividade; solução durável (outbox) proposta em `design/14a` §3.6, aguardando o GD.
+- Nenhum dinheiro é criado ou movido pelos Rankings (testado).
+
 ## 2026-10-19 — P1.02a — Auto-consumo de alimentos (`design/04` §16)
 
 Implementa o §16 integralmente, sem alterar a mecânica. Branch `dev/p1.02a-auto-consumo`, **empilhada sobre o PR #12** (P1.02); PR próprio; **não mergeado**. Auto-consumo é obrigatório no primeiro Bot Test e a regra já estava definida; a separação em PR é de tarefa, não de escopo.
