@@ -4,6 +4,15 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-27 — Consolidação: merges de #12, #14 e #32 na `main`
+
+Autorização do Game Director (2026-11-27): merges na ordem #12 → #14 → #32, com merge commits, sem rebase nem force push.
+
+- **Ordem e commits na `main`:** `ee185c2` (PR #12), `4be2bf6` (PR #14, base religada de `dev/p1.02-inventario` para `main` após o #12, sem alterar commits), `b1ed17a` (PR #32). Para o #32 a `main` foi trazida à branch por merge commit (`798c521`); conflitos só de documentação e `INSTALLED_APPS`, resolvidos mantendo os dois lados; nenhum conflito de mecânica.
+- **Validação por etapa (PostgreSQL 16 e SQLite, suíte completa):** após #12: 998 testes; após #14: 1034; após #32 (merge commit): 1285; `main` final: **1287** (inclui o teste permanente `rankings/tests/test_qol_autoconsumption.py`). Todos OK (SQLite: 16 skipped, testes só de PostgreSQL; PostgreSQL: 0 skipped). `manage.py check` e `makemigrations --check`: sem pendências. Migrações aplicadas em banco novo (PostgreSQL e SQLite), `sync_catalog`/`check_catalog` (integridade OK; 2 pendências de design conhecidas do catálogo) e `audit_ledger`/`audit_inventory`/`audit_rankings` sem achados (em banco vazio; a cobertura das auditorias com dados está nos testes de cada app).
+- **Estado dos sistemas:** Inventário e Auto-consumo integrados; Rankings: só a fatia 1 de 5 (P1.15a). `design/14` continua **FINAL — BOT TEST** (implementação parcial; as demais categorias seguem explicitamente pendentes), por isso não foi marcado IMPLEMENTED.
+- **Decisão do GD registrada:** créditos a receber seguem valorados pelo valor bruto nominal; riscos residuais da auditoria do #32 aceitos para o primeiro Bot Test.
+
 ## 2026-11-27 — P1.15a — auditoria final de integração: checkpoints/varredura de QoL neutros para hooks de acesso
 
 Auditoria final do PR #32 antes do merge (sem merge, rebase ou force push). Achado **MAJOR** na integração com a #14 (Auto-consumo, hook de acesso): os checkpoints do catch-up e a varredura `sync_player_until` rodavam também os hooks de acesso nos instantes de referência, de modo que **a presença do ranking de QoL mudava o resultado do jogo** (probe com a #14 integrada, jogador ocioso 20 h com Auto-consumo e 40 sucos: sem o ranking, 2 consumos e internação em 1791300000; com o ranking, 12 consumos e internação em 1791306000), contra design/14 §14.11 ("o ranking não deve alterar QoL") e CLAUDE.md §12. Correção mínima: `_catch_up` divide só os **ciclos**; os hooks de acesso rodam uma vez, no acesso real; `sync_player_until` não roda hooks. Testes de regressão independentes da #14 (hook de acesso que altera o estado): chamadas só no acesso real e resultado idêntico com e sem checkpoints; ambos derrubam a mutação que restaura o comportamento antigo. Nenhuma decisão de design alterada.
