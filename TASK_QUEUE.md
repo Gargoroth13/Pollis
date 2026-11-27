@@ -242,7 +242,7 @@ Implementar `02` utilizando `22` como fonte de produtos/receitas.
 
 **Depende de P0.07.**
 
-> **Pendências herdadas do P1.01 — conferidas em 2026-11-27:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED` e `GAP_COMMERCIAL_USES_UNDECLARED` foram resolvidas na P0.02 (Q3–Q8; preço-base `[PROV]` como referência, não preço de mercado). O mecanismo de preço, ofertas e taxas do Mercado segue em aberto (`design/17a` §2).
+> **Pendências herdadas do P1.01 — conferidas em 2026-11-27:** `GAP_BASE_PRICE_UNDEFINED`, `GAP_PRODUCTION_QUANTITIES_UNDEFINED` e `GAP_COMMERCIAL_USES_UNDECLARED` foram resolvidas na P0.02 (Q3–Q8; preço-base `[PROV]` como referência, não preço de mercado). O mecanismo de preço, ofertas e taxas do Mercado segue em aberto (seis lacunas em `design/17a` §2, proposta que existe só no PR #20, ainda fora da `main`).
 
 Implementar mercado e estatísticas de `17`.
 

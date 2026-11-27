@@ -19,9 +19,9 @@ O projeto já possui o núcleo de design amplamente consolidado. A prioridade ag
 
 ## FINAL — BOT TEST
 
-- `01 — Skills`
+- `01 — Skills` *(conflito registrado em `CHANGELOG_DEV.md`, 2026-11-27: o cabeçalho do documento diz **REVIEW**; aguarda decisão do Game Director)*
 - `02 — Empresas`
-- `03 — Escolas`
+- `03 — Escolas` *(conflito registrado em `CHANGELOG_DEV.md`, 2026-11-27: o cabeçalho do documento diz **REVIEW**; aguarda decisão do Game Director)*
 - `07 — Leis`
 - `08 — Geografia`
 - `09 — Orçamento Público`
