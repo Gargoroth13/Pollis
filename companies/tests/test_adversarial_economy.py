@@ -9,7 +9,7 @@ nenhum teste fixa como requisito permanente um comportamento explorável.
 * Uma PROTEÇÃO esperada que o código ainda não oferece é escrita como a asserção da proteção e marcada `@unittest.expectedFailure`
   com `PENDENTE_*`: enquanto a proteção não existe o teste "falha como esperado" (suíte verde); quando ela for implementada o teste
   passa e a suíte acusa SUCESSO INESPERADO, o que obriga a remover a marca — o teste nunca vira garantia do comportamento antigo.
-* A-02..A-05 foram resolvidos no PR #37, que remove a marca dos respectivos testes. A-01 e A-06 dependem do design 25 (capacidade
+* A-02..A-05 foram resolvidos no PR #37 e seus testes são REGRESSÕES ativas (sem marca). A-01 e A-06 dependem do design 25 (capacidade
   administrativa, estados de inadimplência, proteção de contratação) e permanecem marcados como PENDÊNCIA OBRIGATÓRIA antes do Bot Test.
 """
 import math
@@ -47,13 +47,6 @@ from .test_wages import FIRST_MIDNIGHT
 
 D = Decimal
 REAL = 100
-
-
-def pending_on_postgres(fn):
-    """A-03 só se manifesta com concorrência real (PostgreSQL); o SQLite serializa as escritas e o teste já passa lá. A marca vale
-    só onde a proteção ainda não existe, para o SQLite não acusar sucesso inesperado."""
-    from django.db import connection
-    return unittest.expectedFailure(fn) if connection.vendor == "postgresql" else fn
 
 
 def note(tag, **numbers):
@@ -198,7 +191,6 @@ class InsolventCompanyTests(AdversarialBase):
         self.assertLessEqual(left, 2_000 * 1)                                           # só o que nasceu no próprio tick
         self.clean()
 
-    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
     def test_a_new_work_wage_never_jumps_ahead_of_older_unpaid_obligations(self):
         """REGRESSÃO A-04 (24 §24.9; design 25 §25.4): com caixa para UM salário, a dívida mais antiga é quitada primeiro e o salário
         novo vira obrigação atrás dela — quem trabalhou antes recebe antes."""
@@ -220,7 +212,6 @@ class InsolventCompanyTests(AdversarialBase):
         self.assertEqual(still_open.count(), 1)                                       # sobra só o salário novo, na fila
         self.clean()
 
-    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
     def test_with_cash_for_everyone_the_older_is_settled_first_and_the_new_wage_is_paid_on_the_spot(self):
         old = self.worker
         self.work_hooks(old)
@@ -279,7 +270,6 @@ class OwnerExtractionTests(AdversarialBase):
         self.assertGreaterEqual(Obligation.objects.filter(status=ObligationStatus.OPEN.value).count(), 1)   # o salário do Dono ficou PENDING
         self.clean()
 
-    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
     def test_the_owner_cannot_hold_a_paid_position_in_his_own_company_but_keeps_the_owner_role(self):
         """REGRESSÃO A-05: o Dono não se candidata nem é aprovado para vaga remunerada da própria empresa; o cargo Dono (salário diário
         do tick, abrir/fechar vagas, aprovar) segue intacto, e ele pode ser funcionário de OUTRA empresa (02 §16)."""
@@ -459,7 +449,6 @@ class SupportAccumulationTests(AdversarialBase):
         note("S7.engineers_within_star", stars=2, engineers=len(engineers), works=works, daily_bonus=bonus)
         self.assertEqual(SupportWork.objects.filter(company_id=self.firm, kind="engineer", competence_day=day).count(), works)
 
-    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
     def test_dismissing_and_rehiring_support_staff_in_one_day_cannot_multiply_the_daily_bonus(self):
         """REGRESSÃO A-02 (GD 2026-11-27): vagas de suporte JÁ UTILIZADAS no dia continuam contando para o limite diário mesmo depois
         da demissão. Substitutos são contratados normalmente, mas só passam a contribuir no dia seguinte."""
@@ -498,7 +487,6 @@ class SupportAccumulationTests(AdversarialBase):
             self.firm, "engineer", competence_day_of(self.clk.now()))["total"])
         self.clean()
 
-    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
     def test_the_same_daily_slot_protection_applies_to_lawyers_and_a_used_slot_keeps_working(self):
         self.set_stars(1)
         first = self.staff(1, kind="lawyer", salary=1_000, prefix="l1")[0]
@@ -516,7 +504,6 @@ class SupportAccumulationTests(AdversarialBase):
         self.assertEqual(support.lawyer_risk(self.firm, self.clk.now()).value, risk_before_dismiss)
         self.clean()
 
-    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
     def test_the_daily_slot_limit_is_visible_before_acting_through_the_shared_action_registry(self):
         self.set_stars(1)
         first = self.staff(1, kind="engineer", salary=1_000, prefix="v1")[0]
@@ -623,7 +610,6 @@ class StockConcurrencyTests(TransactionTestCase):
         self.refill(player)
         return registry.execute_action(player.pk, "work", None)
 
-    @pending_on_postgres          # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
     def test_simultaneous_works_over_scarce_inputs_are_refused_without_effects_once_the_inputs_run_out(self):
         """REGRESSÃO A-03: seis Trabalhos simultâneos sobre insumo para três: três produzem, três são RECUSADOS (sem Energia gasta,
         sem salário, sem skill, sem produção); nada é aceito sem sair produto."""
@@ -657,7 +643,6 @@ class StockConcurrencyTests(TransactionTestCase):
         self.assertTrue(jobs.approve_application(self.boss.pk, app).ok)
         return player, pos
 
-    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
     def test_simultaneous_support_workers_cannot_both_take_the_last_daily_slot(self):
         """REGRESSÃO A-02 sob concorrência: o limite diário é conferido de novo SOB o lock da empresa."""
         Company.objects.filter(pk=self.firm).update(stars=2)

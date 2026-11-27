@@ -32,7 +32,8 @@ from django.db.models import Count, Sum
 from core.breakdown import Calc, Explained
 from ledger.money import competence_day_of
 from players.actions import Action
-from players.hooks import ActionHookContext, register_action_hook, register_burnout_risk_provider
+from players.hooks import (ActionHookContext, ActionHookRefusal, register_action_hook, register_block_provider,
+                           register_burnout_risk_provider)
 from players.models import Player
 from skills.services import get_levels, specialization_value
 
@@ -44,6 +45,8 @@ from .models import Company, SupportWork, WorkWage
 SUPPORT_VALUES = DAILY_EFFECT_KINDS
 ACTION_HOOK = "companies_support"
 RISK_PROVIDER = "companies_lawyer"
+BLOCK_PROVIDER = "companies_support"
+LIMITED_KINDS = (PositionKind.ENGINEER.value, PositionKind.LAWYER.value)    # os cargos de suporte com limite por estrela (02 §9)
 _BASE = {PositionKind.ENGINEER.value: params.ENGINEER_BONUS_PER_WORK, PositionKind.LAWYER.value: params.LAWYER_REDUCTION_PER_WORK,
          PositionKind.SALESPERSON.value: params.SALES_CAPACITY_PER_WORK}
 
@@ -72,6 +75,32 @@ def daily_total(company_id: int, kind: str, day: int) -> Dict[str, Any]:
     """Soma do dia da empresa para o cargo: {"works": n, "total": Decimal}."""
     agg = SupportWork.objects.filter(company_id=company_id, kind=kind, competence_day=day).aggregate(n=Count("id"), total=Sum("contribution"))
     return {"works": agg["n"] or 0, "total": agg["total"] or Decimal(0)}
+
+
+def daily_slots(company_id: int, kind: str, day: int) -> Dict[int, int]:
+    """Vagas de suporte JÁ UTILIZADAS no dia: {id da vaga: nº de trabalhos}. Uma vaga encerrada (demissão) continua aqui."""
+    rows = SupportWork.objects.filter(company_id=company_id, kind=kind, competence_day=day).values("position_id").annotate(n=Count("id"))
+    return {r["position_id"]: r["n"] for r in rows}
+
+
+def daily_slot_refusal(job, now: int) -> Optional[str]:
+    """
+    Limite diário do cargo de suporte (A-02; GD 2026-11-27): as vagas de Engenheiro/Advogado JÁ UTILIZADAS no dia continuam contando
+    para o limite da estrela mesmo depois de uma demissão. Contratar substituto continua permitido; só que, se as vagas usadas no
+    dia já esgotaram o limite, o substituto começa a contribuir no dia seguinte. Só LÊ.
+    """
+    if job is None or job.kind not in LIMITED_KINDS:
+        return None
+    used = daily_slots(job.company_id, job.kind, competence_day_of(now))
+    if job.pk in used:
+        return None                                           # a própria vaga já conta; segue trabalhando
+    limit = params.SUPPORT_LIMIT_PER_STAR[Company.objects.values_list("stars", flat=True).get(pk=job.company_id)]
+    return "SUPPORT_DAILY_LIMIT_REACHED" if len(used) >= limit else None
+
+
+def block_provider(player: Player, action: Action, now: int, activity) -> Optional[str]:
+    """Provedor de bloqueio (players.hooks): mostra no estado/Action Registry o limite diário do cargo de suporte."""
+    return daily_slot_refusal(current_job(player.pk), now) if action is Action.WORK else None
 
 
 def engineering_bonus(company_id: int, now: int) -> Explained:
@@ -118,6 +147,9 @@ def record_support_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
     if job is None or job.kind not in SUPPORT_VALUES:
         return None
     Company.objects.select_for_update().get(pk=job.company_id)                              # protocolo: jogador → empresa
+    refused = daily_slot_refusal(job, ctx.now)                      # recalculado SOB o lock: duas contratações simultâneas não furam o limite
+    if refused is not None:
+        raise ActionHookRefusal(refused, company=job.company_id, kind=job.kind, source="support_hook")
     level = get_levels(player_id)[relevant_skill(job.kind)]
     key = specialization_key_of(job.kind, job.company_id, ctx.now)
     spec = specialization_value(player_id, key) if key else Decimal(0)
@@ -133,4 +165,5 @@ def record_support_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
 
 def register() -> None:
     register_action_hook(ACTION_HOOK, record_support_work)
+    register_block_provider(BLOCK_PROVIDER, block_provider)
     register_burnout_risk_provider(RISK_PROVIDER, risk_provider)

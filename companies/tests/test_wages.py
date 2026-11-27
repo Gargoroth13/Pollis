@@ -213,7 +213,7 @@ class DirectPayrollTests(WageBase):
         wages = list(Obligation.objects.filter(nature=Nature.WAGE.value).order_by("competence_day"))
         self.assertEqual([o.amount_due for o in wages], [2_000, 2_000, 2_000])
         self.assertTrue(services.fund_company(self.boss.pk, self.firm, 3_000).ok)        # R$ 10 + R$ 30 = cobre 2 dos 3
-        self.assertEqual(self.firm_money(), 4_000)
+        self.assertEqual(self.firm_money(), 3_000)                  # R$ 10 de caixa já foi para a mais antiga quando o 2º Trabalho entrou na fila (A-04)
         payroll.run_daily_payroll(self.clk.now())
         paid = [Obligation.objects.get(pk=o.pk) for o in wages]
         self.assertEqual([(o.status, o.amount_paid) for o in paid],

@@ -4,7 +4,7 @@ Auditoria das Empresas (design/02 §16-17; 24). Só LÊ. Invariantes (numeraçã
   2  a fundação tem o lançamento `COMPANY_FOUNDING` (fundador → União) com o valor cobrado; o valor cobrado é positivo
   3  cada aporte tem o lançamento `DONATION` (jogador → conta da empresa) com o mesmo valor, e o aporte vem do Dono
   4  cargos e vagas: status coerente com o ocupante; cargo permitido ao tipo da empresa; ocupante de vaga tem evento de contratação;
-     vaga aberta tem evento de abertura; um só emprego contratado por jogador (o Dono não conta)
+     vaga aberta tem evento de abertura; um só emprego contratado por jogador (o Dono não conta); o Dono não ocupa vaga da própria empresa
   5  candidaturas: pendente só em vaga ABERTA; aprovada tem o evento de contratação; eventos são imutáveis e ordenados no tempo
   6  salário de trabalho: cada `WorkWage` tem pedido de remuneração `WAGE` (pagador = conta da empresa, beneficiário = o jogador,
      devido = salário do cargo), reconhecido + descartado = devido, pago + pendente = reconhecido, pendente com obrigação aberta/
@@ -19,7 +19,7 @@ Auditoria das Empresas (design/02 §16-17; 24). Só LÊ. Invariantes (numeraçã
      cooldown; fração acumulada em [0, 1)
  11  cargos com efeito diário: toda contribuição (`SupportWork`) tem o salário pago da mesma ação (jogador, sequência), da mesma
      empresa e cargo, de Engenheiro, Advogado ou Vendedor; o dia é o da ação; o valor é o do detalhamento; vagas de suporte (abertas ou ocupadas) dentro
-     do limite da estrela
+     do limite da estrela; vagas de Engenheiro/Advogado UTILIZADAS no mesmo dia (mesmo as encerradas depois) dentro do limite da estrela
  12  Varejo: toda venda (`SalesCapacityUse`) tem o movimento de estoque `sale` de mesma chave, empresa, produto e quantidade; só o
      Varejo vende, só o que tem canal `retail_sale`; as vendas do dia nunca passam da capacidade (soma das contribuições do dia)
  13  obras: progresso = soma do que cada Trabalhar somou; cada trabalho tem o salário pago de um funcionário de produção da
@@ -99,6 +99,8 @@ def _events_by_position() -> dict:
 def _audit_positions(report: AuditReport) -> None:
     events = _events_by_position()
     jobs_by_player = defaultdict(int)
+    owners = dict(Position.objects.filter(kind=PositionKind.OWNER.value, status=PositionStatus.FILLED.value)
+                  .values_list("company_id", "holder_id"))
     for p in Position.objects.select_related("company").order_by("id").iterator():
         kinds = {e.kind for e in events.get(p.pk, ())}
         if (p.status == PositionStatus.FILLED.value) != (p.holder_id is not None):
@@ -111,6 +113,8 @@ def _audit_positions(report: AuditReport) -> None:
             report.add(4, "POSITION_WITHOUT_OPEN_EVENT", position=p.pk)
         if p.holder_id is not None:
             jobs_by_player[p.holder_id] += 1
+            if owners.get(p.company_id) == p.holder_id:
+                report.add(4, "OWNER_HOLDS_PAID_POSITION", position=p.pk, holder=p.holder_id, company=p.company_id)
             hired = [e for e in events.get(p.pk, ()) if e.kind == EventKind.HIRED.value]
             if not hired or hired[-1].subject != p.holder_id:
                 report.add(4, "FILLED_POSITION_WITHOUT_HIRE_EVENT", position=p.pk, holder=p.holder_id)
@@ -276,6 +280,14 @@ def _audit_support(report: AuditReport) -> None:
             have = Position.objects.filter(company=company, kind=kind).exclude(status=PositionStatus.CLOSED.value).count()
             if have > limit:
                 report.add(11, "SUPPORT_LIMIT_EXCEEDED", company=company.pk, kind=kind, have=have, limit=limit)
+    used = defaultdict(set)
+    for company_id, kind, day, position_id in SupportWork.objects.filter(kind__in=sorted(SUPPORT_POSITION_KINDS)) \
+            .values_list("company_id", "kind", "competence_day", "position_id").distinct():
+        used[(company_id, kind, day)].add(position_id)
+    stars = dict(Company.objects.values_list("id", "stars"))
+    for (company_id, kind, day), positions in sorted(used.items()):       # A-02: vagas usadas no dia (mesmo demitidas) ≤ limite da estrela
+        if len(positions) > params.SUPPORT_LIMIT_PER_STAR[stars[company_id]]:     # a estrela só sobe: o limite de hoje nunca é menor que o do dia
+            report.add(11, "SUPPORT_DAILY_SLOTS_EXCEEDED", company=company_id, kind=kind, day=day, used=len(positions))
 
 
 def _audit_retail(report: AuditReport) -> None:

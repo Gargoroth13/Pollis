@@ -219,6 +219,8 @@ def perform_action(player_id: int, action: Action, *, burnout_risk=None,
         return refusal
     cost = rules.energy_cost(action, bal)
 
+    player.save()                                        # o catch-up já feito fica gravado mesmo se um hook recusar adiante
+    savepoint = transaction.savepoint()
     player.energy = q(player.energy - cost)
     change = rules.burnout_change(action, risk, bal, risk_detail)
     rules.apply_burnout_change(player, change.value, bal)
@@ -226,7 +228,13 @@ def perform_action(player_id: int, action: Action, *, burnout_risk=None,
         player.last_work_at = now
     if effect is not None:
         _apply_effect(player, LEISURE, effect, now)
-    hook_results = hooks.run_action_hooks(ActionHookContext(player, action, now, bal, activity))
+    try:
+        hook_results = hooks.run_action_hooks(ActionHookContext(player, action, now, bal, activity))
+    except hooks.ActionHookRefusal as refused:           # recusa sob lock: nada do que a ação e os hooks fizeram permanece
+        transaction.savepoint_rollback(savepoint)
+        player.refresh_from_db()
+        return _refuse(refused.code, **refused.detail)
+    transaction.savepoint_commit(savepoint)
     player.save()
     return ActionResult(True, "OK", {
         "energy": player.energy, "energy_spent": cost, "burnout": player.burnout,

@@ -294,9 +294,19 @@ def _process(req: RemunerationRequest, position: int, batch: str, at: int, count
     outcome: str
     paid = pending = 0
     obligation = None
+    # FILA (24 §24.9: competência mais antiga primeiro; A-04): quem declara PENDING e já deve de competência anterior ou igual
+    # primeiro quita o que o caixa permite, na ordem; só o que sobrar paga o pedido novo. Se ainda restar dívida mais antiga
+    # em aberto, o pedido novo NÃO passa na frente: vira obrigação, atrás das demais.
+    queued = False
+    if recognized and policy == Policy.PENDING and obligations_mod.has_open_until(req.payer_id, req.competence_day):
+        settled = obligations_mod.settle_obligations(req.payer_id, batch_key=f"queue:{req.key}", at=at)
+        if not settled.ok:
+            raise ledger._Refuse(settled)
+        queued = obligations_mod.has_open_until(req.payer_id, req.competence_day)
+        explained["queue"] = {"older_settled": settled.detail["total_gross"], "older_still_open": queued}
     if recognized == 0:
         outcome = "NO_ROOM"
-    elif ledger.available_of(req.payer_id) >= outflow:
+    elif not queued and ledger.available_of(req.payer_id) >= outflow:
         pay = ledger.post_taxed_payment(
             req.payer_id, payee.pk, recognized, nature=nature, tax_rate=req.tax_rate,
             territory=ledger.territory_from_str(req.tax_territory), tax_nature=Nature.TAX_INCOME,

@@ -7,6 +7,8 @@ reais e bots chamam a mesma `services.perform_action` (design/21), e os hooks ro
 
 Garantias:
   - rodam na MESMA transação: se um hook falha, a ação inteira é desfeita;
+  - um hook que descobre, SOB OS TRAVAMENTOS DO SEU SISTEMA, que a ação não pode acontecer levanta `ActionHookRefusal`: a ação é
+    recusada com aquele código, sem gastar Energia nem gerar nenhum dos efeitos dos hooks (o jogador volta ao estado anterior);
   - só rodam depois de a ação ter SUCESSO (recusas por energia, burnout, etc. não disparam hooks);
   - ordem determinística (por nome);
   - `players` não interpreta o conteúdo do ActivityContext: só o repassa.
@@ -44,6 +46,18 @@ class ActivityContext:
     school_quality: Decimal = Decimal(1)
     specialization_key: Optional[str] = None
     requires_presence: Optional[bool] = None
+
+
+class ActionHookRefusal(Exception):
+    """
+    Recusa de uma ação detectada DENTRO de um hook, depois que o sistema dono travou o que precisava (ex.: a empresa). Serve para
+    fechar a janela entre a consulta dos provedores de bloqueio (antes do travamento) e o recálculo sob lock: uma regra que o
+    provedor já recusa em sequência não pode ser aceita por concorrência. `code`/`detail` seguem o formato de `ActionResult`.
+    """
+    def __init__(self, code: str, **detail: Any):
+        super().__init__(code)
+        self.code = code
+        self.detail = detail
 
 
 @dataclass

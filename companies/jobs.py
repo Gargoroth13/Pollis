@@ -211,6 +211,8 @@ def apply_refusal(player_id: int, position_id: Any) -> Optional[ActionResult]:
         return _refuse("POSITION_NOT_FOUND", position=position_id)
     if position.status != PositionStatus.OPEN.value:
         return _refuse("POSITION_NOT_OPEN", position=position.pk, status=position.status)
+    if owner_of(position.company_id) == player_id:
+        return _refuse("OWNER_CANNOT_HOLD_POSITION", position=position.pk, company=position.company_id)
     if Application.objects.filter(position=position, applicant_id=player_id,
                                   status=ApplicationStatus.PENDING.value).exists():
         return _refuse("ALREADY_APPLIED", position=position.pk)
@@ -223,8 +225,8 @@ def apply_refusal(player_id: int, position_id: Any) -> Optional[ActionResult]:
 def apply_to_position(player_id: int, position_id: Any) -> ActionResult:
     """
     Candidatura a uma vaga do mural (02 §15). Quem já tem emprego PODE se candidatar (para trocar); a regra de um emprego é
-    aplicada na aprovação. Recusas: PLAYER_NOT_FOUND, INVALID_PARAMS, POSITION_NOT_FOUND, POSITION_NOT_OPEN, ALREADY_APPLIED,
-    REQUIREMENTS_NOT_MET (com o detalhamento do que falta).
+    aplicada na aprovação. Recusas: PLAYER_NOT_FOUND, INVALID_PARAMS, POSITION_NOT_FOUND, POSITION_NOT_OPEN, OWNER_CANNOT_HOLD_POSITION (o Dono não ocupa vaga remunerada da própria
+    empresa; o cargo Dono já é o dele, 02 §16), ALREADY_APPLIED, REQUIREMENTS_NOT_MET (com o detalhamento do que falta).
     """
     if not Player.objects.filter(pk=player_id).exists():
         return _refuse("PLAYER_NOT_FOUND", player=player_id)
@@ -277,6 +279,8 @@ def approve_refusal(player_id: int, application_id: Any) -> Optional[ActionResul
     position = application.position
     if position.status != PositionStatus.OPEN.value:
         return _refuse("POSITION_NOT_OPEN", position=position.pk, status=position.status)
+    if owner_of(position.company_id) == application.applicant_id:
+        return _refuse("OWNER_CANNOT_HOLD_POSITION", position=position.pk, company=position.company_id)
     job = current_job(application.applicant_id)
     if job is not None:
         return _refuse("ALREADY_EMPLOYED", applicant=application.applicant_id, position=job.pk, company=job.company_id)
