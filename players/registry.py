@@ -42,7 +42,9 @@ NO_COOLDOWN = "NONE"          # não existe mecanismo geral de cooldown (nenhum 
 
 TARGET_NONE = "none"
 TARGET_LOT = "lot"
-_TARGET_KINDS = (TARGET_NONE, TARGET_LOT)
+TARGET_PRODUCT = "product"        # chave (str) de um produto do catálogo (ex.: Consumir)
+TARGET_PARAMS = "params"          # mapeamento com os parâmetros do alvo (ex.: Correio: destinatário, produto, quantidade)
+_TARGET_KINDS = (TARGET_NONE, TARGET_LOT, TARGET_PRODUCT, TARGET_PARAMS)
 
 # Parâmetros de CONTEXTO INTERNO de perform_action: vêm dos sistemas que conhecem a atividade (cargo, curso, atividade de
 # lazer), nunca de uma interface ou de um bot. Pedi-los pelo registro é erro, não ignorado em silêncio.
@@ -164,6 +166,12 @@ def _target_problem(descriptor: ActionDescriptor, target: Any, *, executing: boo
                                     or not -_INT64 <= target < _INT64):   # fora do int64 nem chega ao banco
         return ActionResult(False, "INVALID_PARAMS", {"action": descriptor.id, "target": repr(target),
                                                       "expected": "lot id (int)"})
+    if spec.kind == TARGET_PRODUCT and (not isinstance(target, str) or not 0 < len(target) <= 64):
+        return ActionResult(False, "INVALID_PARAMS", {"action": descriptor.id, "target": repr(target)[:80],
+                                                      "expected": "product key (str)"})
+    if spec.kind == TARGET_PARAMS and (not isinstance(target, dict) or not all(isinstance(k, str) for k in target)):
+        return ActionResult(False, "INVALID_PARAMS", {"action": descriptor.id, "target": repr(target)[:80],
+                                                      "expected": "mapping with str keys"})
     return None
 
 
@@ -263,6 +271,6 @@ def register_player_actions() -> None:
 
 
 __all__ = ["ActionAvailability", "ActionDescriptor", "ActionResult", "INTERNAL_PARAMS", "NO_COOLDOWN",
-           "RegisteredAction", "TARGET_LOT", "TARGET_NONE", "TargetSpec", "UNSPECIFIED", "available_actions",
+           "RegisteredAction", "TARGET_LOT", "TARGET_NONE", "TARGET_PARAMS", "TARGET_PRODUCT", "TargetSpec", "UNSPECIFIED", "available_actions",
            "check_action", "execute_action", "get_descriptor", "list_descriptors", "register_action",
            "register_player_actions", "unregister_action"]

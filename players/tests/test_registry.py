@@ -31,15 +31,17 @@ def avail(player_id):
 class DescriptorContractTests(TravelTestCase):
     """21 §20: ID, nome, categoria, requisitos, custo, cooldown, alvo, efeitos, visibilidade. Nada inventado."""
 
-    def test_the_four_actions_are_registered_with_stable_ids(self):
-        self.assertEqual([d.id for d in registry.list_descriptors()], ["leisure", "study", "travel", "work"])
+    def test_the_actions_are_registered_with_stable_ids(self):
+        self.assertEqual([d.id for d in registry.list_descriptors()],
+                         ["consume", "leisure", "send_item", "study", "travel", "work"])
         self.assertEqual({d.id: d.name for d in registry.list_descriptors()},
-                         {"work": "Trabalhar", "study": "Estudar", "leisure": "Lazer", "travel": "Viajar"})
+                         {"work": "Trabalhar", "study": "Estudar", "leisure": "Lazer", "travel": "Viajar",
+                          "consume": "Consumir", "send_item": "Enviar item pelo Correio"})
 
     def test_travel_is_not_added_to_the_energy_action_enum(self):
         """Viajar não tem custo de Energia (04 §2.2): o enum Action continua com as 3 ações de custo fixo."""
         self.assertEqual({a.value for a in Action}, {"work", "study", "leisure"})
-        self.assertEqual({d.id for d in registry.list_descriptors()} - {a.value for a in Action}, {"travel"})
+        self.assertEqual({d.id for d in registry.list_descriptors()} - {a.value for a in Action}, {"travel", "consume", "send_item"})
 
     def test_every_contract_field_is_present(self):
         for d in registry.list_descriptors():
@@ -55,9 +57,12 @@ class DescriptorContractTests(TravelTestCase):
         for a in PLAYER_ACTIONS:
             self.assertEqual(registry.get_descriptor(a).target, registry.TargetSpec(registry.TARGET_NONE, False))
         self.assertEqual(registry.get_descriptor("travel").target, registry.TargetSpec(registry.TARGET_LOT, True))
+        self.assertEqual(registry.get_descriptor("consume").target, registry.TargetSpec(registry.TARGET_PRODUCT, True))
+        self.assertEqual(registry.get_descriptor("send_item").target, registry.TargetSpec(registry.TARGET_PARAMS, True))
 
     def test_availability_lists_actions_in_a_deterministic_id_order(self):
-        self.assertEqual([a.action_id for a in registry.available_actions(self.player.pk)], ["leisure", "study", "travel", "work"])
+        self.assertEqual([a.action_id for a in registry.available_actions(self.player.pk)],
+                         ["consume", "leisure", "send_item", "study", "travel", "work"])
 
     def test_descriptors_are_immutable(self):
         with self.assertRaises(Exception):
