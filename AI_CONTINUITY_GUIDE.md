@@ -70,28 +70,25 @@ Genuine questions are collected in a final section titled **"Decisões necessár
 
 This is a **dated snapshot**, not a substitute for checking GitHub live.
 
-**`main` = `b1ed17a`.** Integrated with GD authorization on 2026-11-27, in order, by merge commit: PR #12 (P1.02 Inventário, `ee185c2`), PR #14 (P1.02a Auto-consumo, `4be2bf6`), PR #32 (P1.15a Rankings, slice 1 of 5, `b1ed17a`). Earlier foundations (#8–#11) were merged before them. Evidence on consolidated `main`: 1287 tests OK on PostgreSQL 16 and on SQLite (SQLite skips the PostgreSQL-only tests), `manage.py check` and `makemigrations --check` clean, migrations applied on fresh databases, integrity audits clean on an empty database.
+**`main` = `6b66a83`.** Integrated with GD authorization on 2026-11-27, by merge commit and in this order: PR #12 (P1.02 Inventário), PR #14 (P1.02a Auto-consumo), PR #32 (P1.15a Rankings, slice 1 of 5; `b1ed17a`), then PR #35 (`run_together` context propagation; `effb2a6`), PR #33 (documentation reconciliation; `1684767`) and PR #34 (`design/25`, REVIEW with binding approved decisions; `6b66a83`). Verification of `main` after #35: 1293 tests OK on PostgreSQL 16 and on SQLite (SQLite skips 16 PostgreSQL-only tests); #33 and #34 are documentation only (`manage.py check` clean, no code files changed). Earlier foundations (#8–#11) were merged before them.
 
-**Open PRs (none merged; each needs its own GD authorization):**
+**Open PRs (each needs its own GD authorization; none authorized yet except as listed above):**
 
 | PR | Content | Notes |
 |---|---|---|
 | #13 | this guide | docs only, independent |
-| #33 | reconciliation of `TASK.md`, `TASK_QUEUE.md`, `CHANGELOG_DEV.md` with `main` | docs only |
-| #35 | `run_together` context propagation | test infrastructure only; fixes thread tests that used the real clock |
-| #34 | `design/25` Insolvency, Recovery and Bankruptcy (REVIEW) | docs only; GD-approved decisions are binding; review notes posted on the PR |
-| #36 | adversarial economic audit of Wave 1 | tests only; stacked on #19; evidence of A-01..A-06 |
-| #37 | Wave 1 fixes A-02..A-05 (A-01/A-06 left to design 25) | stacked on #36; turns the exploit tests into regression tests |
+| #36 | adversarial economic audit of Wave 1 | tests only; stacked on #19; protections not yet implemented are `expectedFailure` tests, so no test fixes an exploit as a requirement |
+| #37 | Wave 1 fixes A-02..A-05 (A-01/A-06 left to design 25) | stacked on #36; removes the `expectedFailure` marks of A-02..A-05; A-01/A-06 stay marked and are mandatory before the Bot Test |
 | #15 → #16 → #17 → #18 → #19 | Empresas (core; positions/wages; production/stock; Engineer/Lawyer support; Retail/Construtora) | **Wave 1**, under adversarial audit |
 | #20 → #21 → … → #31 | Market transparency, Schools, Contracts, Properties (+ transfer, housing, location, building use), Budget, Legislation, Bot infrastructure, World history | stacked on #19; each branch conflicts with `main` only in `CHANGELOG_DEV.md`, `TASK.md`, `polis/settings.py` |
 
-Known cross-document conflict, registered and unresolved: the headers of `design/01-skills.md` and `design/03-escolas.md` say `REVIEW`, while `TASK.md` lists both as `FINAL — BOT TEST`. Only the GD can decide which one holds.
+GD decision of 2026-11-27 on the former `01`/`03` header conflict: `design/01` becomes `FINAL — BOT TEST` (salary multiplier 1.5 [PROV] per skill, not changeable by law) and `design/03` stays `REVIEW`; the document amendments are prepared in a separate documentation PR.
 
 ## 5. Execution direction (strategy, not a second queue)
 
 Current GD priority: **audit and consolidate the existing implementations before starting new systems.** Individual task definitions and acceptance criteria stay in `TASK_QUEUE.md`.
 
-1. Close documentation and test infrastructure (#33, #34, #13, the `run_together` fix) — no merge without GD authorization.
+1. Close documentation and test infrastructure (#35, #33, #34 done; #13 is this guide) — no merge without GD authorization.
 2. Audit the stacked PRs in waves, bottom-up (Wave 1 = Empresas #15–#19). Each audit is adversarial: it tries to break conservation, concurrency and limits, separates real risks from risks already prevented, and classifies findings as BLOCKER / MAJOR / MINOR / DEFERRED with executed evidence.
 3. Resolve open design points through GD decisions (section 2.4), then continue the dependency-driven roadmap in `TASK_QUEUE.md` (Market, Schools, real estate, Contracts, budget, politics, feedback, history, remaining Rankings slices, UI shell, military, Bot Test engine/training/monitoring).
 4. Do not stop at foundations while committed Bot Test systems remain unimplemented; keep every in-scope system visible until delivered.
