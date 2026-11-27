@@ -9,6 +9,7 @@ Dois grupos:
     operação e o teste confere que a outra espera e termina DEPOIS. Em SQLite esses testes são pulados (o banco serializa as
     escritas de outra forma), e o relatório diz isso: não há cobertura de PostgreSQL quando eles não rodam.
 """
+import contextvars
 import threading
 import time
 import unittest
@@ -42,12 +43,20 @@ def _attempt(fn):
 
 
 class Job:
-    """Uma thread que roda `fn`, guarda resultado ou exceção e os instantes de início e fim (monotônicos)."""
+    """
+    Uma thread que roda `fn`, guarda resultado ou exceção e os instantes de início e fim (monotônicos).
+
+    Cada thread roda numa CÓPIA INDEPENDENTE do contexto de quem a criou (`contextvars.copy_context()` no momento da
+    criação): o relógio de teste (`core.clock.use_clock`) e qualquer outra variável de contexto valem dentro da thread, e o
+    que a thread alterar não vaza para a chamadora nem para as outras threads. Uma thread nova do Python começa com contexto
+    VAZIO; sem esta cópia a thread usaria o relógio REAL e o teste passaria a depender da data de hoje.
+    """
 
     def __init__(self, fn, barrier=None, name=None):
         self.result = self.error = self.started = self.ended = None
         self._fn, self._barrier = fn, barrier
-        self.thread = threading.Thread(target=self._run, name=name)
+        self._context = contextvars.copy_context()
+        self.thread = threading.Thread(target=self._context.run, args=(self._run,), name=name)
 
     def _run(self):
         try:

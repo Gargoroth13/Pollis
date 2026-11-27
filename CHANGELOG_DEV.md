@@ -4,6 +4,147 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-27 — Decisões do GD: capacidade administrativa, insolvência, falência e liquidação (`design/25`)
+
+Documento `design/25-Insolvencia-Recuperacao-Falencia-REVIEW.md`. Estado **REVIEW** pelos detalhes de integração, mas as decisões explicitamente aprovadas pelo GD são **vinculantes** e não são reabertas. Nenhuma implementação, mudança de parâmetro existente ou autorização de merge de PR de código neste registro.
+
+- **Aprovado (25.1–25.6):** capacidade administrativa flexível com eficiência decrescente E = min(1, √(C/N)), C = 10/20/40/80/160 [PROV], sem limite rígido de funcionários; estados Regular → Inadimplente → Insolvente (3 dias) → recuperação (7 dias) → falência (30 dias) [PROV]; proteção contra exploração de salários pendentes; responsabilidade limitada; prioridade salários > impostos > obrigações contratuais > empréstimos, mais antigas primeiro dentro de cada categoria; falência e liquidação auditáveis; cooldown de 30 dias acumulável por empresa falida [PROV]; histórico público; bloqueio de transferência voluntária de empresa inadimplente e janela de responsabilidade do proprietário anterior.
+- **Aprovado (25.7, F1–F10):** liquidação em até 30 dias por leilões públicos com preço mínimo de 100%/75%/50% do valor de referência nos dias 1–10/11–20/21–30 (F1/F2); sobras: terrenos e imóveis ao Município, matérias-primas, produtos e equipamentos ao estoque da União (F3); antigo proprietário e suas empresas não compram nos leilões da própria falida (F4); cooldown acumulável e janela de responsabilidade (F5/F6); reservas legítimas anteriores respeitadas (F7) e novas reservas discricionárias bloqueadas na inadimplência (F8); saldo, novas receitas e reservas liberadas entram na fila de pagamento (F9); dívidas remanescentes encerradas contabilmente com perdas registradas, sem apagar lançamentos (F10).
+- **Segunda rodada (GD, 2026-11-27):** (1) **ordem de pagamento por estado** — em operação regular, ordem cronológica das obrigações exigíveis (`24` §24.9); durante inadimplência, insolvência e liquidação, prioridades por categoria do `25` §25.4; dentro de cada categoria, as mais antigas primeiro; (2) **obrigação vencida** é a que teve o prazo de pagamento alcançado e não foi integralmente quitada; salários do Trabalho não pagos por falta de caixa são imediatamente vencidos; para contratos e empréstimos vale o vencimento contratual; obrigações futuras não caracterizam inadimplência; (3) a **troca efetiva de produção** fica bloqueada durante a inadimplência (escolher de novo o mesmo produto continua sem efeito nem cobrança).
+- **Correções documentais do PR #34 (autorizadas):** entrada do CHANGELOG movida para o topo; referência "25 §25.7" → "25 §25.8" no `TASK_QUEUE.md`; estado padronizado como `REVIEW`; emenda mínima ao `24` §24.9/R4 para a ordem por estado.
+- **Impactos verificados no Ledger (nada alterado):** ver `25` §25.8, "Impactos no Ledger verificados". Resumo: `Obligation` já representa só dívida **vencida** (compatível); a ordem por categoria exige mapear `nature` → categoria e um parâmetro de estado do devedor em `settle_obligations`; o `24` §24.9 hoje **exclui** aluguel/parcelas de contrato da criação de obrigação, o que precisa ser reconciliado com a categoria contratual/empréstimos do `25` §25.4.
+
+## 2026-11-27 — Auditoria adversarial da Onda 1 (Empresas) e correções A-02..A-05
+
+Registro documental; sem decisão de design nova. PR #36 (testes adversariais, empilhado sobre #19) e PR #37 (correções, empilhado sobre #36); **nenhum mergeado**.
+
+- **Achados confirmados por testes executados:** A-01 (empresa sem caixa contrata e produz acumulando obrigações) e A-06 (concentração de contratação/folha) — a resolução estrutural pertence ao `design/25` (PR #34, decisões aprovadas vinculantes); **sem solução temporária**. A-02 (bônus de suporte multiplicado por demissão/recontratação), A-03 (Trabalho aceito sem insumo sob concorrência), A-04 (salário novo à frente de obrigação mais antiga), A-05 (Dono em vaga remunerada própria) — corrigidos no #37, com os testes que demonstravam o exploit convertidos em regressões.
+- **Interpretações técnicas para confirmação do GD** (no #37): A-02 vale no Trabalhar (vagas usadas no dia contam mesmo após demissão; substituto contratável); A-04 é regra genérica de fila por competência para todo pagador `PENDING` (o `design/25` §25.4 a refina por categoria, o que exige emenda do `design/24` §24.9/R4 e decisão sobre naturezas, §24.8); A-05 proíbe só dentro da mesma empresa.
+- **Pontos de integração 24 × 25 registrados** (comentário no #34): categoria de prioridade da obrigação, lista fechada de naturezas, definição operacional de "obrigação vencida", episódio de inadimplência.
+- **Verificação do #37:** PostgreSQL 16 e SQLite, suíte completa 1505 OK (SQLite: 16 pulados que exigem PostgreSQL); concorrência 3× no PostgreSQL.
+
+---
+
+## 2026-11-27 — Consolidação: merges de #12, #14 e #32 na `main`
+
+Autorização do Game Director (2026-11-27): merges na ordem #12 → #14 → #32, com merge commits, sem rebase nem force push.
+
+- **Ordem e commits na `main`:** `ee185c2` (PR #12), `4be2bf6` (PR #14, base religada de `dev/p1.02-inventario` para `main` após o #12, sem alterar commits), `b1ed17a` (PR #32). Para o #32 a `main` foi trazida à branch por merge commit (`798c521`); conflitos só de documentação e `INSTALLED_APPS`, resolvidos mantendo os dois lados; nenhum conflito de mecânica.
+- **Validação por etapa (PostgreSQL 16 e SQLite, suíte completa):** após #12: 998 testes; após #14: 1034; após #32 (merge commit): 1285; `main` final: **1287** (inclui o teste permanente `rankings/tests/test_qol_autoconsumption.py`). Todos OK (SQLite: 16 skipped, testes só de PostgreSQL; PostgreSQL: 0 skipped). `manage.py check` e `makemigrations --check`: sem pendências. Migrações aplicadas em banco novo (PostgreSQL e SQLite), `sync_catalog`/`check_catalog` (integridade OK; 2 pendências de design conhecidas do catálogo) e `audit_ledger`/`audit_inventory`/`audit_rankings` sem achados (em banco vazio; a cobertura das auditorias com dados está nos testes de cada app).
+- **Estado dos sistemas:** Inventário e Auto-consumo integrados; Rankings: só a fatia 1 de 5 (P1.15a). `design/14` continua **FINAL — BOT TEST** (implementação parcial; as demais categorias seguem explicitamente pendentes), por isso não foi marcado IMPLEMENTED.
+- **Decisão do GD registrada:** créditos a receber seguem valorados pelo valor bruto nominal; riscos residuais da auditoria do #32 aceitos para o primeiro Bot Test.
+- **Conflito entre documentos, registrado e não resolvido:** os cabeçalhos de `design/01-skills.md` e `design/03-escolas.md` dizem **REVIEW**, mas `TASK.md` os lista entre os documentos **FINAL — BOT TEST**. Nenhum dos lados foi alterado; aguarda decisão do GD sobre qual vale.
+- **Achado de integração (fora da main):** na pilha de PRs #15–#31 juntada com a main, dois testes de `budget.tests.test_concurrency` (#27) falham desde 2026-11-03 também sem a main: o relógio de teste fixo (`use_clock`, variável de contexto) não chega às threads de `run_together`, que usam o relógio real, e o período orçamentário de 30 dias do relógio real passou de 691 para 692. É fragilidade de teste, não de código de jogo; correção (executar cada thread numa cópia independente do contexto; só código de teste) autorizada pelo GD em 2026-11-27 e aberta no PR #35, sem merge.
+- **Pendências herdadas do P1.01 em `TASK_QUEUE.md`:** as notas de P1.04, P1.05 e P1.07 foram corrigidas: os quatro GAPs (`MATRIZ_STARS`, `PRODUCTION_QUANTITIES`, `COMMERCIAL_USES`, `FINISHINGS`) estão resolvidos desde a P0.02.
+
+## 2026-11-27 — P1.15a — auditoria final de integração: checkpoints/varredura de QoL neutros para hooks de acesso
+
+Auditoria final do PR #32 antes do merge (sem merge, rebase ou force push). Achado **MAJOR** na integração com a #14 (Auto-consumo, hook de acesso): os checkpoints do catch-up e a varredura `sync_player_until` rodavam também os hooks de acesso nos instantes de referência, de modo que **a presença do ranking de QoL mudava o resultado do jogo** (probe com a #14 integrada, jogador ocioso 20 h com Auto-consumo e 40 sucos: sem o ranking, 2 consumos e internação em 1791300000; com o ranking, 12 consumos e internação em 1791306000), contra design/14 §14.11 ("o ranking não deve alterar QoL") e CLAUDE.md §12. Correção mínima: `_catch_up` divide só os **ciclos**; os hooks de acesso rodam uma vez, no acesso real; `sync_player_until` não roda hooks. Testes de regressão independentes da #14 (hook de acesso que altera o estado): chamadas só no acesso real e resultado idêntico com e sem checkpoints; ambos derrubam a mutação que restaura o comportamento antigo. Nenhuma decisão de design alterada.
+
+- **Integração (após os merges de #12 e #14):** teste permanente `rankings/tests/test_qol_autoconsumption.py` — dois jogadores idênticos, um levado com checkpoints e varredura das snapshots de QoL e outro sem; o estado final (Nutrição, saúde, hospitalização, estoque, movimentos de auto-consumo) tem de ser idêntico. Verificado por mutação (hooks de acesso nos checkpoints → 2 falhas).
+
+## 2026-11-06 — P1.15a — fairness do processador da outbox, retenção decidida, documentação
+
+Revisão do Game Director sobre o PR #32 (sem merge, rebase ou force push; base inalterada; lote #12 + #14 independente).
+
+- **Starvation corrigido:** `process_pending` escolhia os `max_players` jogadores de menor id de evento, então jogadores com eventos problemáticos podiam ocupar todas as vagas para sempre. Agora: escalonamento **menos recentemente tentado primeiro** (`next_candidates`, ordem `(última falha NULL primeiro, menor id)` com o carimbo real `attempted_wall_at`, migração `0005`), rodízio entre jogadores com falha e reivindicação por jogador com `SKIP LOCKED` (vários workers não esperam nem repetem o jogador que outro trata). A falha continua pendente/retentável e bloqueia só os eventos posteriores do próprio jogador.
+- **Testes:** `FairnessTests` (inclui o cenário `max_players=2`: dois jogadores com falha + um saudável processado sem corrigir os primeiros; depois a falha sai e tudo é recuperado em ordem), e `OutboxFairnessConcurrencyTests` em PostgreSQL (vários workers com lote pequeno; jogador preso por outro processador é pulado).
+- **Retenção:** decisão do GD — eventos processados mantidos sem poda durante o Bot Test; pendentes/com falha nunca removidos por limpeza automática. Registrado em `design/14a` §3.6 que uma poda futura precisa preservar a auditoria `ACTIVITY_PROCESSED_NOT_REFLECTED`. Nada implementado.
+- **Passada imediata:** documentação corrigida — `transaction.on_commit()` a executa no mesmo fluxo síncrono após o commit (não é worker assíncrono); worker dedicado e tick são os mecanismos de segundo plano. `ACTIVITY_INLINE_PROCESSING` mantido como está.
+
+## 2026-11-04 — P1.15a — outbox durável da atividade, créditos a receber detalhados, instrumentação de produção
+
+Decisões do Game Director de 2026-11-04 aplicadas no PR #32 (branch `dev/p1.15a-rankings-nucleo`; **sem merge**, sem rebase, sem force push). O lote #12 + #14 segue separado, aguardando autorização independente.
+
+- **Outbox de atividade (`ActivityEvent`, migração `0004`):** gravada **na mesma transação** da ação por um gravador transacional novo do Action Registry (`register_action_recorder`; falha do gravador desfaz a ação; recusas não geram evento; jogadores e bots pelo mesmo registro). Processador `rankings/outbox.py`: trava da linha do jogador, ordem `(at, id)`, savepoint por evento (sequência + marcação atômicas), falha deixa o evento pendente e para o jogador naquele evento, idempotente, recuperável. Passada imediata pós-commit, tick de 10 min do mundo e `manage.py process_activity_outbox`. O observer genérico permanece (integrações não críticas) e **não** é mais o caminho da atividade. Auditoria: pendentes, erros, mais antigo, atraso, evento processado não refletido.
+- **Créditos a receber:** valor **nominal** confirmado (sem solvência/provisão); detalhamento separa saldo, créditos a receber e obrigações a pagar, com regras condicionais de chave estável; página mostra as três linhas e a nota.
+- **Instrumentação:** `core/instrument.py` (`QueryCounter` via `connection.execute_wrapper`) substitui `CaptureQueriesContext` no runtime de QoL; teste garante que nenhum código de produção importa `django.test`.
+- **Teste de custo do registro** mantém o isolamento dos checkpoints; `CheckpointCostTests` mede o custo do checkpoint de QoL (0 / ≈8 / ≈14–15 consultas por 0 / 1 / 2+ referências atravessadas).
+- **Custos medidos** (PostgreSQL 16, `rankings/tests/bench_outbox.py`): gravador +1 consulta/+0,3 ms por ação; com passada imediata +11 consultas/+3,1 ms; processador ≈ 324 eventos/s (1 evento por jogador) e ≈ 581 eventos/s (atraso de 100 por jogador). Detalhes em `design/14a` §3.6.
+- **Riscos/pendências registrados:** sem poda dos eventos processados (cresce 1 linha por ação; política de retenção depende de decisão e medição); evento envenenado segura a sequência do jogador até correção (visível na auditoria); a ordem é por jogador, não global. `[PROV]`: `ACTIVITY_*` em `rankings/params.py`.
+
+## 2026-11-03 — P1.15a (fatia 1) — Rankings (app `rankings`)
+
+Implementa parte do `design/14` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p1.15a-rankings-nucleo`, **baseada diretamente na `main`** (independente da pilha). **Não mergeada; aguarda revisão e autorização do Game Director.** O `14` continua FINAL — BOT TEST até integrar e validar na `main`. Detalhes: `design/14a-rankings-PROPOSTA.md`.
+
+- **Ativos:** (1) patrimônio líquido, (4) QoL por snapshots, (7) contribuinte 30 dias, (10) conta mais antiga, (11) tempo ativo (sequência atual), (12) recorde de patrimônio, (14) recorde de tempo ativo; (15) interface do recorde presidencial, sem chamador.
+- **Pendentes de fonte (explícitos, sem dados inventados):** Maior empresa (2), produção (3), empregador (6), escola (8), organização (9), recorde de empresa (13). **Fora do Bot Test:** influência política (5).
+- **Decisões do GD (2026-11-03) aplicadas no PR #32:** (D1) snapshots de QoL a cada 1 h parametrizado, últimas 24 COMPLETE, COMPLETE só com todos os elegíveis no mesmo `reference_at`, INCOMPLETE preserva a última COMPLETE, métricas e testes de concorrência; (D2) patrimônio = saldo bruto + créditos a receber − obrigações a pagar; (D3) imposto retido sobre remuneração atribuído ao jogador beneficiário (por natureza + transação/referência), demais impostos à conta pagadora; (D4) tempo ativo ao vivo pela sequência corrente ativa (< 72 h), histórico pela melhor.
+- **Recorde de patrimônio confiável:** `ledger/hooks.py` (extensão pequena, sem alterar regra monetária): gancho de fim de operação, uma vez por operação completa, com o estado final, dentro da transação; `NetWorthCandidate` durável + retry horário; falha total desfaz a operação. A varredura diária virou reconciliação.
+- **Ganchos genéricos novos:** `players.registry.register_action_observer`, `players.hooks.register_checkpoint` (catch-up dividido só quando há checkpoint; equivalência testada) e `players.services.sync_player_until`.
+- **Limitação registrada:** a falha do observer de ação preserva a ação mas o log não recupera a ação perdida na sequência de atividade; solução durável (outbox) proposta em `design/14a` §3.6, aguardando o GD.
+- Nenhum dinheiro é criado ou movido pelos Rankings (testado).
+
+## 2026-10-19 — P1.02a — Auto-consumo de alimentos (`design/04` §16)
+
+Implementa o §16 integralmente, sem alterar a mecânica. Branch `dev/p1.02a-auto-consumo`, **empilhada sobre o PR #12** (P1.02); PR próprio; **não mergeado**. Auto-consumo é obrigatório no primeiro Bot Test e a regra já estava definida; a separação em PR é de tarefa, não de escopo.
+
+### O que foi entregue
+- **Configuração** (`inventory.AutoConsumption`, ação `auto_consumption` no Action Registry, alvo `{"enabled": bool, "preferred": produto | None}`): habilitar/desabilitar e escolher (ou limpar) o alimento preferido; o preferido precisa ser alimento consumível do catálogo (mesmas recusas do consumo manual). Sem custo de Energia/dinheiro (o design não define).
+- **Execução** (`inventory/auto.py`): hook de acesso (`players.hooks`, On Access) no fim do catch-up. Com Nutrição ≥ 10 não consulta nada; com `Nutrição < 10` e Auto-consumo habilitado: 1) preferido, se houver no inventário; 2) senão o alimento disponível de menor ganho de Nutrição; repete enquanto Nutrição < 10 e houver elegível; para ao atingir/ultrapassar 10; sem elegível, nada. Sem polling por jogador.
+- **Mesmas regras do manual**: `services.consume_locked` é o núcleo único (item → efeito → quantidade reduzida) usado por `consume` e pelo hook; o efeito de Nutrição/Comida é `players.services.apply_food_locked` (extraído de `consume_food`, que o reutiliza). Sem bônus especial; o efeito de Comida substitui o anterior.
+- **Sem recursão**: o hook não chama `consume`/`sync_player`; opera sobre o jogador que o catch-up já travou (em memória) e tem guarda de reentrada. `consume` manual passou a usar `locked_player` (um único catch-up por consumo).
+- **Trilha e auditoria**: movimento de consumo com `reference_kind="auto_consumption"` e `explained` (`automatic`, `nutrition_before`, regra de escolha, preferido, candidatos com ganho). `audit_inventory` ganhou o invariante 4 (consumo automático só abaixo do limiar, de alimento, como consumo).
+
+### Interpretações técnicas (preservam o design; registradas por honestidade técnica)
+- "Elegível" = alimento do catálogo com valores especificados (NULL é recusado pelo consumo manual, `NULL ≠ 0`) **e ganho de Nutrição > 0**, com ≥ 1 unidade no inventário. Um alimento de ganho 0 (hoje Sorvete e Refrigerante `[PROV]`) não resolve a fome e, se contasse como "menor ganho", seria consumido até acabar sem nunca encerrar o laço. Eles continuam consumíveis manualmente.
+- Empate no menor ganho: desempate determinístico pela chave do produto (ordem alfabética). O design não o define; não afeta o gameplay de forma material.
+- Limiar 10 é do design (`inventory.constants.AUTO_CONSUME_BELOW`), não `[PROV]`.
+- O momento é o do processamento lazy (fim do catch-up, estado em `now`), não retroativo ciclo a ciclo: coerente com "durante o processamento lazy do estado do jogador" e com o guia de continuidade.
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **1034 testes OK** (998 + 36 novos: 33 de Auto-consumo + 3 de concorrência).
+- SQLite, suíte completa: **1034 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos; arquivo de concorrência do `inventory` 3× no PostgreSQL (8 testes cada).
+- Mutação: trocar o núcleo pelo `consume` público no hook faz 8 testes (não-recursão e repetição) falharem; código restaurado.
+- Coberto: configuração e recusas; preferido; alternativa de menor ganho; desempate; preferido inelegível (NULL); ganho 0 e não-alimento; repetição, parada em 10 e após ultrapassar; fim do alimento; ausência de elegível; mesmas regras do manual (Nutrição, efeito, trilha); substituição do efeito de Comida; Nutrição ≤ 100 e dinheiro intacto; trilha/auditoria (inclusive movimento forjado); fome acumulada com o tempo tratada no próximo acesso e não antes; todos os caminhos lazy (`sync_player`, `locked_player`, `get_snapshot`, `check_action`, `available_actions`, `execute_action`); não-recursão (um `_catch_up` por acesso); concorrência no PostgreSQL (acessos simultâneos consomem uma vez; acesso × envio da última unidade tem um vencedor; envios cruzados + acessos sem deadlock).
+
+---
+
+## 2026-10-18 — P1.02 — Inventário implementado (app `inventory`)
+
+Implementa `design/05` (REVIEW) sobre a base integrada (#8 → #9 → #10 → #11 já mergeados em `main`). Branch `dev/p1.02-inventario`, PR #12. **Não mergeado; aguarda autorização do Game Director.**
+
+### O que foi entregue
+- **Posse** (`inventory/models.py`): `InventoryItem` (jogador → produto → quantidade inteira, só existe com quantidade > 0); categorias vêm do catálogo (`inventory_of` agrupa por `Product.category`; nada é duplicado).
+- **Trilha imutável** `InventoryMovement` (05 §19): origem, destino, produto, delta, quantidade resultante, tipo, instante, referência e `Explained`; idempotente por `key`. `InventoryItem.quantity` é cache; a verdade auditável é a soma dos movimentos.
+- **Entrada/saída externas** (`credit`/`debit`): restritas a `purchase`/`production` e `sale`. Compra, Varejo e produção ainda não existem; o ponto de entrada está pronto, sem inventar quem o chama.
+- **Consumir** (05 §5-6; `04` §15): ação `consume` no Action Registry (alvo PRODUTO). Alimento → Nutrição (limitada ao espaço disponível, `Explained` com `food_nutrition` e `nutrition_room`) + efeito temporário de QoL na categoria FOOD (substitui o anterior, regra de `04`). Valores NULL do catálogo recusam com `UNSPECIFIED_DESIGN_VALUE`.
+- **Correio** (05 §11-12): ação `send_item` (alvo PARAMS `{recipient, product, quantity}`). Taxa = `MAX(mínima, valor_de_referência × percentual)`, valor de referência = `base_price × quantidade`, cobrada do remetente para a União (`Nature.MAIL_FEE`) pelo `ledger.transfer`; sem envio gratuito; o `Shipment` guarda o detalhamento da taxa.
+- **Auditoria** (`audit_inventory`, `manage.py audit_inventory [--json]`): posse = Σ movimentos e `quantity_after`; operação x sinal; envios x movimentos x lançamento `MAIL_FEE`.
+- **Registry**: novos tipos de alvo `PRODUCT` e `PARAMS` em `players/registry.py`; as duas ações usam as mesmas recusas dos serviços (sem caminho privilegiado para Bots).
+
+### Valores `[PROV]` (Q3 de 2026-10-14: provisórios permitidos se auditáveis; `inventory/params.py`)
+- Percentual da taxa de correio: **10%**; taxa mínima: **R$ 1,00** (100 centavos); duração do efeito temporário de alimento: **3600 s**. Todos calibráveis; origem registrada no código. Arredondamento da taxa: HALF_EVEN, uma única vez.
+
+### Decisões técnicas (não alteram a mecânica; registradas por honestidade técnica)
+- Consumir é **uma unidade por ação**. Alimento sem efeito de QoL (NO_EFFECT / intensidade 0) não aplica efeito temporário e **não** substitui o existente. Produto não alimento recusa com `NO_CONSUMPTION_EFFECT`.
+- Correio: o design não prevê custo de Energia nem regra de localização; nenhum foi criado. Envio a si mesmo recusado (`SAME_PLAYER`). Quantidades são inteiras.
+- **Protocolo de bloqueio** (docstring de `inventory/services.py`): 1) linhas `Player` envolvidas em ordem crescente de pk; 2) `InventoryItem` em ordem crescente de player_id; 3) contas do ledger.
+
+### Bug real encontrado e corrigido (PostgreSQL)
+Envios cruzados (A→B e B→A simultâneos) davam deadlock em 3/3 execuções: o INSERT com FK toma `FOR KEY SHARE` na linha `Player` referenciada, que conflita com o `FOR UPDATE` da outra transação. Correção: `send_item` trava as duas linhas `Player` em ordem crescente de pk antes de qualquer outra coisa. Coberto por teste de concorrência (5 execuções consecutivas no PG sem falha).
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **998 testes OK** (941 anteriores + 57 do `inventory`).
+- SQLite, suíte completa: **998 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos.
+- Envios cruzados A↔B (`test_crossing_sends_between_two_players_never_deadlock_and_conserve_items_and_money`): passa no PostgreSQL (3 execuções do arquivo de concorrência, 5 testes cada). Mutação feita para provar que o teste vale: sem o bloqueio ordenado das duas linhas `Player`, ele falha com `deadlock detected` (2/2 execuções); código restaurado.
+
+### Fora do escopo DESTE PR (continua no Bot Test; cada item tem etapa própria)
+- **Auto-consumo** (`04` §16): **obrigatório no primeiro Bot Test; a regra já está definida no `04` §16 e NÃO aguarda decisão de mecânica** (a nota anterior desta entrada que o chamava de "decisão pendente do GD" estava errada e foi removida). É a tarefa **P1.02a**, imediatamente depois deste PR (`TASK_QUEUE.md`). Separação de tarefa, não redução de escopo. Armadilha conhecida: o gatilho vive no processamento lazy (`_catch_up`), e `consume()` público chama `sync_player()` → `_catch_up()`; a P1.02a reutiliza a mesma regra de negócio sobre o jogador já travado, sem reentrar no catch-up.
+- **Mercado de Jogadores, Varejo e compra** (05 §13-16): P1.05/P1.04; este PR entrega os pontos de entrada/saída (`credit`/`debit`).
+- **Estado ativo** (roupa/veículo/residência, 05 §7-10): depende de Roupas/Imóveis/Veículos; segue planejado nessas etapas.
+- Estoque empresarial (05 §17): estrutura distinta, em P1.04.
+- As quatro pendências herdadas do P1.01 **já haviam sido resolvidas na P0.02**; nenhuma bloqueou.
+
+### Revisão consolidada do diff (correções incluídas no PR)
+- `_apply`: a releitura após `IntegrityError` era recursiva e ilimitada; uma violação real de restrição recursaria sem fim. Agora relê **uma** vez e, se o erro persiste, ele sobe (teste novo).
+- `send_item`: a recusa de pagamento rotulava qualquer falha do ledger como `INSUFFICIENT_FUNDS`; agora propaga o código real do ledger.
+- `inventory_of`: a ordem das categorias dependia da collation do banco; agora é ordenada em Python.
+
+---
+
 ## 2026-10-16 — P0.07b — registro monetário implementado (app `ledger`)
 
 Implementa `design/24` (FINAL — BOT TEST) sem alterar a mecânica. Branch `dev/p0.07b-ledger`, empilhada sobre o PR #10 (que sobre #9 → #8). **Não mergeada; aguarda auditoria externa e aprovação do Game Director.**

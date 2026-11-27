@@ -31,15 +31,18 @@ def avail(player_id):
 class DescriptorContractTests(TravelTestCase):
     """21 §20: ID, nome, categoria, requisitos, custo, cooldown, alvo, efeitos, visibilidade. Nada inventado."""
 
-    def test_the_four_actions_are_registered_with_stable_ids(self):
-        self.assertEqual([d.id for d in registry.list_descriptors()], ["leisure", "study", "travel", "work"])
+    def test_the_actions_are_registered_with_stable_ids(self):
+        self.assertEqual([d.id for d in registry.list_descriptors()],
+                         ["auto_consumption", "consume", "leisure", "send_item", "study", "travel", "work"])
         self.assertEqual({d.id: d.name for d in registry.list_descriptors()},
-                         {"work": "Trabalhar", "study": "Estudar", "leisure": "Lazer", "travel": "Viajar"})
+                         {"work": "Trabalhar", "study": "Estudar", "leisure": "Lazer", "travel": "Viajar",
+                          "consume": "Consumir", "send_item": "Enviar item pelo Correio",
+                          "auto_consumption": "Configurar Auto-consumo"})
 
     def test_travel_is_not_added_to_the_energy_action_enum(self):
         """Viajar não tem custo de Energia (04 §2.2): o enum Action continua com as 3 ações de custo fixo."""
         self.assertEqual({a.value for a in Action}, {"work", "study", "leisure"})
-        self.assertEqual({d.id for d in registry.list_descriptors()} - {a.value for a in Action}, {"travel"})
+        self.assertEqual({d.id for d in registry.list_descriptors()} - {a.value for a in Action}, {"travel", "consume", "send_item", "auto_consumption"})
 
     def test_every_contract_field_is_present(self):
         for d in registry.list_descriptors():
@@ -55,9 +58,13 @@ class DescriptorContractTests(TravelTestCase):
         for a in PLAYER_ACTIONS:
             self.assertEqual(registry.get_descriptor(a).target, registry.TargetSpec(registry.TARGET_NONE, False))
         self.assertEqual(registry.get_descriptor("travel").target, registry.TargetSpec(registry.TARGET_LOT, True))
+        self.assertEqual(registry.get_descriptor("consume").target, registry.TargetSpec(registry.TARGET_PRODUCT, True))
+        self.assertEqual(registry.get_descriptor("send_item").target, registry.TargetSpec(registry.TARGET_PARAMS, True))
+        self.assertEqual(registry.get_descriptor("auto_consumption").target, registry.TargetSpec(registry.TARGET_PARAMS, True))
 
     def test_availability_lists_actions_in_a_deterministic_id_order(self):
-        self.assertEqual([a.action_id for a in registry.available_actions(self.player.pk)], ["leisure", "study", "travel", "work"])
+        self.assertEqual([a.action_id for a in registry.available_actions(self.player.pk)],
+                         ["auto_consumption", "consume", "leisure", "send_item", "study", "travel", "work"])
 
     def test_descriptors_are_immutable(self):
         with self.assertRaises(Exception):
@@ -461,7 +468,15 @@ class LazyAndQueryCostTests(TravelTestCase):
 
     def test_availability_adds_a_constant_cost_on_top_of_the_lazy_sync(self):
         """O catch-up lazy (existente) custa o que custar; o registro soma um custo FIXO, independente do tempo decorrido."""
+        from players import hooks as player_hooks
         from players.services import locked_player
+
+        # O catch-up lazy também roda os checkpoints registrados por outros sistemas (ex.: snapshot horário de QoL, cujo custo
+        # CRESCE com o tempo e é assimétrico entre gêmeos: o primeiro abre as linhas do snapshot, o segundo só as reusa). Este
+        # teste mede o custo do REGISTRO; o custo dos checkpoints é medido nos testes do sistema dono (rankings).
+        saved = dict(player_hooks._checkpoints)
+        self.addCleanup(lambda: (player_hooks._checkpoints.clear(), player_hooks._checkpoints.update(saved)))
+        player_hooks._checkpoints.clear()
 
         def sync(player):
             def run():

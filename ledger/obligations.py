@@ -19,13 +19,14 @@ from .constants import REMUNERATION_NATURES, AccountKind, Nature, ObligationStat
 from .models import Account, Obligation, Transaction
 from .money import (amount_problem, canonical_rate, competence_day_of, percent_of, tax_rate_problem,
                     tax_territory_problem)
-from . import services as ledger
+from . import hooks, services as ledger
 
 
 def _refuse(code: str, **detail) -> ActionResult:
     return ActionResult(False, code, detail)
 
 
+@hooks.as_operation
 def open_obligation(debtor_id: int, creditor_id: int, amount: int, nature: Nature, *, key: str, reference_kind: str,
                     reference_id, competence_day: Optional[int] = None, tax_rate: Decimal = Decimal(0),
                     tax_territory: str = "", at: Optional[int] = None) -> ActionResult:
@@ -79,6 +80,8 @@ def open_obligation(debtor_id: int, creditor_id: int, amount: int, nature: Natur
         except IntegrityError:
             winner = Obligation.objects.filter(key=key).first()
             return _replay(winner) if winner is not None else _refuse("IDEMPOTENCY_CONFLICT", key=key)
+        hooks.touch(debtor_id, at)         # a obrigação muda o patrimônio de AMBOS: a pagar (devedor), a receber (credor)
+        hooks.touch(creditor_id, at)
         return ActionResult(True, "OK", {"obligation_id": ob.pk, "already_posted": False, "amount": amount})
 
 
@@ -125,6 +128,7 @@ def _affordable(ob: Obligation, available: int, self_comp: bool) -> int:
     return lo
 
 
+@hooks.as_operation
 def settle_obligations(debtor_id: int, *, batch_key: str, at: Optional[int] = None) -> ActionResult:
     """
     Paga o que o caixa DISPONÍVEL do devedor permite, em ordem (competência, id). Parcial permitido. Idempotente por
@@ -171,11 +175,14 @@ def settle_obligations(debtor_id: int, *, batch_key: str, at: Optional[int] = No
                 ob.status = ObligationStatus.PAID.value
                 fields.append("status")
             ob.save(update_fields=fields)
+            hooks.touch(ob.debtor_id, at)
+            hooks.touch(ob.creditor_id, at)
             paid_rows.append({"obligation": ob.pk, "gross": x, "tax": tax_chunk, "net": x - tax_chunk,
                               "remaining": remaining(ob), "competence_day": ob.competence_day})
     return ActionResult(True, "OK", {"paid": paid_rows, "skipped": skipped, "total_gross": sum(r["gross"] for r in paid_rows)})
 
 
+@hooks.as_operation
 def cancel_obligation(obligation_id: int, reason: str, *, at: Optional[int] = None) -> ActionResult:
     """Cancelamento por regra do sistema de origem; exige motivo e guarda o que restava (nada some sem registro)."""
     if not reason:
@@ -190,6 +197,8 @@ def cancel_obligation(obligation_id: int, reason: str, *, at: Optional[int] = No
         left = remaining(ob)
         Obligation.objects.filter(pk=ob.pk).update(status=ObligationStatus.CANCELLED.value, cancel_reason=reason,
                                                     cancelled_at=at)
+        hooks.touch(ob.debtor_id, at)
+        hooks.touch(ob.creditor_id, at)
         return ActionResult(True, "OK", {"obligation_id": ob.pk, "cancelled_remaining": left})
 
 

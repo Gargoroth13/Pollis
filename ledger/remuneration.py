@@ -26,6 +26,7 @@ from .constants import (COUNTS_IN_C_S, REMUNERATION_NATURES, Nature, Policy, Req
 from .models import Account, Obligation, RemunerationCounter, RemunerationRequest
 from .money import (amount_problem, canonical_rate, competence_day_of, percent_of, tax_rate_problem,
                     tax_territory_problem)
+from . import hooks
 from . import obligations as obligations_mod
 from . import services as ledger
 
@@ -227,6 +228,7 @@ def sort_key(r: RemunerationRequest) -> Tuple:
     return (political, r.competence_day, r.earned_at, r.payer_id, r.nature, r.reference_kind, r.reference_id, r.key)
 
 
+@hooks.as_operation
 def liquidate_remuneration(*, batch: str, at: Optional[int] = None, keys: Optional[Iterable[str]] = None) -> ActionResult:
     """
     Processa, em UM lote atômico, todos os pedidos SUBMITTED (ou só `keys`). Cada pedido vê os contadores deixados pelos

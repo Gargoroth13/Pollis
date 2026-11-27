@@ -1,0 +1,61 @@
+"""Ligação dos Rankings aos sistemas de origem. Chamada por `RankingsConfig.ready` (idempotente)."""
+from __future__ import annotations
+
+import logging
+
+from django.db import transaction
+
+from core import ticks
+from core.timeline import Tick, TickKind
+from ledger import hooks as ledger_hooks
+from players import registry
+
+from . import outbox, params, qol_snapshots, records
+
+_log = logging.getLogger(__name__)
+RECORDER_ACTIVITY = "rankings_activity"       # gravador transacional: evento de atividade na transação da ação
+LEDGER_HOOK_NET_WORTH = "rankings_net_worth"
+TICK_RETRY = "rankings_net_worth_retry"
+TICK_SWEEP = "rankings_net_worth_sweep"
+TICK_QOL = "rankings_qol_snapshots"
+TICK_OUTBOX = "rankings_activity_outbox"
+
+
+def outbox_tick(tick: Tick, context) -> None:
+    """Tick de 10 min do mundo: DEPOIS do commit do mundo, processa os eventos de atividade pendentes (retry incluído)."""
+    def run():
+        try:
+            outbox.process_pending()
+        except Exception:    # noqa: BLE001 - os eventos são duráveis; o próximo ciclo (ou o worker) retoma
+            _log.exception("outbox de atividade: passada do tick falhou")
+    transaction.on_commit(run)
+
+
+def hourly_retry(tick: Tick, context) -> None:
+    """Reaplica candidatos de recorde de patrimônio que não puderam ser gravados no fim da operação do ledger."""
+    records.drain_net_worth_candidates()
+
+
+def daily_sweep(tick: Tick, context) -> None:
+    """Reconciliação diária do recorde de patrimônio (o recorde em si é mantido pelo gancho do ledger)."""
+    records.sweep_net_worth_record(tick.at)
+
+
+def _has_tick(kind: TickKind, name: str) -> bool:
+    return any(r.name == name for r in ticks.registry.handlers_for(ticks.WORLD, kind))
+
+
+def connect() -> None:
+    if RECORDER_ACTIVITY not in registry.action_recorder_names():
+        registry.register_action_recorder(RECORDER_ACTIVITY, outbox.record_event)
+    if LEDGER_HOOK_NET_WORTH not in ledger_hooks.operation_hook_names():
+        ledger_hooks.register_operation_hook(LEDGER_HOOK_NET_WORTH, records.on_ledger_operation)
+    if not _has_tick(TickKind.HOURLY, TICK_RETRY):
+        ticks.register(ticks.WORLD, TickKind.HOURLY, TICK_RETRY, params.DAILY_TICK_PRIORITY)(hourly_retry)
+    qol_snapshots.connect()
+    if not _has_tick(TickKind.TEN_MINUTES, TICK_QOL):
+        ticks.register(ticks.WORLD, TickKind.TEN_MINUTES, TICK_QOL, params.QOL_TICK_PRIORITY)(qol_snapshots.world_tick)
+    if not _has_tick(TickKind.TEN_MINUTES, TICK_OUTBOX):
+        ticks.register(ticks.WORLD, TickKind.TEN_MINUTES, TICK_OUTBOX, params.ACTIVITY_OUTBOX_TICK_PRIORITY)(outbox_tick)
+    if not _has_tick(TickKind.DAILY, TICK_SWEEP):
+        ticks.register(ticks.WORLD, TickKind.DAILY, TICK_SWEEP, params.DAILY_TICK_PRIORITY)(daily_sweep)
