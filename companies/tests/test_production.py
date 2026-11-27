@@ -263,6 +263,28 @@ class BlockedWorkTests(ProductionBase):
         self.assertEqual(stock.used_of(self.firm), capacity)
         self.assertEqual(self.refusal(), "STOCK_FULL")
 
+    def test_a_stale_pre_check_cannot_make_the_work_pay_or_spend_when_the_inputs_are_gone_under_the_lock(self):
+        """A-03, determinístico: o provedor de bloqueio (que roda ANTES do lock da empresa) é removido para simular a janela em
+        que ele ainda via insumo e o recálculo sob lock não vê mais. O hook recusa SEM efeito: sem Energia/Burnout gastos, sem
+        salário, sem skill, sem produção, e o carry fracionário válido fica intacto."""
+        from players import hooks
+        hooks.unregister_block_provider(production.BLOCK_PROVIDER)
+        self.addCleanup(hooks.register_block_provider, production.BLOCK_PROVIDER, production.block_provider)
+        ProductionLine.objects.filter(company_id=self.firm).update(carry=D("0.4"))
+        self.assertTrue(stock.debit_stock(self.firm, "wheat", 400, destination="test", key="sale:w2", reference_kind="test",
+                                          reference_id="2").ok)
+        self.set_state(self.worker, energy=D(100), burnout=D(0))
+        before = self.snap(self.worker)
+        skills_before = get_levels(self.worker.pk)
+        res = registry.execute_action(self.worker.pk, "work", None)
+        after = self.snap(self.worker)
+        self.assertEqual((res.ok, res.code), (False, "MISSING_INPUTS"))
+        self.assertEqual((after.energy, after.burnout), (before.energy, before.burnout))
+        self.assertEqual(get_levels(self.worker.pk), skills_before)
+        self.assertEqual((WorkWage.objects.count(), self.units("flour")), (0, 0))
+        self.assertEqual(StockMovement.objects.filter(operation="production").count(), 0)
+        self.assertEqual(ProductionLine.objects.get(company_id=self.firm).carry, D("0.4"))
+
     def test_the_block_does_not_apply_to_players_without_a_production_job(self):
         self.assertIsNone(self.work(self.third))
         self.assertTrue(registry.check_action(self.third.pk, "work", None).available)

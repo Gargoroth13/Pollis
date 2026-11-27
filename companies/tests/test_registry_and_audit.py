@@ -117,3 +117,21 @@ class JobsAuditTests(CompanyTestCase):
         from companies.models import Application
         Application.objects.create(position_id=self.position, applicant=self.player, created_at=1)
         self.assertIn("PENDING_APPLICATION_ON_CLOSED_POSITION", self.codes())
+
+    def test_the_audit_flags_the_owner_holding_a_paid_position_in_his_own_company(self):
+        """A-05: o Dono não ocupa vaga remunerada da própria empresa (as atribuições de proprietário seguem na vaga de Dono)."""
+        self.assertNotIn("OWNER_HOLDS_PAID_POSITION", self.codes())
+        Position.objects.filter(pk=self.position).update(holder_id=self.player.pk)
+        self.assertIn("OWNER_HOLDS_PAID_POSITION", self.codes())
+
+    def test_the_audit_flags_more_support_slots_used_in_a_day_than_the_stars_allow(self):
+        """A-02: vagas de suporte USADAS no dia (mesmo as já demitidas) contam para o limite da estrela."""
+        from companies.models import SupportWork
+        self.assertNotIn("SUPPORT_DAILY_SLOTS_EXCEEDED", self.codes())
+        limit = params.SUPPORT_LIMIT_PER_STAR[Company.objects.get(pk=self.company).stars]
+        extra = [Position.objects.create(company_id=self.company, kind="engineer", salary=1_000, status="open", created_at=1)
+                 for _ in range(limit + 1)]
+        for n, position in enumerate(extra, start=1):               # `limit + 1` vagas distintas usadas no MESMO dia
+            SupportWork.objects.create(company_id=self.company, player=self.other, position=position, kind="engineer", sequence=n,
+                                       competence_day=5, at=5 * 86_400, level=0, specialization=0, contribution=0)
+        self.assertIn("SUPPORT_DAILY_SLOTS_EXCEEDED", self.codes())

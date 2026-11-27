@@ -440,6 +440,41 @@ class ExtensionMechanismsStillApplyTests(TravelTestCase):
         after = self.state()
         self.assertEqual((after.energy, after.burnout, after.last_work_at), (before.energy, before.burnout, before.last_work_at))
 
+    def test_a_hook_refusal_discards_every_effect_of_the_action_but_keeps_the_catch_up(self):
+        """`ActionHookRefusal` (A-03): recusa decidida DENTRO dos hooks, sob lock. Energia, Burnout, last_work_at e o que os
+        hooks anteriores já fizeram são desfeitos; a recusa volta como resultado normal (não exceção) com o código e o detalhe."""
+        effects = []
+
+        def first(ctx):
+            effects.append("first")
+            ctx.player.health = ctx.player.health         # toca o jogador em memória, como um hook real faria
+            return {"ran": True}
+
+        def refuse(ctx):
+            raise hooks.ActionHookRefusal("ZZ_INPUT_GONE", company=7)
+
+        hooks.register_action_hook("zz_a_first", first)
+        hooks.register_action_hook("zz_b_refuse", refuse)
+        self.addCleanup(hooks.unregister_action_hook, "zz_a_first")
+        self.addCleanup(hooks.unregister_action_hook, "zz_b_refuse")
+        before = self.state()
+        result = registry.execute_action(self.player.pk, "work")
+        after = self.state()
+        self.assertFalse(result.ok)
+        self.assertEqual(result.code, "ZZ_INPUT_GONE")
+        self.assertEqual(result.detail["company"], 7)
+        self.assertEqual(effects, ["first"])               # o hook anterior chegou a rodar...
+        self.assertNotIn("hooks", result.detail)           # ...mas nada dele é devolvido como sucesso
+        self.assertEqual((after.energy, after.burnout, after.last_work_at), (before.energy, before.burnout, before.last_work_at))
+
+    def test_a_hook_refusal_is_not_an_error_and_the_next_action_works_normally(self):
+        hooks.register_action_hook("zz_refuse_once", lambda ctx: (_ for _ in ()).throw(hooks.ActionHookRefusal("ZZ_ONCE")))
+        first = registry.execute_action(self.player.pk, "work")
+        hooks.unregister_action_hook("zz_refuse_once")
+        second = registry.execute_action(self.player.pk, "work")
+        self.assertEqual((first.ok, first.code), (False, "ZZ_ONCE"))
+        self.assertTrue(second.ok)
+
     def test_a_block_provider_is_visible_in_availability_and_enforced_in_execution(self):
         hooks.register_block_provider("zz_block", lambda p, a, now, act: "EMPLOYER_CLOSED" if a is Action.WORK else None)
         self.addCleanup(hooks.unregister_block_provider, "zz_block")

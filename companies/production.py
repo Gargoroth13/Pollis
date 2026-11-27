@@ -32,7 +32,7 @@ from catalog.models import Product
 from core import clock as game_clock
 from core.breakdown import Calc, Explained
 from players.actions import Action
-from players.hooks import ActionHookContext, register_action_hook, register_block_provider
+from players.hooks import ActionHookContext, ActionHookRefusal, register_action_hook, register_block_provider
 from players.models import Player
 from players.services import ActionResult
 from skills.balance import get_skill_balance
@@ -331,6 +331,12 @@ def produce_on_work(ctx: ActionHookContext) -> Optional[Dict[str, Any]]:
         return None
     company = Company.objects.select_for_update().get(pk=job.company_id)                      # protocolo: jogador → empresa
     line = ProductionLine.objects.select_for_update(of=("self",)).select_related("product").filter(company=company).first()
+    # Mesma regra do provedor de bloqueio, agora SOB O LOCK da empresa: o provedor consulta antes de travar e duas ações
+    # simultâneas podiam ambas passar por ele e esgotar o insumo/espaço uma da outra. A recusa vem ANTES de qualquer escrita
+    # (nem estoque, nem carry, nem salário, nem Energia: `perform_action` desfaz o resto) e o carry fracionário válido fica como está.
+    refused = work_refusal(job, ctx.now)
+    if refused is not None:
+        raise ActionHookRefusal(refused, company=company.pk, source="production_hook")
     if line is None or line.product_id is None:
         return {"company": company.pk, "produced": 0, "limited_by": ["COMPANY_NO_PRODUCT"]}
     if line.setup_until is not None and ctx.now < line.setup_until:

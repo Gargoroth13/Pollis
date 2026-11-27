@@ -136,6 +136,12 @@ def settle_obligations(debtor_id: int, *, batch_key: str, at: Optional[int] = No
     paid_rows: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
     with transaction.atomic():
+        # contas envolvidas travadas em ordem crescente ANTES de pagar (a mesma disciplina da folha do tick): quem quita dívidas
+        # de empresas diferentes com credores em comum não se trava em ordem oposta
+        involved = {debtor_id, ledger.union_account().pk}
+        involved |= set(Obligation.objects.filter(debtor_id=debtor_id, status=ObligationStatus.OPEN.value)
+                        .values_list("creditor_id", flat=True))
+        list(Account.objects.select_for_update().filter(pk__in=sorted(involved)).order_by("pk"))
         debtor = Account.objects.select_for_update().filter(pk=debtor_id).first()
         if debtor is None:
             return _refuse("ACCOUNT_NOT_FOUND", account=debtor_id)
@@ -191,6 +197,12 @@ def cancel_obligation(obligation_id: int, reason: str, *, at: Optional[int] = No
         Obligation.objects.filter(pk=ob.pk).update(status=ObligationStatus.CANCELLED.value, cancel_reason=reason,
                                                     cancelled_at=at)
         return ActionResult(True, "OK", {"obligation_id": ob.pk, "cancelled_remaining": left})
+
+
+def has_open_until(debtor_id: int, competence_day: int) -> bool:
+    """O devedor tem obrigação ABERTA de competência até `competence_day` (a fila que um pagamento novo não pode furar)?"""
+    return Obligation.objects.filter(debtor_id=debtor_id, status=ObligationStatus.OPEN.value,
+                                     competence_day__lte=competence_day).exists()
 
 
 def open_obligations(debtor_id: int) -> List[Obligation]:

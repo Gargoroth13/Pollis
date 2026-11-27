@@ -8,8 +8,9 @@ Salários das Empresas (design/02 §16; 24 §24.12-24.13; 01 §1.7; decisões do
     `OWNER_SALARY`, pagador = conta da empresa, competência = dia do tick.
   - **Caixa insuficiente**: política `PENDING` (GD 2026-10-19): vira obrigação registrada e auditável (`ledger.Obligation`),
     nunca dinheiro novo, nunca paga duas vezes (chave idempotente do pedido; quitação do registro). No tick diário a empresa
-    quita o que o caixa permite, da competência mais antiga para a mais nova (R4), ANTES de pagar a folha do dia. (Um Trabalho
-    com caixa disponível é pago na hora, sem fila: a fila só existe na quitação.)
+    quita o que o caixa permite, da competência mais antiga para a mais nova (R4), ANTES de pagar a folha do dia. Um Trabalho NÃO
+    fura a fila (A-04; 24 §24.9): com obrigação mais antiga em aberto o registro monetário quita primeiro as antigas, na ordem, e só
+    paga o salário novo na hora se o caixa sobrar; do contrário o salário novo vira obrigação atrás das demais.
   - `W`, `S`, `T`: `limits_for` é o provedor registrado no registro monetário sob demanda (`ensure_limits_provider`), para não
     colidir com um provedor de outro sistema. W e T usam os padrões das leis (`11` §11.1) até P1.12; S vem de `skills`.
 
