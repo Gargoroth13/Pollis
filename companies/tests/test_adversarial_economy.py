@@ -1,12 +1,19 @@
 """
 AUDITORIA ADVERSARIAL DA ONDA 1 (Empresas, #15–#19) — cenários econômicos do GD (2026-11-27, Etapa 2).
 
-Estes testes NÃO adicionam regra nenhuma: tentam QUEBRAR as regras que já existem e MEDEM o que acontece. Cada teste afirma o que o
-código garante hoje e imprime (`AUDIT|...`) os números que sustentam o relatório. Quando um risco é REAL (nenhuma regra o impede),
-o teste afirma o comportamento atual, com o comentário `RISCO REAL`, para que uma futura correção, se o GD decidir por uma, tenha de
-mudar o teste de propósito — nada aqui é um limite artificial novo.
+Estes testes tentam QUEBRAR as regras que existem e MEDEM o que acontece (`AUDIT|...`). Política de asserções (GD, 2026-11-27):
+nenhum teste fixa como requisito permanente um comportamento explorável.
+
+* Garantias que valem sempre (conservação, caixa nunca negativo, cada centavo devido registrado, limites diários, concorrência)
+  são asserções normais.
+* Uma PROTEÇÃO esperada que o código ainda não oferece é escrita como a asserção da proteção e marcada `@unittest.expectedFailure`
+  com `PENDENTE_*`: enquanto a proteção não existe o teste "falha como esperado" (suíte verde); quando ela for implementada o teste
+  passa e a suíte acusa SUCESSO INESPERADO, o que obriga a remover a marca — o teste nunca vira garantia do comportamento antigo.
+* A-02..A-05 foram resolvidos no PR #37, que remove a marca dos respectivos testes. A-01 e A-06 dependem do design 25 (capacidade
+  administrativa, estados de inadimplência, proteção de contratação) e permanecem marcados como PENDÊNCIA OBRIGATÓRIA antes do Bot Test.
 """
 import math
+import unittest
 from decimal import Decimal
 
 from django.test import TransactionTestCase
@@ -19,7 +26,7 @@ from companies import construction, jobs, params, payroll, production, retail, s
 from companies.audit import audit_companies
 from companies.constants import StockOperation
 from companies.models import (Company, Position, ProductionLine, SalesCapacityUse, StockItem, StockMovement, SupportWork, WorkWage)
-from core import ticks
+from core import clock as _clock, ticks
 from core.models import WorldClock
 from geography.balance import get_scenario
 from geography.generator import generate_world
@@ -40,6 +47,13 @@ from .test_wages import FIRST_MIDNIGHT
 
 D = Decimal
 REAL = 100
+
+
+def pending_on_postgres(fn):
+    """A-03 só se manifesta com concorrência real (PostgreSQL); o SQLite serializa as escritas e o teste já passa lá. A marca vale
+    só onde a proteção ainda não existe, para o SQLite não acusar sucesso inesperado."""
+    from django.db import connection
+    return unittest.expectedFailure(fn) if connection.vendor == "postgresql" else fn
 
 
 def note(tag, **numbers):
@@ -96,7 +110,10 @@ class AdversarialBase(ProductionBase):
 # ---------------------------------------------------------------------------------------------------------------------
 
 class InsolventCompanyTests(AdversarialBase):
-    def test_a_company_with_no_cash_hires_many_and_keeps_producing_and_every_wage_becomes_a_registered_obligation(self):
+    def test_a_company_without_cash_never_goes_negative_creates_no_money_and_registers_every_cent_owed(self):
+        """Garantias PERMANENTES (conservação e registro). Não afirma que contratar/produzir sem caixa seja permitido: o cenário é montado
+        contratando a crédito apenas porque hoje nada o impede; quando o design 25 §25.3 exigir capacidade de folha na contratação, este
+        preparo deve passar a financiar a contratação e deixar o caixa acabar depois. A proteção em si é o teste PENDENTE abaixo."""
         self.assertEqual(self.firm_money(), 0)
         crew = [self.worker] + self.staff(7)
         money_before = {p.pk: self.money(p) for p in crew}
@@ -120,12 +137,10 @@ class InsolventCompanyTests(AdversarialBase):
         self.assertEqual((count, owed), (len(crew), recognized))
         self.assertEqual(ledger_metrics()["in_circulation"], total)
         self.assertEqual({p.pk: self.money(p) for p in crew}, money_before)               # ninguém recebeu nada
-        # RISCO REAL (sem regra que o impeça): a produção NÃO depende de o salário poder ser pago
-        self.assertEqual(flour, produced)
-        self.assertGreaterEqual(produced, len(crew) - 1)
+        self.assertEqual(flour, produced)                                                  # o estoque confere com o que foi produzido
         self.clean()
 
-    def test_obligations_grow_without_a_ceiling_day_after_day_but_each_worker_day_is_bounded_by_the_daily_limit(self):
+    def test_the_daily_increase_of_obligations_is_bounded_by_the_daily_limit_of_each_worker(self):
         crew = [self.worker] + self.staff(3)
         series = []
         for day in range(1, 13):
@@ -140,12 +155,33 @@ class InsolventCompanyTests(AdversarialBase):
         owner_part = 2_000 * len(series)
         note("S2.obligation_growth", days=len(series), workers=len(crew), owed_day1=series[0], owed_day6=series[5],
              owed_day12=series[-1], daily_increment=series[-1] - series[-2], cap_per_worker_day_floor=cap_per_worker_day)
-        self.assertTrue(all(b > a for a, b in zip(series, series[1:])))                # RISCO REAL: cresce sem teto
-        increments = {b - a for a, b in zip(series[1:], series[2:])}
-        self.assertEqual(len(increments), 1)                                           # linear: nada acelera nem para
         # limite por trabalhador/dia (W=R$ 50 com skill baixa): a dívida diária do conjunto é no máximo n × max(W,S) + Dono
         self.assertLessEqual(series[-1] - series[-2], len(crew) * max(params.MIN_WAGE_PER_DAY_CENTS, 20_000) + 2_000)
         self.clean()
+
+    @unittest.expectedFailure     # PENDENTE_DESIGN_25 (A-01): obrigatório antes do Bot Test
+    def test_a_company_in_persistent_default_has_its_production_suspended_after_three_days(self):
+        """Design 25 §25.2: após 3 dias de inadimplência persistente a empresa fica insolvente e a produção/atividades que geram novas
+        obrigações salariais são suspensas (a venda de estoque, recebimentos, aportes e quitação continuam)."""
+        crew = [self.worker] + self.staff(1)
+        for _ in range(5):
+            for p in crew:
+                self.work_hooks(p)
+            self.tick_next_day()
+        self.assertGreater(self.obligations_of()[1], 0)
+        res = self.work_hooks(self.worker)
+        self.assertFalse(res.ok, res)
+
+    @unittest.expectedFailure     # PENDENTE_DESIGN_25 (A-01): obrigatório antes do Bot Test
+    def test_hiring_is_refused_when_the_company_cannot_pay_one_day_of_the_potential_payroll(self):
+        """Design 25 §25.3: na contratação conferir capacidade de pagar ao menos um dia de remuneração potencial da equipe inteira,
+        incluindo o novo contratado."""
+        self.assertEqual(self.firm_money(), 0)
+        vacancy = self.open("worker", 2_000, company=self.firm)
+        applicant = self.new_player("a01_applicant")
+        application = jobs.apply_to_position(applicant.pk, vacancy).detail["application"]
+        res = jobs.approve_application(self.boss.pk, application)
+        self.assertFalse(res.ok, res)
 
     def test_once_funded_the_oldest_obligations_are_paid_first_and_nothing_is_paid_twice(self):
         crew = [self.worker] + self.staff(2)
@@ -162,20 +198,49 @@ class InsolventCompanyTests(AdversarialBase):
         self.assertLessEqual(left, 2_000 * 1)                                           # só o que nasceu no próprio tick
         self.clean()
 
-    def test_a_new_work_wage_is_paid_on_the_spot_ahead_of_older_unpaid_obligations(self):
-        """PRIORIDADE INVERTIDA: o 24 manda quitar da competência mais antiga para a mais nova, mas um Trabalho com caixa disponível
-        é pago NA HORA (documentado em payroll.py). Quem trabalha depois passa na frente de quem trabalhou antes."""
+    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
+    def test_a_new_work_wage_never_jumps_ahead_of_older_unpaid_obligations(self):
+        """REGRESSÃO A-04 (24 §24.9; design 25 §25.4): com caixa para UM salário, a dívida mais antiga é quitada primeiro e o salário
+        novo vira obrigação atrás dela — quem trabalhou antes recebe antes."""
         old = self.worker
         self.work_hooks(old)                                                          # sem caixa: vira obrigação
         self.assertEqual(self.obligations_of()[0], 1)
         newer = self.staff(1)[0]
+        old_before = self.money(old)
         self.assertTrue(services.fund_company(self.boss.pk, self.firm, 2_000).ok)     # caixa só para UM salário
         self.clk.advance(days=1)
         res = self.work_hooks(newer)
         wage = res.detail["hooks"][payroll.WAGE_HOOK]
-        still_open = Obligation.objects.filter(status=ObligationStatus.OPEN.value).count()
-        note("S3.priority_inversion", newer_paid_now=wage["paid"], older_still_open=still_open)
-        self.assertEqual((wage["paid"], still_open), (2_000, 1))                      # RISCO REAL (documentado como decisão técnica)
+        still_open = Obligation.objects.filter(status=ObligationStatus.OPEN.value)
+        note("S3.priority_queue", newer_paid_now=wage["paid"], newer_pending=wage["pending"], older_received=self.money(old) - old_before,
+             open_after=still_open.count())
+        self.assertEqual((wage["paid"], wage["pending"]), (0, 2_000))                 # o novo NÃO foi pago na hora
+        self.assertGreater(self.money(old) - old_before, 0)                           # o mais antigo recebeu
+        self.assertEqual([o.amount_paid for o in Obligation.objects.filter(nature=Nature.WAGE.value).order_by("id")][0], 2_000)
+        self.assertEqual(still_open.count(), 1)                                       # sobra só o salário novo, na fila
+        self.clean()
+
+    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
+    def test_with_cash_for_everyone_the_older_is_settled_first_and_the_new_wage_is_paid_on_the_spot(self):
+        old = self.worker
+        self.work_hooks(old)
+        newer = self.staff(1)[0]
+        self.assertTrue(services.fund_company(self.boss.pk, self.firm, 10_000).ok)
+        self.clk.advance(days=1)
+        res = self.work_hooks(newer)
+        wage = res.detail["hooks"][payroll.WAGE_HOOK]
+        self.assertEqual((wage["paid"], wage["pending"]), (2_000, 0))                 # sobrou caixa depois da fila: paga na hora
+        self.assertEqual(Obligation.objects.filter(status=ObligationStatus.OPEN.value).count(), 0)
+        self.clean()
+
+    def test_the_queue_settlement_is_idempotent_when_the_same_wage_request_is_repeated(self):
+        self.work_hooks(self.worker)
+        self.assertTrue(services.fund_company(self.boss.pk, self.firm, 10_000).ok)
+        newer = self.staff(1)[0]
+        self.work_hooks(newer)
+        total = ledger_metrics()["in_circulation"]
+        self.tick_next_day()
+        self.assertEqual(ledger_metrics()["in_circulation"], total)                   # nada de dinheiro novo; a quitação não se repete
         self.clean()
 
 
@@ -214,30 +279,29 @@ class OwnerExtractionTests(AdversarialBase):
         self.assertGreaterEqual(Obligation.objects.filter(status=ObligationStatus.OPEN.value).count(), 1)   # o salário do Dono ficou PENDING
         self.clean()
 
-    def test_the_owner_can_hire_himself_and_is_then_paid_on_the_spot_ahead_of_other_creditors(self):
-        crew = [self.worker]
+    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
+    def test_the_owner_cannot_hold_a_paid_position_in_his_own_company_but_keeps_the_owner_role(self):
+        """REGRESSÃO A-05: o Dono não se candidata nem é aprovado para vaga remunerada da própria empresa; o cargo Dono (salário diário
+        do tick, abrir/fechar vagas, aprovar) segue intacto, e ele pode ser funcionário de OUTRA empresa (02 §16)."""
         self.work_hooks(self.worker)                                                    # um credor mais antigo, sem caixa
         self.assertTrue(services.fund_company(self.boss.pk, self.firm, 1_000_000).ok)
         vacancy = self.open("worker", 1_000_000, company=self.firm)
-        res = jobs.apply_to_position(self.boss.pk, vacancy)                              # o Dono se candidata à própria vaga
+        res = jobs.apply_to_position(self.boss.pk, vacancy)
         note("S3.owner_self_hire", apply_code=res.code)
-        self.assertTrue(res.ok, res)                                                    # RISCO REAL: nenhuma regra impede
-        self.assertTrue(jobs.approve_application(self.boss.pk, res.detail["application"]).ok)
-        self.clk.advance(days=1)
-        before = self.money(self.boss)
-        wages = []
-        for _ in range(5):
-            r = self.work_hooks(self.boss, refill=False) if wages else self.work_hooks(self.boss)
-            if not r.ok:
-                break
-            wages.append(r.detail["hooks"][payroll.WAGE_HOOK])
-        gained = self.money(self.boss) - before
-        counter = RemunerationCounter.objects.get(player_id=self.boss.pk, competence_day=competence_day_of(self.clk.now()))
-        cap = max(params.MIN_WAGE_PER_DAY_CENTS, 150)
-        note("S3.owner_self_hire_extraction", works=len(wages), gross_recognized=counter.c_s, net_received=gained, cap_S=cap,
-             older_creditors_open=self.obligations_of()[0])
-        self.assertLessEqual(counter.c_s, cap)                                           # o limite diário vale também aqui
-        self.assertGreaterEqual(self.obligations_of()[0], 1)                             # e o credor mais antigo continua sem receber
+        self.assertEqual((res.ok, res.code), (False, "OWNER_CANNOT_HOLD_POSITION"))
+        self.assertEqual(registry.get_descriptor("apply_position").requirements.count("OWNER_CANNOT_HOLD_POSITION"), 1)
+        # defesa em profundidade: uma candidatura que já existisse (criada antes da regra) também não pode ser aprovada
+        from companies.models import Application
+        application = Application.objects.create(position_id=vacancy, applicant_id=self.boss.pk, created_at=self.clk.now(), explained={})
+        approved = jobs.approve_application(self.boss.pk, application.pk)
+        self.assertEqual((approved.ok, approved.code), (False, "OWNER_CANNOT_HOLD_POSITION"))
+        self.assertEqual(Position.objects.get(pk=vacancy).status, "open")
+        # o Dono continua dono: abre/fecha vagas e é funcionário de outra empresa
+        other_firm = self.found(self.other, "industrial", "Outra", 0)
+        pos = self.open("worker", 1_000, company=other_firm, player=self.other)
+        applied = jobs.apply_to_position(self.boss.pk, pos)
+        self.assertTrue(applied.ok, applied)
+        self.assertTrue(jobs.approve_application(self.other.pk, applied.detail["application"]).ok)
         self.clean()
 
     def test_wage_plus_owner_salary_plus_second_company_never_exceed_the_player_daily_limit(self):
@@ -395,23 +459,75 @@ class SupportAccumulationTests(AdversarialBase):
         note("S7.engineers_within_star", stars=2, engineers=len(engineers), works=works, daily_bonus=bonus)
         self.assertEqual(SupportWork.objects.filter(company_id=self.firm, kind="engineer", competence_day=day).count(), works)
 
-    def test_dismissing_and_rehiring_engineers_within_one_day_multiplies_the_daily_bonus_beyond_the_star_limit(self):
+    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
+    def test_dismissing_and_rehiring_support_staff_in_one_day_cannot_multiply_the_daily_bonus(self):
+        """REGRESSÃO A-02 (GD 2026-11-27): vagas de suporte JÁ UTILIZADAS no dia continuam contando para o limite diário mesmo depois
+        da demissão. Substitutos são contratados normalmente, mas só passam a contribuir no dia seguinte."""
         self.set_stars(2)
-        rounds, per_round_bonus, total_works = 4, [], 0
+        rounds, per_round_bonus, refused_codes, total_works = 4, [], set(), 0
+        first_round = []
         for r in range(rounds):
-            engineers = self.staff(2, kind="engineer", salary=1_000, prefix=f"c{r}_")
-            total_works += sum(self.bar_works(p) for p in engineers)
+            engineers = self.staff(2, kind="engineer", salary=1_000, prefix=f"c{r}_")            # contratar substituto NÃO é impedido
+            for p in engineers:
+                self.refill(p)
+                before = (Player.objects.get(pk=p.pk).energy, WorkWage.objects.filter(player_id=p.pk).count())
+                n = self.bar_works(p)
+                total_works += n
+                if r == 0:
+                    first_round.append(n)
+                else:
+                    res = self.work_hooks(p)
+                    refused_codes.add(res.code)
+                    self.assertEqual(n, 0)                                                     # nem uma ação aceita
+                    self.assertEqual(WorkWage.objects.filter(player_id=p.pk).count(), before[1])  # sem salário
+                    self.assertEqual(SupportWork.objects.filter(player_id=p.pk).count(), 0)       # sem contribuição
             per_round_bonus.append(support.engineering_bonus(self.firm, self.clk.now()).value)
             for pos in Position.objects.filter(company_id=self.firm, kind="engineer", status="filled"):
-                self.assertTrue(jobs.dismiss(self.boss.pk, pos.pk).ok)               # a vaga é ENCERRADA: libera o limite da estrela
-        sequence = [str(b) for b in per_round_bonus]
+                self.assertTrue(jobs.dismiss(self.boss.pk, pos.pk).ok)
         intended = per_round_bonus[0]
-        note("S7.engineer_churn", stars=2, rounds=rounds, bonus_by_round=sequence, intended_star_bound=intended,
-             multiplier_vs_bound=str(per_round_bonus[-1] / intended), total_engineer_works=total_works)
-        # RISCO REAL: o bônus do dia cresce linearmente com o nº de contratações do dia; o limite da estrela só vale para
-        # engenheiros SIMULTÂNEOS, e cada contratação traz uma barra de energia nova
-        self.assertEqual(len({b for b in per_round_bonus}), rounds)
-        self.assertGreater(per_round_bonus[-1], intended * (rounds - 1))
+        note("S7.engineer_churn_blocked", stars=2, rounds=rounds, bonus_by_round=[str(b) for b in per_round_bonus],
+             intended_star_bound=intended, multiplier_vs_bound=str(per_round_bonus[-1] / intended), total_engineer_works=total_works,
+             refusal=",".join(sorted(refused_codes)))
+        self.assertEqual({b for b in per_round_bonus}, {intended})                             # o bônus do dia nunca passa do limite
+        self.assertEqual(refused_codes, {"SUPPORT_DAILY_LIMIT_REACHED"})
+        # o dia seguinte reinicia: um substituto ainda contratado pode contribuir
+        late = self.staff(1, kind="engineer", salary=1_000, prefix="late")[0]
+        self.tick_next_day()
+        self.assertGreater(self.bar_works(late), 0)
+        self.assertEqual(support.engineering_bonus(self.firm, self.clk.now()).value, support.daily_total(
+            self.firm, "engineer", competence_day_of(self.clk.now()))["total"])
+        self.clean()
+
+    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
+    def test_the_same_daily_slot_protection_applies_to_lawyers_and_a_used_slot_keeps_working(self):
+        self.set_stars(1)
+        first = self.staff(1, kind="lawyer", salary=1_000, prefix="l1")[0]
+        self.assertGreater(self.bar_works(first), 0)
+        risk_after_first = support.lawyer_risk(self.firm, self.clk.now()).value
+        self.refill(first)
+        self.assertTrue(self.work_hooks(first, refill=False).ok)                                  # a mesma vaga segue contribuindo
+        risk_before_dismiss = support.lawyer_risk(self.firm, self.clk.now()).value
+        self.assertLess(risk_before_dismiss, risk_after_first)
+        pos = Position.objects.get(company_id=self.firm, kind="lawyer", status="filled")
+        self.assertTrue(jobs.dismiss(self.boss.pk, pos.pk).ok)
+        second = self.staff(1, kind="lawyer", salary=1_000, prefix="l2")[0]                       # substituto contratado
+        res = self.work_hooks(second)
+        self.assertEqual((res.ok, res.code), (False, "SUPPORT_DAILY_LIMIT_REACHED"))
+        self.assertEqual(support.lawyer_risk(self.firm, self.clk.now()).value, risk_before_dismiss)
+        self.clean()
+
+    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
+    def test_the_daily_slot_limit_is_visible_before_acting_through_the_shared_action_registry(self):
+        self.set_stars(1)
+        first = self.staff(1, kind="engineer", salary=1_000, prefix="v1")[0]
+        self.assertGreater(self.bar_works(first), 0)
+        pos = Position.objects.get(company_id=self.firm, kind="engineer", status="filled")
+        self.assertTrue(jobs.dismiss(self.boss.pk, pos.pk).ok)
+        second = self.staff(1, kind="engineer", salary=1_000, prefix="v2")[0]
+        self.refill(second)
+        checked = registry.check_action(second.pk, "work", None)
+        self.assertFalse(checked.available)
+        self.assertIn("SUPPORT_DAILY_LIMIT_REACHED", checked.blocked_by)                          # humanos e Bots veem o mesmo motivo
         self.clean()
 
     def test_one_lawyer_bar_reduces_the_burnout_risk_multiplier_and_the_floor_belongs_to_players(self):
@@ -430,7 +546,7 @@ class SupportAccumulationTests(AdversarialBase):
 # ---------------------------------------------------------------------------------------------------------------------
 
 class LaborConcentrationTests(AdversarialBase):
-    def test_one_company_can_open_unlimited_vacancies_and_hire_every_available_player(self):
+    def test_vacancies_have_no_rigid_limit_per_star(self):
         opened = 0
         for _ in range(120):
             res = jobs.open_position(self.boss.pk, self.firm, "worker", 1_000, {})
@@ -438,14 +554,19 @@ class LaborConcentrationTests(AdversarialBase):
                 note("S8.labor_concentration_refusal", code=res.code)
                 break
             opened += 1
-        crew = self.staff(30)
-        employed = Position.objects.filter(company_id=self.firm, kind="worker", status="filled").count()
-        note("S8.labor_concentration", vacancies_opened=opened, hired=employed, company_cash=self.firm_money(),
-             star=Company.objects.get(pk=self.firm).stars)
-        self.assertEqual(opened, 120)                                  # RISCO REAL: nenhum limite de vagas/funcionários
-        self.assertEqual(employed, 31)
-        self.assertEqual(self.firm_money(), 0)                          # e nenhuma exigência de caixa para isso
+        note("S8.labor_concentration", vacancies_opened=opened, star=Company.objects.get(pk=self.firm).stars)
+        self.assertEqual(opened, 120)                                  # design 25 §25.1: sem limite rígido de funcionários por estrela
         self.clean()
+
+    @unittest.expectedFailure     # PENDENTE_DESIGN_25 (A-06): obrigatório antes do Bot Test
+    def test_hiring_is_bounded_by_the_payroll_capacity_of_the_company_not_by_a_headcount_limit(self):
+        """Design 25 §25.1/§25.3: sem teto de funcionários, mas a contratação exige capacidade de pagar um dia de folha potencial da
+        equipe inteira: com caixa para poucos, a empresa não consegue concentrar 30 contratações."""
+        self.assertTrue(services.fund_company(self.boss.pk, self.firm, 20_000).ok)
+        self.staff(30)
+        employed = Position.objects.filter(company_id=self.firm, kind="worker", status="filled").count()
+        note("S8.labor_concentration", hired=employed, company_cash=self.firm_money())
+        self.assertLess(employed, 31)
 
     def test_the_stock_capacity_of_the_star_is_a_real_brake_on_how_much_labor_can_be_used(self):
         """Freio estrutural que JÁ existe: com o estoque cheio (500 × estrela) o Trabalho de produção é bloqueado antes de gastar Energia,
@@ -502,22 +623,58 @@ class StockConcurrencyTests(TransactionTestCase):
         self.refill(player)
         return registry.execute_action(player.pk, "work", None)
 
-    def test_simultaneous_works_over_scarce_inputs_never_overdraw_and_never_produce_without_inputs(self):
+    @pending_on_postgres          # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
+    def test_simultaneous_works_over_scarce_inputs_are_refused_without_effects_once_the_inputs_run_out(self):
+        """REGRESSÃO A-03: seis Trabalhos simultâneos sobre insumo para três: três produzem, três são RECUSADOS (sem Energia gasta,
+        sem salário, sem skill, sem produção); nada é aceito sem sair produto."""
         seeded = 3
         self.assertTrue(stock.credit_stock(self.firm, "wheat", seeded, origin="t", key="seed:s", reference_kind="t",
                                            reference_id="1").ok)
-        jobs_ = run_together(*[lambda p=p: self.work(p) for p in self.crew])
-        okays = sum(1 for j in jobs_ if j.result is not None and getattr(j.result, "ok", False))
+        for p in self.crew:
+            self.refill(p)
+        energy_full = {p.pk: Player.objects.get(pk=p.pk).energy for p in self.crew}
+        jobs_ = run_together(*[lambda p=p: registry.execute_action(p.pk, "work", None) for p in self.crew])
+        okays = [j for j in jobs_ if j.result is not None and getattr(j.result, "ok", False)]
+        refused = [j for j in jobs_ if j.result is not None and not j.result.ok]
         wheat, flour = stock.quantity_of(self.firm, "wheat"), stock.quantity_of(self.firm, "flour")
-        codes = sorted({j.result.code for j in jobs_ if j.result is not None and not j.result.ok})
-        from companies.models import WorkWage
         wages = WorkWage.objects.filter(player_id__in=[p.pk for p in self.crew]).count()
-        note("S5.concurrent_scarce_inputs", seeded_wheat=seeded, concurrent_works=len(self.crew), succeeded=okays,
-             wheat_left=wheat, flour_made=flour, wages_recognized=wages, works_paid_without_output=max(0, wages - flour),
-             refusal_codes=",".join(codes))
-        self.assertGreaterEqual(wheat, 0)
-        self.assertEqual(wheat + flour, seeded)                         # 1 trigo → 1 farinha na receita do catálogo: nada nasce de graça
-        self.assertLessEqual(flour, seeded)
+        codes = sorted({j.result.code for j in refused})
+        spent = sum(1 for p in self.crew if Player.objects.get(pk=p.pk).energy < energy_full[p.pk])
+        note("S5.concurrent_scarce_inputs", seeded_wheat=seeded, concurrent_works=len(self.crew), succeeded=len(okays),
+             refused=len(refused), wheat_left=wheat, flour_made=flour, wages_recognized=wages, works_paid_without_output=max(0, wages - flour),
+             players_that_spent_energy=spent, refusal_codes=",".join(codes))
+        self.assertEqual((len(okays), len(refused)), (seeded, len(self.crew) - seeded))
+        self.assertEqual(codes, ["MISSING_INPUTS"])
+        self.assertEqual((wheat, flour, wages), (0, seeded, seeded))                    # 1 trigo → 1 farinha; salário só de quem produziu
+        self.assertEqual(spent, seeded)                                                  # recusados não gastaram Energia
+        self.assertEqual(SupportWork.objects.count(), 0)
+        self.clean()
+
+    def _hire_support(self, kind, name):
+        player = create_player(Usuario.objects.create_user(name))
+        pos = jobs.open_position(self.boss.pk, self.firm, kind, 1_000, {}).detail["position"]
+        app = jobs.apply_to_position(player.pk, pos).detail["application"]
+        self.assertTrue(jobs.approve_application(self.boss.pk, app).ok)
+        return player, pos
+
+    @unittest.expectedFailure     # PENDENTE_#37: a correção entra no PR #37, que remove esta marca
+    def test_simultaneous_support_workers_cannot_both_take_the_last_daily_slot(self):
+        """REGRESSÃO A-02 sob concorrência: o limite diário é conferido de novo SOB o lock da empresa."""
+        Company.objects.filter(pk=self.firm).update(stars=2)
+        first, first_pos = self._hire_support("engineer", "se0")
+        self.refill(first)
+        self.assertTrue(registry.execute_action(first.pk, "work", None).ok)               # 1 vaga usada de 2
+        self.assertTrue(jobs.dismiss(self.boss.pk, first_pos).ok)
+        pair = [self._hire_support("engineer", f"se{i}")[0] for i in (1, 2)]               # dois substitutos simultâneos
+        for p in pair:
+            self.refill(p)
+        outs = run_together(*[lambda p=p: registry.execute_action(p.pk, "work", None) for p in pair])
+        accepted = sum(1 for j in outs if j.result.ok)
+        codes = sorted(j.result.code for j in outs if not j.result.ok)
+        note("S7.concurrent_last_slot", accepted=accepted, refused_codes=",".join(codes))
+        self.assertEqual((accepted, codes), (1, ["SUPPORT_DAILY_LIMIT_REACHED"]))
+        used = support.daily_slots(self.firm, "engineer", competence_day_of(_clock.now()))
+        self.assertEqual(len(used), 2)
         self.clean()
 
     def test_works_and_sales_of_the_same_last_units_never_make_the_stock_negative(self):
