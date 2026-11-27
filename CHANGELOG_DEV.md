@@ -941,3 +941,8 @@ A arquitetura não deve transformar esses 10 nomes em classes rígidas. Eles rep
 **Implementação do núcleo do Bot Test:** tempo → estado do jogador → skills → geografia → produtos/inventário → Action Registry → empresas/mercado → UI → política/militar → Bots.
 
 O objetivo é manter cada etapa pequena, testável e reversível sem reabrir decisões de design já marcadas como FINAL.
+
+
+## 2026-11-27 — Decisões do GD: capacidade administrativa e insolvência empresarial
+
+Aprovados: modelo de capacidade flexível com eficiência decrescente (10/20/40/80/160 [PROV]); estados financeiros; proteção contra exploração de inadimplência; responsabilidade limitada; prioridade salarial, tributária, contratual e de empréstimos; liquidação auditável; cooldown de 30 dias após conclusão; histórico público e bloqueio de transferência voluntária de empresa inadimplente. Documento 25 em REVIEW, com pendências de execução explícitas. Nenhuma implementação, mudança de parâmetros existentes ou autorização de merge de PRs de código nesta alteração.
