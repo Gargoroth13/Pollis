@@ -1,133 +1,113 @@
 # AI Continuity Guide — Pollis
 
-> **Purpose:** persistent working context for the assistant collaborating with the Game Director.
+> **What this is:** an auxiliary context-and-continuity document for the assistant that works with the Game Director (GD). It records collaboration constraints, working habits, the direction of execution and a dated snapshot of the repository, so a new session does not lose context or repeat resolved discussions.
 >
-> **This is not a task queue, does not replace `TASK.md` or `TASK_QUEUE.md`, and is not the source of truth for gameplay rules.** It records durable collaboration decisions, scope constraints, current execution direction, and the next handoff to Claude so future reviews do not lose context or repeat resolved discussions.
+> **What this is not:** it is **subordinate to `CLAUDE.md` and to the `design/` documents**. It is **not a source of gameplay rules**, not a task queue (`TASK.md` / `TASK_QUEUE.md`), and not a decision log (`CHANGELOG_DEV.md`). Whenever this guide mentions a mechanic, it only *points* to where the rule lives; the rule itself is whatever `CLAUDE.md`, the design document or an explicit GD decision says. If this guide ever disagrees with any of them, **they win and this guide must be corrected**.
 >
-> **Last reconciled:** 2026-10-18. Recheck the live repository and open PRs whenever this guide is used; do not assume the snapshot below is still current.
+> **Last reconciled:** 2026-11-27. The snapshot in §4 is dated; always recheck the live repository and open PRs before relying on it.
 
-## 1. Authority and how to use this guide
+## 1. Order of authority and how to use this guide
 
-At the start of a Pollis work session, the assistant should:
+Order of authority (it follows `CLAUDE.md` §1; this guide sits **below all of it**):
 
-1. Read this guide.
-2. Check the current GitHub state, especially `main`, open PRs, and the relevant files.
-3. Use the design document as the authority for game rules, explicit Game Director (GD) decisions as the authority for choices already made, and `TASK_QUEUE.md` as the authority for task ordering/status.
-4. Use `CHANGELOG_DEV.md` as the decision history. This guide preserves collaboration constraints and the execution plan; it must not become a duplicate task tracker.
-5. When meaningful new decisions are made, update this guide in a focused documentation change/PR. Do not create noise by updating it for every minor code detail.
+1. `CLAUDE.md` (permanent development rules);
+2. explicit, consolidated decisions of the GD;
+3. `design/` documents in `FINAL — BOT TEST` state; then documents in `REVIEW` only when the requested work is explicitly about that document;
+4. `CHANGELOG_DEV.md` (consolidated decisions and history);
+5. `TASK.md` and `TASK_QUEUE.md` (work priority);
+6. existing code, only where no design decision exists yet;
+7. **this guide** — context only, never a tie-breaker for a rule.
 
-If this guide conflicts with a newer explicit GD decision or the current design, the newer decision/design wins and this guide must be corrected. If status files contradict the actual GitHub state, reconcile them rather than perpetuating the contradiction.
+At the start of a session:
 
-## 2. Non-negotiable collaboration decisions
+1. Read `CLAUDE.md`, then `TASK.md`, then this guide.
+2. Check the live GitHub state (`main`, open PRs, the files in question) instead of trusting the snapshot below.
+3. Read the relevant `design/` documents before touching code.
+4. Do not turn this guide into a duplicate tracker. Update it only when a durable collaboration decision or the execution direction changes, in a focused documentation change.
 
-### 2.1 Bot Test scope is not negotiable by implementation convenience
+If documents conflict with each other (for example a document header and `TASK.md`), do not pick a side silently: record the conflict in `TASK.md` or `CHANGELOG_DEV.md` and let the GD decide (`CLAUDE.md` §1 and §13).
 
-The GD's explicit instruction is:
+## 2. Collaboration decisions that persist
 
-**Everything originally designated for the first Bot Test stays in the first Bot Test, regardless of technical difficulty, architectural complications, dependencies, or schedule pressure.**
+### 2.1 Bot Test scope is not reduced for implementation convenience
 
-- A technical problem is work to investigate and solve, not permission to remove a feature.
-- A dependency changes the order of execution, not the overall commitment.
-- A true missing design decision must be surfaced to the GD, with impact and a recommendation.
-- Do not silently relabel included work as `P2`, `FUTURO`, “out of scope,” or “deferred indefinitely.”
-- A feature being outside one PR does **not** mean it is outside the Bot Test. Keep it assigned to a later, explicit implementation step.
-- Only exclusions explicitly established before implementation as exclusions from the **first Bot Test** remain excluded. A limitation for one implementation phase is not automatically a global Bot Test exclusion; keep it visible for later integration unless the GD explicitly excluded it from the whole Bot Test.
+Everything designated for the first Bot Test stays in the first Bot Test, regardless of technical difficulty, dependencies or schedule pressure.
 
-### 2.2 No reopening resolved decisions
+- A technical problem is work to solve, not permission to remove a feature.
+- A dependency changes the order of execution, not the commitment.
+- Do not relabel included work as `P2`, `FUTURO` or "out of scope". A feature missing from one PR is not outside the Bot Test; it stays assigned to an explicit later step.
+- Only exclusions explicitly established for the whole first Bot Test remain excluded (today `13`, `15` and `16`, which are `FUTURO`; recheck `TASK.md`). A limitation of one implementation phase is not a global exclusion.
 
-Before asking a question or proposing a different rule, inspect the applicable design and decision history. Do not ask the GD to decide something that has already been approved or that the design already specifies. Preserve approved decisions even if implementation becomes awkward.
+### 2.2 Resolved decisions are not reopened
 
-### 2.3 Progress must mean working software
+Before asking a question or proposing a different rule, read the design and `CHANGELOG_DEV.md`. Do not ask the GD to decide what is already decided or specified. Preserve approved decisions even if implementation becomes awkward.
 
-The collaboration has spent too long cycling through small corrections without enough task completion. Avoid repeated micro-audits and fragmented prompts when related issues can be handled together.
+### 2.3 Progress means working, verified software
 
-For each implementation task, batch the relevant review, code changes, tests, documentation/status corrections, and PR update into a coherent delivery. Report real test evidence accurately. Do not hide failures or claim tests were run when they were only reviewed statically. Keep scope intact while resolving blockers.
+Batch related review, code, tests, documentation corrections and PR updates into one coherent delivery instead of cycling through micro-corrections. Report **real evidence only**: exact commands, results and skips. Never claim a test was run when it was only read; never hide a failure.
 
-### 2.4 Decision requests belong at the end
+### 2.4 Decisions requested from the GD go at the end
 
-If GD input is genuinely required, collect all such questions in one final section titled **“Decisões necessárias do Game Director”**. For each, state the precise question, why it blocks or affects implementation, the consequence, and a recommendation. Do not scatter questions throughout the status report. If no decision is needed, say so explicitly.
+Genuine questions are collected in a final section titled **"Decisões necessárias do Game Director"**: numbered, each with the precise question, why it matters, clear alternatives, the consequence of each and a recommendation. If none is needed, say so. Design decisions belong to the GD, never to the agent (`CLAUDE.md` §3); do not fill a design gap with a silent choice (`CLAUDE.md` §13). Do not introduce artificial limits automatically: first establish whether a risk is real or already prevented by existing rules, and present alternatives that preserve player freedom.
 
-### 2.5 PR and merge authority
+### 2.5 PRs, merges and history
 
-The assistant may inspect code, identify problems, draft prompts, and recommend changes. **Do not merge a PR without explicit authorization from the GD.** Do not treat “looks good,” “ready,” or a test pass as permission to merge.
+- **Never merge a PR without explicit GD authorization for that specific PR.** "Looks good", "ready" or green tests are not authorization. Authorization for some PRs does not extend to others.
+- No rebase, no force push, and published commits are not altered. Bring a base branch in with a merge commit; retargeting a PR's base is done only when the GD's instructions call for it.
+- Do not start new systems (for example P1.04f, P1.05b) while the GD's priority is auditing and consolidating what already exists.
 
-## 3. Durable project decisions relevant to execution
+## 3. Execution notes (technical; no gameplay rules)
 
-### 3.1 Auto-consumption is in the first Bot Test
+- **Shared paths.** Humans and Bots use the same Action Registry and validation path (`CLAUDE.md` §5.4). No privileged route for Bots.
+- **Monetary values** are integer centavos; transfers move existing money (`CLAUDE.md` §5.2). An unspecified design value is `NULL`, never `0`, and whoever consumes it refuses with `UNSPECIFIED_DESIGN_VALUE`.
+- **Explainability.** Composite formulas return the value plus a structured breakdown (`CLAUDE.md` §6).
+- **Lazy catch-up trap (lesson from Auto-consumption).** Access hooks run inside `players.services._catch_up()`; a hook must not call a public service that re-enters `sync_player()`. Reuse the business rule on the already-locked player and test the non-recursion explicitly. The rule of Auto-consumption itself lives in `design/04` §16 and is integrated (PR #14).
+- **Test clock.** `core.clock.use_clock` stores the clock in a `ContextVar`, so threads must run in a copy of the caller's context. See PR #35 (§4); until it is integrated, tests that cross 30-day budget periods in threads can depend on today's real date.
+- **Locking protocol.** Lock order is player → company → (stock / work) → ledger; PostgreSQL guarantees (`SELECT … FOR UPDATE`) are tested on PostgreSQL, because SQLite serializes writes differently and some tests are PostgreSQL-only.
 
-The rule is already documented in `design/04-dia-a-dia.md`, §16. It is not a pending gameplay-design decision and must not be described as outside the Bot Test.
-
-The defined behavior is:
-- The player can enable Auto-consumption and select a preferred food.
-- When Nutrition is below 10, the system tries to consume food during lazy processing of the player's state.
-- Priority: preferred food if present in inventory; otherwise, eligible food with the smallest Nutrition gain.
-- Repeat while Nutrition remains below 10 and eligible food exists; stop once Nutrition reaches or exceeds 10.
-- If no eligible food exists, do nothing.
-- Use the same consumption rules as manual consumption. Do not add a special Nutrition bonus for automatic use.
-- Do not poll every player continuously just to detect hunger.
-
-**Known implementation trap:** `players.services._catch_up()` runs access hooks. A hook that calls the public `inventory.services.consume()` may re-enter `sync_player()` → `_catch_up()` and recurse. The implementation must reuse the same business rules while operating on the player already locked/processed, without re-entering the lazy catch-up path. Test this explicitly.
-
-The feature may be implemented in a dedicated follow-up after the inventory foundation is accepted; that separation is a task boundary, **not** a scope reduction. Do not claim the tie-break for equal minimum Nutrition gains is specified if the design does not define it. Resolve it deterministically as an implementation detail only if appropriate, and ask the GD only if it materially affects gameplay.
-
-### 3.2 Existing explicit exclusions must be interpreted narrowly
-
-The design/status files already designate some systems (currently `13 — Eventos Aleatórios`, `15 — Jornalismo`, and `16 — Sociedades e Ações`) as FUTURO, subject to rechecking the live source when relevant. Preserve exclusions that were explicitly agreed for the whole first Bot Test.
-
-Conversely, a task-specific limitation must not be stretched into a global exclusion. For example, the prior decision to leave operational materials out of the **first implementation of Empresas** does not by itself authorize deleting all such functionality from the Bot Test plan. Keep deferred work visible and revisit it in its planned integration phase.
-
-### 3.3 Shared player/Bot paths and auditability
-
-Humans and Bots must use the same Action Registry and the same validation/business-service path. Do not invent privileged execution routes for Bots. Preserve the project's established focus on atomicity, idempotency, traceable domain movements, structured refusal codes, explainable calculations, and audit commands. Real concurrency concerns should be reproduced and resolved, not dismissed as test flakiness without evidence.
-
-## 4. Repository snapshot at last reconciliation
+## 4. Repository snapshot (2026-11-27)
 
 This is a **dated snapshot**, not a substitute for checking GitHub live.
 
-- PRs **#8, #9, #10, and #11** were merged in order. The latest reported main base for the inventory work was commit `d0a8e9a938ff91960e7d8a2b102596974ff57658`.
-- PR **#12 — P1.02 Inventário** is open against `main`, head branch `dev/p1.02-inventario`, last inspected head `e5278b80b424d2e1f138474a5d87e02a5b561fe6`. **Do not merge without GD authorization.**
-- PR #12 implements inventory holdings, immutable movement/shipment history, manual `consume`, mail `send_item`, inventory audit, and provisional mail/food-effect parameters.
-- Claude's final PR summary reports 997 tests passing on PostgreSQL and SQLite (13 skips on SQLite), after an earlier intermediate report of one failing PostgreSQL test for crossed simultaneous sends. The code now locks both player rows in ascending primary-key order. Before approval, verify that the final PostgreSQL result was actually obtained against the latest commit after the fix; do not treat the intermediate 55/56 result as final or infer that the final claim was independently rerun by the assistant.
-- The current work log/queue contains stale statements that describe auto-consumption as out of scope or awaiting a GD decision even though §16 defines its behavior. Those statements must be corrected in the relevant branch/status files as part of closing this stage.
+**`main` = `b1ed17a`.** Integrated with GD authorization on 2026-11-27, in order, by merge commit: PR #12 (P1.02 Inventário, `ee185c2`), PR #14 (P1.02a Auto-consumo, `4be2bf6`), PR #32 (P1.15a Rankings, slice 1 of 5, `b1ed17a`). Earlier foundations (#8–#11) were merged before them. Evidence on consolidated `main`: 1287 tests OK on PostgreSQL 16 and on SQLite (SQLite skips the PostgreSQL-only tests), `manage.py check` and `makemigrations --check` clean, migrations applied on fresh databases, integrity audits clean on an empty database.
 
-## 5. Execution plan — strategic stages, not a second task queue
+**Open PRs (none merged; each needs its own GD authorization):**
 
-Use `TASK_QUEUE.md` for individual task definitions, acceptance criteria, and detailed ordering. This section preserves the important execution direction only.
+| PR | Content | Notes |
+|---|---|---|
+| #13 | this guide | docs only, independent |
+| #33 | reconciliation of `TASK.md`, `TASK_QUEUE.md`, `CHANGELOG_DEV.md` with `main` | docs only |
+| #35 | `run_together` context propagation | test infrastructure only; fixes thread tests that used the real clock |
+| #15 → #16 → #17 → #18 → #19 | Empresas (core; positions/wages; production/stock; Engineer/Lawyer support; Retail/Construtora) | **Wave 1**, under adversarial audit |
+| #20 → #21 → … → #31 | Market transparency, Schools, Contracts, Properties (+ transfer, housing, location, building use), Budget, Legislation, Bot infrastructure, World history | stacked on #19; each branch conflicts with `main` only in `CHANGELOG_DEV.md`, `TASK.md`, `polis/settings.py` |
 
-### Stage A — Finish P1.02 cleanly
+Known cross-document conflict, registered and unresolved: the headers of `design/01-skills.md` and `design/03-escolas.md` say `REVIEW`, while `TASK.md` lists both as `FINAL — BOT TEST`. Only the GD can decide which one holds.
 
-1. Confirm on the current PR head that the PostgreSQL crossed-send concurrency test passes after the locking fix. Confirm the reported full-suite results and `check` / `makemigrations --check` evidence.
-2. In the P1.02 working branch, reconcile `TASK.md`, `TASK_QUEUE.md`, `CHANGELOG_DEV.md`, and the PR description with the real state. Remove the false claim that Auto-consumption awaits a gameplay decision or is out of scope of the Bot Test. It may remain a separate follow-up task; it must remain planned.
-3. Review the full P1.02 diff once, in a consolidated pass. Fix genuine correctness, concurrency, integrity, or misleading-documentation blockers in a batch. Do not reopen unrelated design or expand P1.02 into other systems without need.
-4. Report whether P1.02 is ready for GD approval. Leave the PR open until the GD explicitly authorizes merge.
+## 5. Execution direction (strategy, not a second queue)
 
-### Stage B — Implement Auto-consumption as Bot Test work
+Current GD priority: **audit and consolidate the existing implementations before starting new systems.** Individual task definitions and acceptance criteria stay in `TASK_QUEUE.md`.
 
-After the inventory foundation is accepted, implement the behavior already defined in `design/04-dia-a-dia.md`, §16. Include player preference/configuration, lazy-processing integration, safe non-recursive service reuse, and tests for preferred food, fallback selection, repeated consumption, threshold stopping, no eligible food, and inventory/Nutrition/audit consistency.
+1. Close documentation and test infrastructure (#33, #13, the `run_together` fix) — no merge without GD authorization.
+2. Audit the stacked PRs in waves, bottom-up (Wave 1 = Empresas #15–#19). Each audit is adversarial: it tries to break conservation, concurrency and limits, separates real risks from risks already prevented, and classifies findings as BLOCKER / MAJOR / MINOR / DEFERRED with executed evidence.
+3. Resolve open design points through GD decisions (section 2.4), then continue the dependency-driven roadmap in `TASK_QUEUE.md` (Market, Schools, real estate, Contracts, budget, politics, feedback, history, remaining Rankings slices, UI shell, military, Bot Test engine/training/monitoring).
+4. Do not stop at foundations while committed Bot Test systems remain unimplemented; keep every in-scope system visible until delivered.
 
-Do not replace implementation with another design discussion. Bring only genuinely undefined, gameplay-significant choices to the GD.
+## 6. Standard loop for a task
 
-### Stage C — Continue the dependency-driven Bot Test roadmap
+1. Read `CLAUDE.md`, the relevant `design/` sections, dependencies and recorded GD decisions before coding.
+2. Implement in small, verifiable steps, with tests for normal path, limits, permissions, invalid states, economic effects, state transitions, idempotency and time cycles (`CLAUDE.md` §10), including concurrency tests where relevant.
+3. Run relevant tests and, when appropriate, the full suite on PostgreSQL and SQLite; report exact commands, results and skips.
+4. Update `TASK.md`, `TASK_QUEUE.md` and `CHANGELOG_DEV.md` truthfully, with real commits and PR links.
+5. Leave the PR open; deliver one consolidated report ending with the decisions section (2.4).
 
-Continue with the next ready implementation in `TASK_QUEUE.md` (the current planned sequence places Empresas at P1.04 after the already integrated Action Registry P1.03), then proceed through Market/transparency, Schools, real estate/zoning, Contracts, public budget, legislative/political systems, structured feedback, world history, rankings, UI shell, military, and the Bot Test engine/training/monitoring work according to the authoritative queue.
+## 7. Practical environment notes
 
-Do not stop after foundational services if committed Bot Test systems are still unimplemented. Preserve inter-task dependencies and approved exclusions, but keep every other in-scope system visible until delivered.
+- Tests: `SECRET_KEY=dev python -B manage.py test … --noinput`; SQLite with `DATABASE_URL` unset; PostgreSQL with `DATABASE_URL=postgres://…` and `POLIS_EXPECT_DB=postgresql`. Never run two PostgreSQL suites against the same cluster at once.
+- GitHub via REST (`gh api`): comments, base retargeting and merges are API calls; merging is done only on explicit GD authorization.
+- Commits end with the `Co-Authored-By` and `Claude-Session` lines; PR descriptions end with the generated-with line and the session URL.
 
-## 6. Standard execution loop
+## 8. Handoff template
 
-For each task, the assistant should ask Claude to:
+Adapt to the live state before using:
 
-1. Read the guide, the authoritative design sections, relevant dependencies, and recorded GD decisions before coding.
-2. State a concise implementation plan only when useful; then implement, rather than sending repeated status-only updates.
-3. Deliver the complete task acceptance criteria, including relevant integration, concurrency/property tests, audit coverage, and documentation updates.
-4. Run the relevant tests and the full suite when appropriate; use PostgreSQL for guarantees that depend on PostgreSQL locking. Report exact commands/results and skipped tests.
-5. Update the current task/status records truthfully and include the actual commit and PR link.
-6. Keep the PR open for GD review; never merge without authorization.
-
-The assistant should then review the delivered diff and evidence, batch corrections into one actionable handoff to Claude, and put genuine GD questions at the end. Do not silently change scope or re-litigate settled decisions.
-
-## 7. Next handoff to Claude
-
-Use this handoff to close the current stage; adapt it to the live PR state before sending:
-
-> Read `AI_CONTINUITY_GUIDE.md` first and follow its scope rule. For PR #12, confirm that the crossed-send concurrency test and full suite pass on the current head after the PostgreSQL deadlock fix, and report the actual final evidence. Correct the misleading Auto-consumption status in `TASK.md`, `TASK_QUEUE.md`, `CHANGELOG_DEV.md`, and the PR text: §16 already defines the behavior, and it remains required for the first Bot Test. Keep it as a visible follow-up after the inventory foundation; do not implement it inside P1.02 unless the task plan calls for that explicitly. Do not cut scope, do not reopen approved design, and do not merge. Complete any related documentation corrections together, then report one consolidated status with tests, commit, PR, blockers, and any genuine GD decisions at the very end.
+> Read `CLAUDE.md`, `TASK.md` and `AI_CONTINUITY_GUIDE.md`, then check the live repository. Continue the GD's current priority (audit and consolidation before new systems). Do not merge, rebase or force push without explicit authorization; do not reduce Bot Test scope; do not reopen approved decisions; do not invent mechanics or add artificial limits. Report real evidence, and put genuine questions only in the final section "Decisões necessárias do Game Director".
