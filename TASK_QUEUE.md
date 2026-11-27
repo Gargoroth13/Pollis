@@ -246,6 +246,18 @@ Implementar `02` utilizando `22` como fonte de produtos/receitas.
 
 Implementar mercado e estatísticas de `17`.
 
+## [ ] P1.05c — Ordens de compra com reserva monetária  *(decisão do GD em 2026-11-27: fatia posterior ao P1.05b, **obrigatoriamente dentro do escopo do primeiro Bot Test**)*
+
+**Depende de P1.05b e de P0.07 (retenção genérica, `24` §24.10).** Mecanismo recomendado: o comprador publica a ordem e o dinheiro fica retido; o vendedor atende por ação explícita; sem motor automático de casamento. Reserva conta como comprometida na checagem de folha do `25` §25.3; novas reservas discricionárias ficam bloqueadas na inadimplência (`25` F8). Detalhes na consolidação da Etapa 3 do GD; confirmar parâmetros antes de implementar.
+
+## [ ] P1 — Distribuição de lucros do Dono  *(decisão do GD em 2026-11-27; `02` complemento D)*
+
+Entra no primeiro Bot Test: natureza `PROFIT_DISTRIBUTION`, IR vigente retido na fonte, só empresa regular sem obrigações vencidas, reservas e sete dias de folha potencial preservados [PROV], sem limite salarial, lucro distribuível auditável (capital aportado não é lucro). **Dependências:** cálculo de folha potencial do `25` §25.8; compromissos futuros do `18`; emenda do `24` §24.8 já registrada no texto. Não iniciar antes da prioridade vigente.
+
+## [ ] P1 — Estrela × imóvel × Construtora (alternativa B)  *(decisão do GD em 2026-11-27; `10` §16)*
+
+1★ opera em lote sem prédio; prédio de nível k exige Construtora ≥ max(1, k−1)★; 2★–5★ exigem prédio de nível ≥ estrela. Implementar junto da localização das empresas (P1.07c) e com teste de catálogo da cadeia de materiais.
+
 ## [ ] P1.06 — Escolas e universidades
 
 **Depende de P0.07 se houver custos.**

@@ -19,9 +19,8 @@ O projeto já possui o núcleo de design amplamente consolidado. A prioridade ag
 
 ## FINAL — BOT TEST
 
-- `01 — Skills` *(conflito registrado em `CHANGELOG_DEV.md`, 2026-11-27: o cabeçalho do documento diz **REVIEW**; aguarda decisão do Game Director)*
+- `01 — Skills` *(consolidado como FINAL — BOT TEST por decisão do GD em 2026-11-27; multiplicador salarial 1,5 [PROV] por skill, não alterável por lei)*
 - `02 — Empresas`
-- `03 — Escolas` *(conflito registrado em `CHANGELOG_DEV.md`, 2026-11-27: o cabeçalho do documento diz **REVIEW**; aguarda decisão do Game Director)*
 - `07 — Leis`
 - `08 — Geografia`
 - `09 — Orçamento Público`
@@ -37,6 +36,7 @@ O projeto já possui o núcleo de design amplamente consolidado. A prioridade ag
 
 - `06 — Política` *(decisões aprovadas consolidadas em 2026-10-14; dependências de execução em 06.36)*
 - `11 — Leis Paramétricas` *(idem; teto de déficit sem proposta; zoneamento por lei na P1.07)*
+- `03 — Escolas` *(decisão do GD em 2026-11-27: permanece REVIEW; cursos, mensalidade, professor e orçamento de escolas públicas seguem abertos)*
 - `19 — Militar` *(volta a REVIEW por decisão do Game Director; dependências de execução em 19.48)*
 - `25 — Insolvência, Recuperação e Falência Empresarial` *(PR #34; REVIEW pelos detalhes de integração, mas as decisões explicitamente aprovadas pelo Game Director em 2026-11-27 são **vinculantes**; pendências de execução em 25 §25.8; nenhuma implementação iniciada)*
 - `SITEMAP-REVIEW.md`

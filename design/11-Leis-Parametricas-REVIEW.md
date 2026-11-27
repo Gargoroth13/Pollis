@@ -30,7 +30,7 @@ As leis deste catálogo são submetidas ao processo legislativo completo definid
 | Lei | Escopo | Parâmetro X | Mín. | Máx. | Padrão | Efeito | Trade-off |
 |---|---|---|---:|---:|---:|---|---|
 | Imposto sobre vendas | Federal | % sobre o valor de cada venda | 0% | 50% | 5% | Gera receita para o orçamento público | Aumenta o custo efetivo das transações e pode reduzir margens e elevar preços |
-| Imposto de renda | Federal | % sobre salários pagos | 0% | 50% | 5% | Gera receita para o orçamento público | Reduz o salário líquido recebido |
+| Imposto de renda | Federal | % sobre salários pagos e lucros distribuídos (GD 2026-11-27) | 0% | 50% | 5% | Gera receita para o orçamento público | Reduz o salário líquido recebido |
 | Salário mínimo | Federal | R$ por dia | R$ 0 | R$ 1.000 | R$ 50 | Define o piso legal de remuneração do trabalho | Pode aumentar custo das empresas e reduzir contratação quando elevado demais |
 | Regulação antitruste | Federal | Máximo de empresas do mesmo tipo por proprietário | 1 | 100 | 1 | Limita concentração de empresas do mesmo tipo por jogador/entidade | Restringe expansão de proprietários eficientes |
 | Subsídio setorial | Federal | % do valor pago pelo governo em vendas elegíveis | 0% | 75% | 0% | O governo paga parte do valor de produtos ou categorias selecionadas | Exige gasto público e pode distorcer preços/produção |
@@ -60,7 +60,7 @@ Validações de proposta de `T`:
 | `C_T` | **toda** remuneração salarial sujeita ao teto legal: a de `C_S` **mais** os salários políticos | `T` |
 
 - Salário político **não consome `S`**, mas **consome `T`**.
-- **Não consomem nenhum dos dois:** doações, vendas, reembolsos, transferências, dotações, indenizações e recebimento de dívidas. (Lucros e distribuições também não consomem, mas não existem no primeiro Bot Test.) O registro monetário (P0.07) precisa de uma **natureza** em cada lançamento para distinguir.
+- **Não consomem nenhum dos dois:** doações, vendas, reembolsos, transferências, dotações, indenizações e recebimento de dívidas. (A distribuição de lucros também não consome e **entra** no primeiro Bot Test por decisão do GD de 2026-11-27, `02` complemento; não há limite salarial sobre lucros.) O registro monetário (P0.07) precisa de uma **natureza** em cada lançamento para distinguir.
 - O teto `T` vale para o **total diário** do jogador, não isoladamente por empregador ou sistema de pagamento.
 
 **Cálculo determinístico e independente da ordem dos serviços.** A remuneração política prevista em lei é **preservada até o limite legal** e a não política se ajusta ao que sobra:

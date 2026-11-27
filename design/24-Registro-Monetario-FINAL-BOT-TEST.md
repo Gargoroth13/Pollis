@@ -214,10 +214,11 @@ Toda natureza declara **como conta nos contadores salariais** e **qual sistema a
 | `TRAVEL_FEE`, `MAIL_FEE`, `COMPANY_FOUNDING`, `AUCTION_PAYMENT`, `TREATMENT` | nenhum | 04, 05, 02, 10 |
 | `MILITIA_FOUNDING`, `MILITIA_UPGRADE`, `CAMPAIGN_COST` | nenhum | 19, 06/11 |
 | `RETENTION_IN`, `RETENTION_RELEASE`, `RETENTION_REFUND` | nenhum | 18.14, 19.16 |
+| `PROFIT_DISTRIBUTION` (distribuição de lucros do Dono; emenda GD 2026-11-27) | nenhum (não é remuneração; sem limite salarial) | P1.04 (`02`) |
 | `SCENARIO_GRANT` | nenhum | cenário (só ele) |
 | `REVERSAL` | nenhum | auditoria técnica |
 
-Doações, vendas, reembolsos, transferências, dotações, indenizações e recebimento de dívida **não consomem** `C_S` nem `C_T` (11 11.1.0). A lista é **fechada**: nova natureza exige mudança neste documento.
+Doações, vendas, reembolsos, transferências, dotações, indenizações e recebimento de dívida **não consomem** `C_S` nem `C_T` (11 11.1.0). A lista é **fechada**: nova natureza exige mudança neste documento. O imposto de renda retido da distribuição usa a natureza existente `TAX_INCOME` e vai à União (R2); a distribuição passa por `transfer` comum e **não** por `submit_remuneration`.
 
 ---
 

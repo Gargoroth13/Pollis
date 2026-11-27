@@ -4,6 +4,20 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-27 — Decisões do GD (segunda rodada) e emendas documentais
+
+Registro das decisões e das emendas preparadas **sem implementação de gameplay**. Fonte: decisões do Game Director de 2026-11-27 (10h).
+
+- **A-05 mantida:** o Dono não ocupa vaga remunerada da própria empresa (`02` complemento A).
+- **Estrela × imóvel × Construtora — alternativa B:** 1★ opera em lote sem prédio; prédio de nível k exige Construtora ≥ max(1, k−1)★; 2★–5★ exigem prédio de nível ≥ estrela (`10` §16, `02` complemento B). **Verificação da cadeia de materiais (executada sobre o catálogo do 22):** 73 produtos, 0 ciclos de receita; pacotes de obra: Simples (cimento, tábuas) cadeia 1★; Intermediário (+vidro) e Alto padrão (+aço) cadeia 2★. Para o nível k a cadeia do pacote deve ter estrela ≤ max(1, k−1) (nível 2 só Simples). Anomalias que **não** são ciclos: caneta 1★ depende de aço 2★; kit médico militar 2★ depende de suprimentos hospitalares 4★ (exigem comprar de empresa de estrela maior).
+- **Troca de produção bloqueada na inadimplência;** mesmo produto continua sem efeito ou cobrança (`25` §25.2, `02` complemento C). Taxa de troca (1%) continua **proposta**.
+- **Ordens de compra com reserva monetária:** fatia posterior ao P1.05b, obrigatória dentro do primeiro Bot Test (P1.05c no `TASK_QUEUE.md`).
+- **Distribuição de lucros no primeiro Bot Test:** natureza `PROFIT_DISTRIBUTION`, IR vigente retido na fonte (`TAX_INCOME`), empresa regular sem obrigações vencidas, reservas/compromissos e 7 dias de folha potencial [PROV], sem limite salarial, lucro distribuível auditável e separado do capital aportado. Emendas aplicadas: `02` (complemento D), `09` §6/§45.1, `11` §11.1/§11.1.0, `24` §24.8, `25` §25.3. O imposto sobre o **lucro da empresa** continua fora do primeiro Bot Test.
+- **Skills:** multiplicador salarial 1,5 [PROV] para as três skills e **não alterável por lei**; `01` passa a **FINAL — BOT TEST**; `03` permanece **REVIEW**. O conflito de cabeçalho registrado em 2026-11-27 está resolvido; `TASK.md` corrigido.
+- **Não decidido (continua proposta):** progressão 1–5★ com custos 0,5/1/2/4× e `COMPANY_UPGRADE`; mercado (imposto sobre vendedor, reserva dura, recusa de quantidade indisponível, estornos); taxa de troca; pacotes de materiais da Construtora e consumo proporcional ao progresso; cenários de dotação (R$ 25/50/100 mil, sem cenário definitivo).
+
+---
+
 ## 2026-11-27 — Decisões do GD: capacidade administrativa, insolvência, falência e liquidação (`design/25`)
 
 Documento `design/25-Insolvencia-Recuperacao-Falencia-REVIEW.md`. Estado **REVIEW** pelos detalhes de integração, mas as decisões explicitamente aprovadas pelo GD são **vinculantes** e não são reabertas. Nenhuma implementação, mudança de parâmetro existente ou autorização de merge de PR de código neste registro.
