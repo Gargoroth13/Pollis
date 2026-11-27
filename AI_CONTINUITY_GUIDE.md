@@ -4,7 +4,7 @@
 >
 > **What this is not:** it is **subordinate to `CLAUDE.md` and to the `design/` documents**. It is **not a source of gameplay rules**, not a task queue (`TASK.md` / `TASK_QUEUE.md`), and not a decision log (`CHANGELOG_DEV.md`). Whenever this guide mentions a mechanic, it only *points* to where the rule lives; the rule itself is whatever `CLAUDE.md`, the design document or an explicit GD decision says. If this guide ever disagrees with any of them, **they win and this guide must be corrected**.
 >
-> **Last reconciled:** 2026-11-27. The snapshot in §4 is dated; always recheck the live repository and open PRs before relying on it.
+> **Last reconciled:** 2026-11-27 (after the GD's design-25 decisions and the Wave 1 audit). The snapshot in §4 is dated; always recheck the live repository and open PRs before relying on it.
 
 ## 1. Order of authority and how to use this guide
 
@@ -63,6 +63,7 @@ Genuine questions are collected in a final section titled **"Decisões necessár
 - **Explainability.** Composite formulas return the value plus a structured breakdown (`CLAUDE.md` §6).
 - **Lazy catch-up trap (lesson from Auto-consumption).** Access hooks run inside `players.services._catch_up()`; a hook must not call a public service that re-enters `sync_player()`. Reuse the business rule on the already-locked player and test the non-recursion explicitly. The rule of Auto-consumption itself lives in `design/04` §16 and is integrated (PR #14).
 - **Test clock.** `core.clock.use_clock` stores the clock in a `ContextVar`, so threads must run in a copy of the caller's context. See PR #35 (§4); until it is integrated, tests that cross 30-day budget periods in threads can depend on today's real date.
+- **Design 25 is binding where the GD approved it.** `design/25-Insolvencia-Recuperacao-Falencia-REVIEW.md` (PR #34) stays in `REVIEW` for integration details, but its explicitly approved decisions (administrative capacity, financial states, wage protection, creditor priority, bankruptcy, liquidation, ownership transfer, cumulative cooldown; F1–F10) are binding and are not reopened. Its open points are listed in its §25.8 and must be proposed to the GD before the affected parts are implemented. Do not build temporary mechanisms that conflict with it (audit findings A-01 and A-06 wait for it).
 - **Locking protocol.** Lock order is player → company → (stock / work) → ledger; PostgreSQL guarantees (`SELECT … FOR UPDATE`) are tested on PostgreSQL, because SQLite serializes writes differently and some tests are PostgreSQL-only.
 
 ## 4. Repository snapshot (2026-11-27)
@@ -78,6 +79,9 @@ This is a **dated snapshot**, not a substitute for checking GitHub live.
 | #13 | this guide | docs only, independent |
 | #33 | reconciliation of `TASK.md`, `TASK_QUEUE.md`, `CHANGELOG_DEV.md` with `main` | docs only |
 | #35 | `run_together` context propagation | test infrastructure only; fixes thread tests that used the real clock |
+| #34 | `design/25` Insolvency, Recovery and Bankruptcy (REVIEW) | docs only; GD-approved decisions are binding; review notes posted on the PR |
+| #36 | adversarial economic audit of Wave 1 | tests only; stacked on #19; evidence of A-01..A-06 |
+| #37 | Wave 1 fixes A-02..A-05 (A-01/A-06 left to design 25) | stacked on #36; turns the exploit tests into regression tests |
 | #15 → #16 → #17 → #18 → #19 | Empresas (core; positions/wages; production/stock; Engineer/Lawyer support; Retail/Construtora) | **Wave 1**, under adversarial audit |
 | #20 → #21 → … → #31 | Market transparency, Schools, Contracts, Properties (+ transfer, housing, location, building use), Budget, Legislation, Bot infrastructure, World history | stacked on #19; each branch conflicts with `main` only in `CHANGELOG_DEV.md`, `TASK.md`, `polis/settings.py` |
 
@@ -87,7 +91,7 @@ Known cross-document conflict, registered and unresolved: the headers of `design
 
 Current GD priority: **audit and consolidate the existing implementations before starting new systems.** Individual task definitions and acceptance criteria stay in `TASK_QUEUE.md`.
 
-1. Close documentation and test infrastructure (#33, #13, the `run_together` fix) — no merge without GD authorization.
+1. Close documentation and test infrastructure (#33, #34, #13, the `run_together` fix) — no merge without GD authorization.
 2. Audit the stacked PRs in waves, bottom-up (Wave 1 = Empresas #15–#19). Each audit is adversarial: it tries to break conservation, concurrency and limits, separates real risks from risks already prevented, and classifies findings as BLOCKER / MAJOR / MINOR / DEFERRED with executed evidence.
 3. Resolve open design points through GD decisions (section 2.4), then continue the dependency-driven roadmap in `TASK_QUEUE.md` (Market, Schools, real estate, Contracts, budget, politics, feedback, history, remaining Rankings slices, UI shell, military, Bot Test engine/training/monitoring).
 4. Do not stop at foundations while committed Bot Test systems remain unimplemented; keep every in-scope system visible until delivered.
