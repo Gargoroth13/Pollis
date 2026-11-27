@@ -40,6 +40,74 @@ Implementa parte do `design/14` (FINAL — BOT TEST) sem alterar a mecânica. Br
 - **Limitação registrada:** a falha do observer de ação preserva a ação mas o log não recupera a ação perdida na sequência de atividade; solução durável (outbox) proposta em `design/14a` §3.6, aguardando o GD.
 - Nenhum dinheiro é criado ou movido pelos Rankings (testado).
 
+## 2026-10-19 — P1.02a — Auto-consumo de alimentos (`design/04` §16)
+
+Implementa o §16 integralmente, sem alterar a mecânica. Branch `dev/p1.02a-auto-consumo`, **empilhada sobre o PR #12** (P1.02); PR próprio; **não mergeado**. Auto-consumo é obrigatório no primeiro Bot Test e a regra já estava definida; a separação em PR é de tarefa, não de escopo.
+
+### O que foi entregue
+- **Configuração** (`inventory.AutoConsumption`, ação `auto_consumption` no Action Registry, alvo `{"enabled": bool, "preferred": produto | None}`): habilitar/desabilitar e escolher (ou limpar) o alimento preferido; o preferido precisa ser alimento consumível do catálogo (mesmas recusas do consumo manual). Sem custo de Energia/dinheiro (o design não define).
+- **Execução** (`inventory/auto.py`): hook de acesso (`players.hooks`, On Access) no fim do catch-up. Com Nutrição ≥ 10 não consulta nada; com `Nutrição < 10` e Auto-consumo habilitado: 1) preferido, se houver no inventário; 2) senão o alimento disponível de menor ganho de Nutrição; repete enquanto Nutrição < 10 e houver elegível; para ao atingir/ultrapassar 10; sem elegível, nada. Sem polling por jogador.
+- **Mesmas regras do manual**: `services.consume_locked` é o núcleo único (item → efeito → quantidade reduzida) usado por `consume` e pelo hook; o efeito de Nutrição/Comida é `players.services.apply_food_locked` (extraído de `consume_food`, que o reutiliza). Sem bônus especial; o efeito de Comida substitui o anterior.
+- **Sem recursão**: o hook não chama `consume`/`sync_player`; opera sobre o jogador que o catch-up já travou (em memória) e tem guarda de reentrada. `consume` manual passou a usar `locked_player` (um único catch-up por consumo).
+- **Trilha e auditoria**: movimento de consumo com `reference_kind="auto_consumption"` e `explained` (`automatic`, `nutrition_before`, regra de escolha, preferido, candidatos com ganho). `audit_inventory` ganhou o invariante 4 (consumo automático só abaixo do limiar, de alimento, como consumo).
+
+### Interpretações técnicas (preservam o design; registradas por honestidade técnica)
+- "Elegível" = alimento do catálogo com valores especificados (NULL é recusado pelo consumo manual, `NULL ≠ 0`) **e ganho de Nutrição > 0**, com ≥ 1 unidade no inventário. Um alimento de ganho 0 (hoje Sorvete e Refrigerante `[PROV]`) não resolve a fome e, se contasse como "menor ganho", seria consumido até acabar sem nunca encerrar o laço. Eles continuam consumíveis manualmente.
+- Empate no menor ganho: desempate determinístico pela chave do produto (ordem alfabética). O design não o define; não afeta o gameplay de forma material.
+- Limiar 10 é do design (`inventory.constants.AUTO_CONSUME_BELOW`), não `[PROV]`.
+- O momento é o do processamento lazy (fim do catch-up, estado em `now`), não retroativo ciclo a ciclo: coerente com "durante o processamento lazy do estado do jogador" e com o guia de continuidade.
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **1034 testes OK** (998 + 36 novos: 33 de Auto-consumo + 3 de concorrência).
+- SQLite, suíte completa: **1034 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos; arquivo de concorrência do `inventory` 3× no PostgreSQL (8 testes cada).
+- Mutação: trocar o núcleo pelo `consume` público no hook faz 8 testes (não-recursão e repetição) falharem; código restaurado.
+- Coberto: configuração e recusas; preferido; alternativa de menor ganho; desempate; preferido inelegível (NULL); ganho 0 e não-alimento; repetição, parada em 10 e após ultrapassar; fim do alimento; ausência de elegível; mesmas regras do manual (Nutrição, efeito, trilha); substituição do efeito de Comida; Nutrição ≤ 100 e dinheiro intacto; trilha/auditoria (inclusive movimento forjado); fome acumulada com o tempo tratada no próximo acesso e não antes; todos os caminhos lazy (`sync_player`, `locked_player`, `get_snapshot`, `check_action`, `available_actions`, `execute_action`); não-recursão (um `_catch_up` por acesso); concorrência no PostgreSQL (acessos simultâneos consomem uma vez; acesso × envio da última unidade tem um vencedor; envios cruzados + acessos sem deadlock).
+
+---
+
+## 2026-10-18 — P1.02 — Inventário implementado (app `inventory`)
+
+Implementa `design/05` (REVIEW) sobre a base integrada (#8 → #9 → #10 → #11 já mergeados em `main`). Branch `dev/p1.02-inventario`, PR #12. **Não mergeado; aguarda autorização do Game Director.**
+
+### O que foi entregue
+- **Posse** (`inventory/models.py`): `InventoryItem` (jogador → produto → quantidade inteira, só existe com quantidade > 0); categorias vêm do catálogo (`inventory_of` agrupa por `Product.category`; nada é duplicado).
+- **Trilha imutável** `InventoryMovement` (05 §19): origem, destino, produto, delta, quantidade resultante, tipo, instante, referência e `Explained`; idempotente por `key`. `InventoryItem.quantity` é cache; a verdade auditável é a soma dos movimentos.
+- **Entrada/saída externas** (`credit`/`debit`): restritas a `purchase`/`production` e `sale`. Compra, Varejo e produção ainda não existem; o ponto de entrada está pronto, sem inventar quem o chama.
+- **Consumir** (05 §5-6; `04` §15): ação `consume` no Action Registry (alvo PRODUTO). Alimento → Nutrição (limitada ao espaço disponível, `Explained` com `food_nutrition` e `nutrition_room`) + efeito temporário de QoL na categoria FOOD (substitui o anterior, regra de `04`). Valores NULL do catálogo recusam com `UNSPECIFIED_DESIGN_VALUE`.
+- **Correio** (05 §11-12): ação `send_item` (alvo PARAMS `{recipient, product, quantity}`). Taxa = `MAX(mínima, valor_de_referência × percentual)`, valor de referência = `base_price × quantidade`, cobrada do remetente para a União (`Nature.MAIL_FEE`) pelo `ledger.transfer`; sem envio gratuito; o `Shipment` guarda o detalhamento da taxa.
+- **Auditoria** (`audit_inventory`, `manage.py audit_inventory [--json]`): posse = Σ movimentos e `quantity_after`; operação x sinal; envios x movimentos x lançamento `MAIL_FEE`.
+- **Registry**: novos tipos de alvo `PRODUCT` e `PARAMS` em `players/registry.py`; as duas ações usam as mesmas recusas dos serviços (sem caminho privilegiado para Bots).
+
+### Valores `[PROV]` (Q3 de 2026-10-14: provisórios permitidos se auditáveis; `inventory/params.py`)
+- Percentual da taxa de correio: **10%**; taxa mínima: **R$ 1,00** (100 centavos); duração do efeito temporário de alimento: **3600 s**. Todos calibráveis; origem registrada no código. Arredondamento da taxa: HALF_EVEN, uma única vez.
+
+### Decisões técnicas (não alteram a mecânica; registradas por honestidade técnica)
+- Consumir é **uma unidade por ação**. Alimento sem efeito de QoL (NO_EFFECT / intensidade 0) não aplica efeito temporário e **não** substitui o existente. Produto não alimento recusa com `NO_CONSUMPTION_EFFECT`.
+- Correio: o design não prevê custo de Energia nem regra de localização; nenhum foi criado. Envio a si mesmo recusado (`SAME_PLAYER`). Quantidades são inteiras.
+- **Protocolo de bloqueio** (docstring de `inventory/services.py`): 1) linhas `Player` envolvidas em ordem crescente de pk; 2) `InventoryItem` em ordem crescente de player_id; 3) contas do ledger.
+
+### Bug real encontrado e corrigido (PostgreSQL)
+Envios cruzados (A→B e B→A simultâneos) davam deadlock em 3/3 execuções: o INSERT com FK toma `FOR KEY SHARE` na linha `Player` referenciada, que conflita com o `FOR UPDATE` da outra transação. Correção: `send_item` trava as duas linhas `Player` em ordem crescente de pk antes de qualquer outra coisa. Coberto por teste de concorrência (5 execuções consecutivas no PG sem falha).
+
+### Verificação (executada no estado final da branch)
+- PostgreSQL 16, suíte completa: **998 testes OK** (941 anteriores + 57 do `inventory`).
+- SQLite, suíte completa: **998 testes OK (13 pulados que exigem PostgreSQL)**.
+- `manage.py check` e `makemigrations --check` limpos nos dois bancos.
+- Envios cruzados A↔B (`test_crossing_sends_between_two_players_never_deadlock_and_conserve_items_and_money`): passa no PostgreSQL (3 execuções do arquivo de concorrência, 5 testes cada). Mutação feita para provar que o teste vale: sem o bloqueio ordenado das duas linhas `Player`, ele falha com `deadlock detected` (2/2 execuções); código restaurado.
+
+### Fora do escopo DESTE PR (continua no Bot Test; cada item tem etapa própria)
+- **Auto-consumo** (`04` §16): **obrigatório no primeiro Bot Test; a regra já está definida no `04` §16 e NÃO aguarda decisão de mecânica** (a nota anterior desta entrada que o chamava de "decisão pendente do GD" estava errada e foi removida). É a tarefa **P1.02a**, imediatamente depois deste PR (`TASK_QUEUE.md`). Separação de tarefa, não redução de escopo. Armadilha conhecida: o gatilho vive no processamento lazy (`_catch_up`), e `consume()` público chama `sync_player()` → `_catch_up()`; a P1.02a reutiliza a mesma regra de negócio sobre o jogador já travado, sem reentrar no catch-up.
+- **Mercado de Jogadores, Varejo e compra** (05 §13-16): P1.05/P1.04; este PR entrega os pontos de entrada/saída (`credit`/`debit`).
+- **Estado ativo** (roupa/veículo/residência, 05 §7-10): depende de Roupas/Imóveis/Veículos; segue planejado nessas etapas.
+- Estoque empresarial (05 §17): estrutura distinta, em P1.04.
+- As quatro pendências herdadas do P1.01 **já haviam sido resolvidas na P0.02**; nenhuma bloqueou.
+
+### Revisão consolidada do diff (correções incluídas no PR)
+- `_apply`: a releitura após `IntegrityError` era recursiva e ilimitada; uma violação real de restrição recursaria sem fim. Agora relê **uma** vez e, se o erro persiste, ele sobe (teste novo).
+- `send_item`: a recusa de pagamento rotulava qualquer falha do ledger como `INSUFFICIENT_FUNDS`; agora propaga o código real do ledger.
+- `inventory_of`: a ordem das categorias dependia da collation do banco; agora é ordenada em Python.
+
 ---
 
 ## 2026-10-16 — P0.07b — registro monetário implementado (app `ledger`)
