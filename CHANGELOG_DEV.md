@@ -4,6 +4,10 @@ Registro das decisões importantes de design e desenvolvimento que precisam perm
 
 ---
 
+## 2026-11-27 — P1.15a — auditoria final de integração: checkpoints/varredura de QoL neutros para hooks de acesso
+
+Auditoria final do PR #32 antes do merge (sem merge, rebase ou force push). Achado **MAJOR** na integração com a #14 (Auto-consumo, hook de acesso): os checkpoints do catch-up e a varredura `sync_player_until` rodavam também os hooks de acesso nos instantes de referência, de modo que **a presença do ranking de QoL mudava o resultado do jogo** (probe com a #14 integrada, jogador ocioso 20 h com Auto-consumo e 40 sucos: sem o ranking, 2 consumos e internação em 1791300000; com o ranking, 12 consumos e internação em 1791306000), contra design/14 §14.11 ("o ranking não deve alterar QoL") e CLAUDE.md §12. Correção mínima: `_catch_up` divide só os **ciclos**; os hooks de acesso rodam uma vez, no acesso real; `sync_player_until` não roda hooks. Testes de regressão independentes da #14 (hook de acesso que altera o estado): chamadas só no acesso real e resultado idêntico com e sem checkpoints; ambos derrubam a mutação que restaura o comportamento antigo. Nenhuma decisão de design alterada.
+
 ## 2026-11-06 — P1.15a — fairness do processador da outbox, retenção decidida, documentação
 
 Revisão do Game Director sobre o PR #32 (sem merge, rebase ou force push; base inalterada; lote #12 + #14 independente).

@@ -133,6 +133,40 @@ class CatchUpSplitEquivalenceTests(RankingsTestCase):
                   "hospitalized_until", "last_work_at"):
             self.assertEqual(getattr(a, f), getattr(b, f), f)
 
+    def test_access_hooks_run_once_at_the_real_access_never_at_checkpoints_or_sweeps(self):
+        """
+        Regressão da auditoria (2026-11-27): hooks de acesso com efeito no estado (ex.: Auto-consumo da #14, que come quando
+        Nutrição < 10) rodavam também em cada checkpoint/varredura, então a presença do ranking de QoL MUDAVA o resultado do
+        jogo (design/14 §14.11 proíbe). Agora só os ciclos são divididos; o hook roda uma vez, no acesso real.
+        """
+        from players.services import sync_player_until
+        calls = []
+        player_hooks.register_access_hook("probe_state", lambda pl, now: (calls.append((pl.pk, now)),
+                                                                          setattr(pl, "nutrition", pl.nutrition + 1))[0])
+        self.addCleanup(player_hooks.unregister_access_hook, "probe_state")
+        player_hooks.register_checkpoint("probe", lambda pl, s, e: [T0 + 1234, T0 + 7200], lambda pl, t, bal: None)
+        self.addCleanup(player_hooks.unregister_checkpoint, "probe")
+        self.clk.advance(hours=5)
+        sync_player_until(self.player.pk, T0 + 3 * HOUR)                      # varredura: nenhum hook
+        self.assertEqual(calls, [])
+        sync_player(self.player.pk)                                           # acesso real: um hook, no instante real
+        self.assertEqual(calls, [(self.player.pk, self.clk.now())])
+
+    def test_a_state_changing_access_hook_gives_the_same_result_with_and_without_checkpoints(self):
+        twin = self.make_player("twin2")
+        self.neutral_qol("1")
+        for p in (self.player, twin):
+            Player.objects.filter(pk=p.pk).update(energy=D("40"), nutrition=D("55"), burnout=D("30"), health=D("80"))
+        player_hooks.register_access_hook("probe_state", lambda pl, now: setattr(pl, "nutrition", pl.nutrition + 7))
+        self.addCleanup(player_hooks.unregister_access_hook, "probe_state")
+        player_hooks.register_checkpoint("probe", lambda pl, s, e: [T0 + 1234, T0 + 7200, T0 + 9000] if pl.pk == self.player.pk else [],
+                                         lambda pl, t, bal: None)
+        self.addCleanup(player_hooks.unregister_checkpoint, "probe")
+        self.clk.advance(hours=30)
+        a, b = sync_player(self.player.pk), sync_player(twin.pk)
+        for f in ("energy", "health", "nutrition", "burnout", "processed_until", "hospitalized_until"):
+            self.assertEqual(getattr(a, f), getattr(b, f), f)
+
     def test_checkpoints_are_ordered_deduplicated_and_clipped_to_the_interval(self):
         seen = []
         player_hooks.register_checkpoint("a", lambda pl, s, e: [T0 + 900, T0 + 300, T0 - 5, T0 + 10 ** 9],

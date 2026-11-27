@@ -123,9 +123,11 @@ def run_access_hooks(player: Player, now: int) -> None:
 
 # --- checkpoints do catch-up --------------------------------------------------------------------------------------------
 # Um sistema que precisa do estado do jogador EXATAMENTE em um instante `t` (ex.: snapshot comparável de QoL) declara quais
-# instantes lhe interessam em (início, fim] de um catch-up. O catch-up é então DIVIDIDO em `t`: o jogador é processado até
-# `t` (mesmos ciclos e hooks de acesso de sempre, só em duas partes) e o callback lê o estado de `t` ANTES de qualquer
-# mudança posterior (uma ação, o fim de um efeito substituído). Sem provedores registrados o catch-up é idêntico ao de antes.
+# instantes lhe interessam em (início, fim] de um catch-up. O catch-up é então DIVIDIDO em `t`: os CICLOS do jogador são
+# processados até `t` (mesmos ciclos de sempre, só em duas partes) e o callback lê o estado de `t` ANTES de qualquer mudança
+# posterior (uma ação, o fim de um efeito substituído). Os hooks de acesso (Auto-consumo, chegada de viagem...) NÃO rodam em
+# `t`: continuam rodando uma vez, no acesso real — ler um instante não pode alterar o resultado do jogo. Sem provedores
+# registrados o catch-up é idêntico ao de antes.
 CheckpointProvider = Callable[[Player, int, int], Sequence[int]]      # (jogador, início, fim] -> instantes de interesse
 CheckpointCallback = Callable[[Player, int, Balance], None]           # (jogador JÁ processado até t, t, balanço)
 _checkpoints: Dict[str, Tuple[CheckpointProvider, CheckpointCallback]] = {}
