@@ -295,6 +295,20 @@ requisitos de tipo de imóvel;
 requisitos de estrela;
 requisitos de atividade.
 
+Decisão do Game Director (2026-11-27) para a relação entre estrela, imóvel e Construtora
+(resolve a dependência circular "empresa k★ exige prédio, prédio exige Construtora k★"):
+
+Empresa de 1 estrela pode operar em lote autorizado, sem prédio construído.
+Prédios de nível k exigem Construtora de pelo menos max(1, k−1) estrelas.
+Empresas de 2 a 5 estrelas exigem prédio de nível correspondente ou superior.
+
+Verificação da cadeia de materiais (executada sobre o catálogo do 22): não há ciclos de
+receita; para a regra funcionar sem novo círculo, o pacote de materiais de obra de um
+prédio de nível k deve ter, em toda a sua cadeia de produção, estrela mínima ≤ max(1, k−1).
+Nível 2 usa só produtos de cadeia 1★ (cimento, tábuas); níveis 3 a 5 podem usar também
+vidro e aço (cadeia 2★). A condição deve virar teste de catálogo quando os materiais
+forem implementados.
+
 As regras específicas de funcionamento da empresa continuam pertencendo ao 02 — Empresas.
 
 17. Imóveis industriais

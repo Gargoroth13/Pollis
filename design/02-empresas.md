@@ -811,3 +811,46 @@ Isso evita exatamente o retrabalho que você estava tentando eliminar desde o co
 ## Complemento de design — capacidade administrativa e insolvência (2026-11-27)
 
 As decisões aprovadas no [25 — Insolvência, Recuperação e Falência Empresarial](25-Insolvencia-Recuperacao-Falencia-REVIEW.md) complementam este documento: sem limite rígido geral de funcionários por estrela; capacidade administrativa com retornos decrescentes, remuneração preservada e limites específicos de suporte mantidos. O 25 define estados financeiros, proteções de contratação e patrimônio, prioridade de pagamentos, responsabilidade limitada, liquidação, cooldown e transferência de propriedade. Detalhes em REVIEW não autorizam implementação antecipada.
+
+
+## Complemento de design — decisões do GD de 2026-11-27 (segunda rodada)
+
+Decisões aprovadas pelo Game Director; vinculantes. Parâmetros marcados [PROV] são calibráveis nos testes.
+
+### A. O Dono não ocupa vaga remunerada da própria empresa
+Mantida a proibição (achado A-05): o proprietário não se candidata nem é aprovado para vaga remunerada da própria empresa. As atribuições do cargo Dono (salário diário do cargo, abrir/fechar vagas, aprovar candidaturas) permanecem. Ele pode ser funcionário de **outra** empresa (§16). O auditor acusa `OWNER_HOLDS_PAID_POSITION`.
+
+### B. Estrelas, imóveis e Construtora (alternativa B)
+Empresa de 1★ opera em lote autorizado sem prédio; prédios de nível k exigem Construtora de pelo menos max(1, k−1) estrelas; empresas de 2★ a 5★ exigem prédio de nível correspondente ou superior. Detalhes e a condição de cadeia de materiais: `10` §16. Enquanto o vínculo empresa↔imóvel não existir, o parâmetro `REQUIRE_BUILDING_FOR_LOCATION` permanece desligado.
+
+### C. Troca de produção
+A **troca efetiva** de produção fica **bloqueada durante a inadimplência** (`25` §25.2). Selecionar de novo o mesmo produto continua sem efeito e sem cobrança. A configuração inicial continua gratuita; setup e cooldown existentes não mudam. Eventual taxa de troca (proposta de 1% do custo de fundação) **não** foi decidida e segue como proposta.
+
+### D. Distribuição de lucros (entra no primeiro Bot Test)
+Mecanismo **separado do salário do Dono**, com ação própria no Action Registry (humanos e Bots).
+
+1. **Quem e quando:** só o Dono; só empresa em estado **regular** e **sem nenhuma obrigação vencida** (`25` §25.2). Recusa explicada (`20`) com a falta de cada condição.
+2. **Natureza monetária própria:** `PROFIT_DISTRIBUTION` (`24` §24.8). É transferência de dinheiro existente da conta da empresa para a do Dono; não cria dinheiro.
+3. **Imposto:** imposto de renda vigente (lei federal, padrão 5%) retido na fonte sobre o valor **bruto** distribuído, `TAX_INCOME`, para a União; o Dono recebe o líquido (`09` §45.1).
+4. **Sem limite salarial:** não consome `C_S` nem `C_T` e não é limitada por W, S ou T (`11` §11.1.0).
+5. **Preservação:** o valor distribuível respeita reservas e retenções ativas, obrigações abertas e **sete dias de folha salarial potencial** [PROV], pelo mesmo cálculo de folha potencial do `25` §25.3 (a especificar no §25.8). Compromissos financeiros assumidos e ainda não vencidos (parcelas de contrato e empréstimo) também são preservados, na forma que o `18` definir (pendente).
+
+**Lucro distribuível — definição auditável.** Regime de **caixa**, calculado só a partir dos lançamentos da conta da empresa, para não confundir capital aportado com lucro operacional:
+
+```text
+LO  = Σ receitas operacionais − Σ despesas operacionais        (desde a fundação)
+LD  = LO − Σ distribuições brutas anteriores                   (lucro acumulado ainda não distribuído)
+distribuível = max(0, min(LD,  caixa − reservas/retenções − obrigações abertas − 7 × folha potencial diária))
+```
+
+| Lançamento na conta da empresa | Efeito em LO |
+|---|---|
+| Entrada `SALE`, `PUBLIC_WORKS_PAYMENT`, `SUBSIDY`, `REIMBURSEMENT`, `INDEMNITY` | receita operacional (+) |
+| Entrada `DONATION` (inclui o **aporte de capital**, `company_capital`, de qualquer origem), `LOAN_PRINCIPAL`, `RETENTION_RELEASE`, `SCENARIO_GRANT` | **não é lucro**: capital, financiamento ou devolução |
+| Saída `WAGE` (bruto), `OWNER_SALARY`, `TAX_*`, compra de insumos (`SALE` como comprador), `RENT`, `PENALTY`, `LOAN_INTEREST`, taxas e melhorias da empresa | despesa operacional (−) |
+| Saída `LOAN_REPAYMENT` (principal) | **não é despesa** (amortização); só os juros são |
+| Saída `PROFIT_DISTRIBUTION` | reduz LD |
+| `REVERSAL` | desfaz o efeito do lançamento original |
+| Natureza não listada | entrada: nunca é lucro; saída: é despesa (regra conservadora) |
+
+O detalhamento retornado (`Explained`) mostra LO, distribuições anteriores, LD, caixa, reservas, obrigações e folha potencial usados, e o valor final com o fator que limitou. A auditoria recalcula LD a partir do ledger e confere cada distribuição. A devolução de capital aportado **não** faz parte desta regra (aporte não é lucro); se for desejada, é decisão separada.

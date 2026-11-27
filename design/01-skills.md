@@ -1,13 +1,11 @@
 # 01 — Skills
 
-> **Status:** REVIEW
+> **Status:** FINAL — BOT TEST *(decisão do Game Director em 2026-11-27; antes: REVIEW)*
 >
-> Este documento contém as regras de design atualmente definidas para o sistema
-> de skills, mas ainda não deve ser tratado como especificação final de
-> implementação para o Bot Test.
->
-> Algumas decisões de balanceamento dependem dos resultados das simulações com
-> bots e de documentos relacionados, principalmente Empresas, Escolas e Política.
+> Este documento é a especificação de implementação das skills para o Bot Test.
+> O multiplicador salarial por skill é **1,5 [PROV]** para as três skills e **não pode
+> ser alterado por lei**. Valores de balanceamento continuam calibráveis nos testes
+> com bots, sem alterar a estrutura aqui definida.
 
 ---
 
@@ -197,9 +195,9 @@ O trabalho não é bloqueado; apenas o valor efetivamente recebido é limitado.
 
 Evolução futura
 
-Existe interesse em transformar esse limite em uma decisão política do mundo.
+**Decisão do GD (2026-11-27): o multiplicador salarial por skill NÃO é lei.** Permanece 1,5 [PROV] para Inteligência, Físico e Carisma, calibrável só por balanceamento de design. A possibilidade abaixo, que existia como interesse, fica descartada para o primeiro Bot Test e não consta nas leis paramétricas do `11` (o salário mínimo, esse sim, é lei federal).
 
-Uma possibilidade é o governo definir, por lei, o multiplicador utilizado na
+A alternativa considerada era o governo definir, por lei, o multiplicador utilizado na
 fórmula:
 
 salário máximo = skill × X
@@ -213,8 +211,7 @@ X alto
 → maior liberdade econômica
 → maior risco de concentração e abuso
 
-Essa possibilidade ainda precisa ser avaliada em conjunto com o sistema de
-Política e Leis antes de ser considerada uma regra final.
+Essa possibilidade foi avaliada e não foi adotada (decisão acima).
 
 Independentemente disso, algum mecanismo de proteção contra transferências
 artificiais de riqueza deve existir para preservar a integridade econômica do
@@ -369,25 +366,25 @@ viabilidade de diferentes estilos de vida;
 risco de snowball;
 efeito de requisitos de skill;
 equilíbrio entre emprego e freelance.
-2. Decisões em aberto
+2. Decisões que estavam em aberto
 
-As seguintes questões ainda não devem ser consideradas finalizadas:
+Resolvidas na consolidação de 2026-11-27 (Game Director):
 
-Fórmula exata do diminishing returns.
-Multiplicador salarial definitivo.
-Se o multiplicador salarial poderá ser alterado por lei.
-Duração exata da fase escolar inicial.
-Distribuição definitiva dos cargos entre Inteligência, Físico e Carisma.
-Quais atividades específicas utilizarão múltiplas skills.
-Relação exata entre skill e produção.
+Multiplicador salarial por skill: 1,5 [PROV] para as três skills.
+O multiplicador salarial NÃO pode ser alterado por lei.
+
+As demais questões são parâmetros de balanceamento, calibráveis no Bot Test sem
+alterar a estrutura deste documento, ou já têm regra em outros documentos:
+
+Fórmula exata do diminishing returns (parâmetros [PROV]).
+Duração exata da fase escolar inicial (depende do 03, que permanece REVIEW).
+Distribuição definitiva dos cargos entre Inteligência, Físico e Carisma (02).
+Quais atividades específicas utilizarão múltiplas skills (parâmetro).
+Relação exata entre skill e produção (02 e 22).
 Balanceamento dos ganhos de skill por atividade.
 Balanceamento de freelance.
 Quais atividades existem fora de trabalho e estudo e quais skills elas
-desenvolvem.
-
-Essas decisões devem ser resolvidas antes de marcar este documento como:
-
-FINAL — BOT TEST
+desenvolvem (04).
 
 3. Princípios que não devem ser alterados sem revisão
 Existem apenas três skills: Inteligência, Físico e Carisma.

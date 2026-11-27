@@ -101,7 +101,7 @@ Exemplos de bases tributárias:
 
 Tipo	Base
 Imposto sobre vendas	Transações do Mercado e transações empresariais
-Imposto de renda	Salários pagos
+Imposto de renda	Salários pagos e lucros distribuídos (GD 2026-11-27: ver 45.1)
 Imposto sobre lucro	Lucro das empresas (fora do primeiro Bot Test; ver §45)
 Outros impostos	Conforme leis futuras
 
@@ -884,8 +884,10 @@ FINAL — BOT TEST
 
 Os itens abaixo foram aprovados pelo Game Director e não alteram a estrutura FINAL deste documento. Itens que dependem do registro monetário (P0.07) estão marcados.
 
-45.1. Imposto sobre lucro
-O imposto sobre lucro está fora do primeiro Bot Test. A linha de §6 permanece apenas como base futura.
+45.1. Imposto sobre lucro e distribuição de lucros
+O imposto sobre o **lucro das empresas** (tributar o resultado da empresa) está fora do primeiro Bot Test. A linha de §6 permanece apenas como base futura.
+
+Decisão do Game Director (2026-11-27): a **distribuição de lucros** do Dono entra no primeiro Bot Test (`02`, complemento) e sofre **imposto de renda vigente retido na fonte**, na taxa da lei federal de Imposto de Renda (`11` §11.1), sobre o valor bruto distribuído. O imposto vai à União com a natureza `TAX_INCOME`; o Dono recebe o líquido. Isso **não** cria imposto sobre lucro.
 
 45.2. Segurança/Defesa local
 A categoria "Segurança/Defesa local" de §5 não possui mecânica no primeiro Bot Test. O Exército é federal (45.8).
