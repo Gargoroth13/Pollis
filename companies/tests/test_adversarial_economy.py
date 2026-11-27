@@ -510,8 +510,11 @@ class StockConcurrencyTests(TransactionTestCase):
         okays = sum(1 for j in jobs_ if j.result is not None and getattr(j.result, "ok", False))
         wheat, flour = stock.quantity_of(self.firm, "wheat"), stock.quantity_of(self.firm, "flour")
         codes = sorted({j.result.code for j in jobs_ if j.result is not None and not j.result.ok})
+        from companies.models import WorkWage
+        wages = WorkWage.objects.filter(player_id__in=[p.pk for p in self.crew]).count()
         note("S5.concurrent_scarce_inputs", seeded_wheat=seeded, concurrent_works=len(self.crew), succeeded=okays,
-             wheat_left=wheat, flour_made=flour, refusal_codes=",".join(codes))
+             wheat_left=wheat, flour_made=flour, wages_recognized=wages, works_paid_without_output=max(0, wages - flour),
+             refusal_codes=",".join(codes))
         self.assertGreaterEqual(wheat, 0)
         self.assertEqual(wheat + flour, seeded)                         # 1 trigo → 1 farinha na receita do catálogo: nada nasce de graça
         self.assertLessEqual(flour, seeded)
