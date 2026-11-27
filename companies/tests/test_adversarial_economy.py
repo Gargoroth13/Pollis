@@ -1,14 +1,19 @@
 """
 AUDITORIA ADVERSARIAL DA ONDA 1 (Empresas, #15–#19) — cenários econômicos do GD (2026-11-27, Etapa 2).
 
-Estes testes tentam QUEBRAR as regras e MEDEM o que acontece; cada um imprime (`AUDIT|...`) os números que sustentam o relatório.
-Estado depois das correções da Onda 1 (GD 2026-11-27, Etapa 2): os exploits A-02 (churn de suporte), A-03 (Trabalho sem produção
-sob concorrência), A-04 (salário novo à frente de dívida antiga) e A-05 (Dono com vaga na própria empresa) viraram TESTES DE
-REGRESSÃO das proteções. Os riscos A-01 (empresa insolvente produz e acumula dívida) e A-06 (sem limite de funcionários) seguem
-documentados com o comentário `RISCO CONFIRMADO — design 25`: a resolução estrutural pertence ao `design/25` e nenhuma solução
-temporária incompatível foi criada; esses testes afirmam o comportamento atual até a implementação do 25.
+Estes testes tentam QUEBRAR as regras que existem e MEDEM o que acontece (`AUDIT|...`). Política de asserções (GD, 2026-11-27):
+nenhum teste fixa como requisito permanente um comportamento explorável.
+
+* Garantias que valem sempre (conservação, caixa nunca negativo, cada centavo devido registrado, limites diários, concorrência)
+  são asserções normais.
+* Uma PROTEÇÃO esperada que o código ainda não oferece é escrita como a asserção da proteção e marcada `@unittest.expectedFailure`
+  com `PENDENTE_*`: enquanto a proteção não existe o teste "falha como esperado" (suíte verde); quando ela for implementada o teste
+  passa e a suíte acusa SUCESSO INESPERADO, o que obriga a remover a marca — o teste nunca vira garantia do comportamento antigo.
+* A-02..A-05 foram resolvidos no PR #37 e seus testes são REGRESSÕES ativas (sem marca). A-01 e A-06 dependem do design 25 (capacidade
+  administrativa, estados de inadimplência, proteção de contratação) e permanecem marcados como PENDÊNCIA OBRIGATÓRIA antes do Bot Test.
 """
 import math
+import unittest
 from decimal import Decimal
 
 from django.test import TransactionTestCase
@@ -98,7 +103,10 @@ class AdversarialBase(ProductionBase):
 # ---------------------------------------------------------------------------------------------------------------------
 
 class InsolventCompanyTests(AdversarialBase):
-    def test_a_company_with_no_cash_hires_many_and_keeps_producing_and_every_wage_becomes_a_registered_obligation(self):
+    def test_a_company_without_cash_never_goes_negative_creates_no_money_and_registers_every_cent_owed(self):
+        """Garantias PERMANENTES (conservação e registro). Não afirma que contratar/produzir sem caixa seja permitido: o cenário é montado
+        contratando a crédito apenas porque hoje nada o impede; quando o design 25 §25.3 exigir capacidade de folha na contratação, este
+        preparo deve passar a financiar a contratação e deixar o caixa acabar depois. A proteção em si é o teste PENDENTE abaixo."""
         self.assertEqual(self.firm_money(), 0)
         crew = [self.worker] + self.staff(7)
         money_before = {p.pk: self.money(p) for p in crew}
@@ -122,12 +130,10 @@ class InsolventCompanyTests(AdversarialBase):
         self.assertEqual((count, owed), (len(crew), recognized))
         self.assertEqual(ledger_metrics()["in_circulation"], total)
         self.assertEqual({p.pk: self.money(p) for p in crew}, money_before)               # ninguém recebeu nada
-        # RISCO REAL (sem regra que o impeça): a produção NÃO depende de o salário poder ser pago
-        self.assertEqual(flour, produced)
-        self.assertGreaterEqual(produced, len(crew) - 1)
+        self.assertEqual(flour, produced)                                                  # o estoque confere com o que foi produzido
         self.clean()
 
-    def test_obligations_grow_without_a_ceiling_day_after_day_but_each_worker_day_is_bounded_by_the_daily_limit(self):
+    def test_the_daily_increase_of_obligations_is_bounded_by_the_daily_limit_of_each_worker(self):
         crew = [self.worker] + self.staff(3)
         series = []
         for day in range(1, 13):
@@ -142,12 +148,33 @@ class InsolventCompanyTests(AdversarialBase):
         owner_part = 2_000 * len(series)
         note("S2.obligation_growth", days=len(series), workers=len(crew), owed_day1=series[0], owed_day6=series[5],
              owed_day12=series[-1], daily_increment=series[-1] - series[-2], cap_per_worker_day_floor=cap_per_worker_day)
-        self.assertTrue(all(b > a for a, b in zip(series, series[1:])))                # RISCO REAL: cresce sem teto
-        increments = {b - a for a, b in zip(series[1:], series[2:])}
-        self.assertEqual(len(increments), 1)                                           # linear: nada acelera nem para
         # limite por trabalhador/dia (W=R$ 50 com skill baixa): a dívida diária do conjunto é no máximo n × max(W,S) + Dono
         self.assertLessEqual(series[-1] - series[-2], len(crew) * max(params.MIN_WAGE_PER_DAY_CENTS, 20_000) + 2_000)
         self.clean()
+
+    @unittest.expectedFailure     # PENDENTE_DESIGN_25 (A-01): obrigatório antes do Bot Test
+    def test_a_company_in_persistent_default_has_its_production_suspended_after_three_days(self):
+        """Design 25 §25.2: após 3 dias de inadimplência persistente a empresa fica insolvente e a produção/atividades que geram novas
+        obrigações salariais são suspensas (a venda de estoque, recebimentos, aportes e quitação continuam)."""
+        crew = [self.worker] + self.staff(1)
+        for _ in range(5):
+            for p in crew:
+                self.work_hooks(p)
+            self.tick_next_day()
+        self.assertGreater(self.obligations_of()[1], 0)
+        res = self.work_hooks(self.worker)
+        self.assertFalse(res.ok, res)
+
+    @unittest.expectedFailure     # PENDENTE_DESIGN_25 (A-01): obrigatório antes do Bot Test
+    def test_hiring_is_refused_when_the_company_cannot_pay_one_day_of_the_potential_payroll(self):
+        """Design 25 §25.3: na contratação conferir capacidade de pagar ao menos um dia de remuneração potencial da equipe inteira,
+        incluindo o novo contratado."""
+        self.assertEqual(self.firm_money(), 0)
+        vacancy = self.open("worker", 2_000, company=self.firm)
+        applicant = self.new_player("a01_applicant")
+        application = jobs.apply_to_position(applicant.pk, vacancy).detail["application"]
+        res = jobs.approve_application(self.boss.pk, application)
+        self.assertFalse(res.ok, res)
 
     def test_once_funded_the_oldest_obligations_are_paid_first_and_nothing_is_paid_twice(self):
         crew = [self.worker] + self.staff(2)
@@ -506,7 +533,7 @@ class SupportAccumulationTests(AdversarialBase):
 # ---------------------------------------------------------------------------------------------------------------------
 
 class LaborConcentrationTests(AdversarialBase):
-    def test_one_company_can_open_unlimited_vacancies_and_hire_every_available_player(self):
+    def test_vacancies_have_no_rigid_limit_per_star(self):
         opened = 0
         for _ in range(120):
             res = jobs.open_position(self.boss.pk, self.firm, "worker", 1_000, {})
@@ -514,14 +541,19 @@ class LaborConcentrationTests(AdversarialBase):
                 note("S8.labor_concentration_refusal", code=res.code)
                 break
             opened += 1
-        crew = self.staff(30)
-        employed = Position.objects.filter(company_id=self.firm, kind="worker", status="filled").count()
-        note("S8.labor_concentration", vacancies_opened=opened, hired=employed, company_cash=self.firm_money(),
-             star=Company.objects.get(pk=self.firm).stars)
-        self.assertEqual(opened, 120)                                  # RISCO REAL: nenhum limite de vagas/funcionários
-        self.assertEqual(employed, 31)
-        self.assertEqual(self.firm_money(), 0)                          # e nenhuma exigência de caixa para isso
+        note("S8.labor_concentration", vacancies_opened=opened, star=Company.objects.get(pk=self.firm).stars)
+        self.assertEqual(opened, 120)                                  # design 25 §25.1: sem limite rígido de funcionários por estrela
         self.clean()
+
+    @unittest.expectedFailure     # PENDENTE_DESIGN_25 (A-06): obrigatório antes do Bot Test
+    def test_hiring_is_bounded_by_the_payroll_capacity_of_the_company_not_by_a_headcount_limit(self):
+        """Design 25 §25.1/§25.3: sem teto de funcionários, mas a contratação exige capacidade de pagar um dia de folha potencial da
+        equipe inteira: com caixa para poucos, a empresa não consegue concentrar 30 contratações."""
+        self.assertTrue(services.fund_company(self.boss.pk, self.firm, 20_000).ok)
+        self.staff(30)
+        employed = Position.objects.filter(company_id=self.firm, kind="worker", status="filled").count()
+        note("S8.labor_concentration", hired=employed, company_cash=self.firm_money())
+        self.assertLess(employed, 31)
 
     def test_the_stock_capacity_of_the_star_is_a_real_brake_on_how_much_labor_can_be_used(self):
         """Freio estrutural que JÁ existe: com o estoque cheio (500 × estrela) o Trabalho de produção é bloqueado antes de gastar Energia,
