@@ -220,21 +220,32 @@ def perform_action(player_id: int, action: Action, *, burnout_risk=1,
     })
 
 
+def apply_food_locked(player: Player, nutrition_gain, effect: Optional[EffectSpec], now: int) -> None:
+    """
+    Efeito de um alimento sobre um jogador JÁ travado e processado até `now`: Nutrição + efeito temporário de Comida (04 §15-16).
+    NÃO trava, NÃO faz catch-up e NÃO salva: é o núcleo que `consume_food` e o Auto-consumo (hook de acesso, que roda DENTRO do
+    catch-up) compartilham, para que o consumo automático use exatamente a regra do manual sem reentrar em `_catch_up`.
+    """
+    gain = D(nutrition_gain)
+    if gain < 0:
+        raise ValueError("nutrition_gain deve ser >= 0")
+    rules.apply_food(player, gain, get_balance())
+    if effect is not None:
+        _apply_effect(player, FOOD, effect, now)
+
+
 @transaction.atomic
 def consume_food(player_id: int, nutrition_gain, *, effect: Optional[EffectSpec] = None) -> ActionResult:
     """
     Efeito de um alimento: Nutrição + eventual efeito temporário da categoria Comida (04 §15-16).
     O item, o inventário e o catálogo de ganhos pertencem a seus próprios sistemas.
     """
-    gain = D(nutrition_gain)
-    if gain < 0:
+    if D(nutrition_gain) < 0:
         return _refuse("INVALID_AMOUNT")
     player = _locked(player_id)
     now = game_clock.now()
     _catch_up(player, now)
-    rules.apply_food(player, gain, get_balance())
-    if effect is not None:
-        _apply_effect(player, FOOD, effect, now)
+    apply_food_locked(player, nutrition_gain, effect, now)
     player.save()
     return ActionResult(True, "OK", {"nutrition": player.nutrition})
 

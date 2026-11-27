@@ -8,6 +8,8 @@ PROTOCOLO DE TRAVAMENTO (um só; a ordem evita ciclo):
      cruzados (A→B e B→A) cada um segurava a própria linha e pedia a do outro: deadlock. Travar as duas em ordem elimina o ciclo;
   2. as linhas de posse (`InventoryItem`) do par (jogador, produto) em ordem crescente de `player_id`;
   3. o registro monetário (contas em ordem crescente de id, `ledger`), só quando há taxa.
+O Auto-consumo (04 §16) roda DENTRO do catch-up, sob a linha do jogador que o catch-up já travou, e só toca as posses desse jogador:
+não cria ordem nova nem reentra em `sync_player`/`_catch_up` (ver `auto.py`).
 Quem compõe operações de outros sistemas (Varejo, Mercado) com o inventário deve seguir a mesma ordem, e travar TODOS os jogadores
 que a operação referenciar (inclusive os que só recebem) antes de gravar qualquer linha que os referencie.
 
@@ -41,7 +43,8 @@ from players.models import Player
 from players.services import ActionResult, EffectSpec
 
 from . import params
-from .constants import (EXTERNAL_CREDIT, EXTERNAL_DEBIT, MAX_QUANTITY, Operation)
+from .constants import (AUTO_CONSUMPTION_REFERENCE, AUTO_CONSUME_BELOW, EXTERNAL_CREDIT, EXTERNAL_DEBIT, MAX_QUANTITY,
+                        Operation)
 from .models import InventoryItem, InventoryMovement, Shipment
 
 D = Decimal
@@ -230,41 +233,51 @@ def consumption_quote(player: Player, product_key: str, now: int) -> Consumption
     return ConsumptionQuote(product_key, nutrition, effect)
 
 
+def consume_locked(player: Player, product_key: str, now: int, *, automatic: bool = False,
+                   extra: Optional[Dict[str, Any]] = None) -> ActionResult:
+    """
+    Núcleo do consumo de UMA unidade sobre um jogador JÁ travado e processado até `now` (sem catch-up, sem `save`): item →
+    efeito → quantidade reduzida. É o que `consume` (manual) e o Auto-consumo (04 §16) executam, para que as regras sejam
+    exatamente as mesmas; o Auto-consumo roda DENTRO do catch-up e não pode reentrar nele. Pré-condição:
+    `consumption_refusal(product_key)` é None. Recusa NOT_IN_INVENTORY sem posse.
+    """
+    product = catalog.get_product(product_key)
+    if quantity_of(player.pk, product_key) < 1:
+        return _refuse("NOT_IN_INVENTORY", key=product_key)
+    quote = consumption_quote(player, product_key, now)
+    before = player.nutrition
+    explained = {"nutrition_gain": quote.nutrition.to_dict()}
+    if automatic:
+        explained.update(extra or {}, automatic=True, nutrition_before=str(before), threshold=str(AUTO_CONSUME_BELOW))
+    moved = _apply(player.pk, product, -1, Operation.CONSUMPTION, origin=f"player:{player.pk}", destination="consumption",
+                   key=_next_key("consume", player.pk),
+                   reference_kind=AUTO_CONSUMPTION_REFERENCE if automatic else "consumption", reference_id=product_key, at=now,
+                   explained=explained)
+    if not moved.ok:
+        return moved
+    player_services.apply_food_locked(player, quote.nutrition.value, quote.qol_effect, now)
+    return ActionResult(True, "OK", {
+        "product": product_key, "quantity": moved.detail["quantity"], "nutrition": player.nutrition,
+        "nutrition_gain": quote.nutrition, "nutrition_applied": player.nutrition - before,
+        "qol_effect": None if quote.qol_effect is None else {
+            "source": quote.qol_effect.source, "amount": quote.qol_effect.amount,
+            "duration_seconds": quote.qol_effect.duration_seconds}})
+
+
 def consume(player_id: int, product_key: str) -> ActionResult:
     """
     Consome UMA unidade de um alimento do inventário: item → efeito → quantidade reduzida (05 §5-6). O efeito é o de
-    `players.consume_food` (Nutrição + efeito temporário de Comida, que substitui o anterior, 04 §4.4); o mesmo serviço
-    que o Auto-consumo usará (04 §16: "exatamente as mesmas regras do consumo manual").
+    `players.apply_food_locked` (Nutrição + efeito temporário de Comida, que substitui o anterior, 04 §4.4): o MESMO núcleo
+    que o Auto-consumo usa (04 §16: "exatamente as mesmas regras do consumo manual").
     Recusas: PLAYER_NOT_FOUND, UNKNOWN_PRODUCT, NO_CONSUMPTION_EFFECT, UNSPECIFIED_DESIGN_VALUE, NOT_IN_INVENTORY.
     """
     refusal = consumption_refusal(product_key)
     if refusal is not None:
         return refusal
-    product = catalog.get_product(product_key)
     if not Player.objects.filter(pk=player_id).exists():
         return _refuse("PLAYER_NOT_FOUND", player=player_id)
-    with transaction.atomic():
-        player = player_services.sync_player(player_id)                # trava o jogador e processa até agora
-        now = game_clock.now()
-        if quantity_of(player_id, product_key) < 1:
-            return _refuse("NOT_IN_INVENTORY", key=product_key)
-        quote = consumption_quote(player, product_key, now)
-        before = player.nutrition
-        moved = _apply(player_id, product, -1, Operation.CONSUMPTION, origin=f"player:{player_id}", destination="consumption",
-                       key=_next_key("consume", player_id), reference_kind="consumption", reference_id=product_key, at=now,
-                       explained={"nutrition_gain": quote.nutrition.to_dict()})
-        if not moved.ok:
-            return moved
-        effect = player_services.consume_food(player_id, quote.nutrition.value, effect=quote.qol_effect)
-        if not effect.ok:
-            raise RuntimeError(f"consume_food recusou depois da validação: {effect.code}")
-        applied = effect.detail["nutrition"] - before
-        return ActionResult(True, "OK", {
-            "product": product_key, "quantity": moved.detail["quantity"], "nutrition": effect.detail["nutrition"],
-            "nutrition_gain": quote.nutrition, "nutrition_applied": applied,
-            "qol_effect": None if quote.qol_effect is None else {
-                "source": quote.qol_effect.source, "amount": quote.qol_effect.amount,
-                "duration_seconds": quote.qol_effect.duration_seconds}})
+    with player_services.locked_player(player_id) as (player, now, _bal):     # trava, processa (inclui Auto-consumo) e salva
+        return consume_locked(player, product_key, now)
 
 
 # --- Correio (05 §11-14) ------------------------------------------------------------------------------------------------

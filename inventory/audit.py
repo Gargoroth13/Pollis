@@ -3,12 +3,14 @@ Auditoria do Inventário (design/05 §19): reconstrói a posse a partir da trilh
 monetário. Só LÊ. Invariantes (numeração própria deste app):
   1  posse positiva e igual à soma dos movimentos de (jogador, produto); `quantity_after` acompanha a soma corrente
   2  sinal do movimento coerente com o tipo da operação (entra +, sai −) e operação conhecida
+  4  consumo automático (04 §16): operação de consumo, de alimento, e só com Nutrição abaixo do limiar do design
   3  envio: um movimento de saída e um de entrada, de mesma quantidade, com a mesma referência; a taxa do envio tem o
      lançamento `MAIL_FEE` correspondente (jogador → União, valor = taxa)
 """
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Tuple
 
 from ledger.audit import AuditReport
@@ -16,8 +18,22 @@ from ledger.constants import Nature
 from ledger.models import Entry
 from ledger import services as ledger
 
-from .constants import CREDIT_OPERATIONS, DEBIT_OPERATIONS, Operation
+from .constants import (AUTO_CONSUME_BELOW, AUTO_CONSUMPTION_REFERENCE, CREDIT_OPERATIONS, DEBIT_OPERATIONS, Operation)
 from .models import InventoryItem, InventoryMovement, Shipment
+
+
+def _audit_automatic(report: AuditReport, m: InventoryMovement) -> None:
+    ex = m.explained or {}
+    try:
+        before = Decimal(str(ex.get("nutrition_before")))
+    except InvalidOperation:
+        before = None
+    if m.operation != Operation.CONSUMPTION.value or ex.get("automatic") is not True:
+        report.add(4, "AUTO_CONSUMPTION_NOT_A_CONSUMPTION", movement=m.pk, operation=m.operation)
+    if before is None or before >= AUTO_CONSUME_BELOW:
+        report.add(4, "AUTO_CONSUMPTION_ABOVE_THRESHOLD", movement=m.pk, nutrition_before=ex.get("nutrition_before"))
+    if not hasattr(m.product, "food"):
+        report.add(4, "AUTO_CONSUMPTION_NOT_FOOD", movement=m.pk, product=m.product_id)
 
 
 def audit_inventory() -> AuditReport:
@@ -26,12 +42,14 @@ def audit_inventory() -> AuditReport:
     debit_ops = {o.value for o in DEBIT_OPERATIONS}
     running: Dict[Tuple[int, int], int] = defaultdict(int)
     movements = 0
-    for m in InventoryMovement.objects.order_by("id").iterator():
+    for m in InventoryMovement.objects.select_related("product").order_by("id").iterator():
         movements += 1
         if m.operation not in credit_ops | debit_ops:
             report.add(2, "UNKNOWN_OPERATION", movement=m.pk, operation=m.operation)
         elif (m.operation in credit_ops and m.delta <= 0) or (m.operation in debit_ops and m.delta >= 0):
             report.add(2, "OPERATION_SIGN_MISMATCH", movement=m.pk, operation=m.operation, delta=m.delta)
+        if m.reference_kind == AUTO_CONSUMPTION_REFERENCE:
+            _audit_automatic(report, m)
         pair = (m.player_id, m.product_id)
         running[pair] += m.delta
         if running[pair] != m.quantity_after:

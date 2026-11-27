@@ -5,6 +5,9 @@ class InventoryConfig(AppConfig):
     name = "inventory"
 
     def ready(self):
-        from . import registration
+        from players import hooks
 
-        registration.register()          # Consumir e Correio no Action Registry (design/05; 21 §20)
+        from . import auto, registration
+
+        registration.register()          # Consumir, Correio e Auto-consumo no Action Registry (design/05, 04 §16; 21 §20)
+        hooks.register_access_hook("inventory.auto_consumption", auto.on_access)      # 04 §16: no processamento lazy

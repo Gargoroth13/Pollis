@@ -210,11 +210,11 @@ Implementar a estrutura central de `22`.
 
 Implementar `05`.
 
-## [ ] P1.02a — Auto-consumo de alimentos  *(obrigatório no primeiro Bot Test; regra definida em `design/04` §16; depende de P1.02)*
+## [x] P1.02a — Auto-consumo de alimentos  *(implementado em 2026-10-19, branch `dev/p1.02a-auto-consumo`, PR empilhado sobre o #12; aguarda revisão e autorização do GD; obrigatório no primeiro Bot Test; regra em `design/04` §16)*
 
 Implementar o §16 integralmente: o jogador habilita o Auto-consumo no Inventário e escolhe um alimento preferido; quando `Nutrição < 10`, durante o processamento lazy, o sistema consome automaticamente (1º alimento preferido, se houver; 2º o alimento disponível de menor ganho de Nutrição), repete enquanto Nutrição < 10 e houver alimento elegível, para ao atingir/ultrapassar 10, não faz nada sem alimento elegível, usa exatamente as regras do consumo manual (sem bônus) e o efeito de Comida substitui o anterior. Sem verificação contínua por jogador.
 
-Critérios: preferência/habilitação persistidas e expostas pelo Action Registry; integração com `players.services._catch_up()` **sem recursão** (`_catch_up` → hook → consumo → `sync_player` → `_catch_up`); mesma regra de negócio do `consume()` sobre o jogador já travado; desempate determinístico entre ganhos iguais (detalhe técnico registrado; só vai ao GD se afetar o gameplay de forma material); testes: preferido, alternativa de menor ganho, consumo repetido, parada, sem elegível, integridade de inventário/Nutrição/auditoria, não-recursão, concorrência no PostgreSQL.
+**Entregue** (`CHANGELOG_DEV.md`, 2026-10-19): configuração persistida e ação no registro; hook de acesso sem recursão sobre o núcleo `consume_locked`; trilha/auditoria; testes (inclui PostgreSQL). Critérios: preferência/habilitação persistidas e expostas pelo Action Registry; integração com `players.services._catch_up()` **sem recursão** (`_catch_up` → hook → consumo → `sync_player` → `_catch_up`); mesma regra de negócio do `consume()` sobre o jogador já travado; desempate determinístico entre ganhos iguais (detalhe técnico registrado; só vai ao GD se afetar o gameplay de forma material); testes: preferido, alternativa de menor ganho, consumo repetido, parada, sem elegível, integridade de inventário/Nutrição/auditoria, não-recursão, concorrência no PostgreSQL.
 
 ---
 

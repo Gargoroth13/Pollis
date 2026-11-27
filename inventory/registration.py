@@ -5,6 +5,7 @@ feedback vem dos `Explained` (20). Bots e jogadores reais usam o mesmo caminho (
 
   consume    Consumir  alvo = chave do produto (alimento do inventário)
   send_item  Correio   alvo = {"recipient": id, "product": chave, "quantity": n}
+  auto_consumption  Auto-consumo (04 §16)   alvo = {"enabled": bool, "preferred": chave | None}
 """
 from __future__ import annotations
 
@@ -13,11 +14,13 @@ from typing import Any, Dict, Optional
 from players.registry import TARGET_PARAMS, TARGET_PRODUCT, ActionDescriptor, TargetSpec, register_action
 from players.services import ActionResult
 
-from . import services
+from . import auto, services
 
 CONSUME_ID = "consume"
 SEND_ID = "send_item"
 SEND_KEYS = frozenset({"recipient", "product", "quantity"})
+AUTO_ID = "auto_consumption"
+AUTO_KEYS = frozenset({"enabled", "preferred"})
 
 
 # --- Consumir -----------------------------------------------------------------------------------------------------------
@@ -89,6 +92,34 @@ def _send_preview(player, now, bal, target) -> Dict[str, Any]:
     return {} if refusal is not None else {"fee": fee, "fee_cents": services.fee_cents(fee)}
 
 
+# --- Auto-consumo (04 §16) ----------------------------------------------------------------------------------------------
+
+def _auto_params(target) -> Optional[tuple]:
+    if not isinstance(target, dict) or set(target) != AUTO_KEYS:
+        return None
+    return target["enabled"], target["preferred"]
+
+
+def _auto_invalid(target) -> ActionResult:
+    return ActionResult(False, "INVALID_PARAMS", {"action": AUTO_ID, "expected": sorted(AUTO_KEYS), "target": repr(target)[:80]})
+
+
+def _auto_check(player, now, bal, target) -> Optional[ActionResult]:
+    if target is None:
+        return None
+    parsed = _auto_params(target)
+    return _auto_invalid(target) if parsed is None else auto.configuration_refusal(*parsed)
+
+
+def _auto_execute(player_id: int, target: Any) -> ActionResult:
+    parsed = _auto_params(target)
+    return _auto_invalid(target) if parsed is None else auto.configure(player_id, *parsed)
+
+
+def _auto_preview(player, now, bal, target) -> Dict[str, Any]:
+    return {"current": auto.settings_of(player.pk), "threshold": auto.AUTO_CONSUME_BELOW}
+
+
 def register() -> None:
     register_action(
         ActionDescriptor(
@@ -105,3 +136,9 @@ def register() -> None:
             cost=("item", "money"), target=TargetSpec(TARGET_PARAMS, required=True),
             effects=("item_transferred", "mail_fee_charged")),
         check=_send_check, execute=_send_execute, preview=_send_preview)
+    register_action(
+        ActionDescriptor(
+            id=AUTO_ID, name="Configurar Auto-consumo",
+            requirements=("INVALID_PARAMS", "UNKNOWN_PRODUCT", "NO_CONSUMPTION_EFFECT", "UNSPECIFIED_DESIGN_VALUE"),
+            cost=(), target=TargetSpec(TARGET_PARAMS, required=True), effects=("auto_consumption_configured",)),
+        check=_auto_check, execute=_auto_execute, preview=_auto_preview)

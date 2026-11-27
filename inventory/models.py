@@ -51,6 +51,18 @@ class InventoryItem(models.Model):
         ]
 
 
+class AutoConsumption(models.Model):
+    """
+    Configuração de Auto-consumo do jogador (design/04 §16): habilitado ou não e o alimento preferido (opcional). É estado de
+    configuração (mutável); o que o auto-consumo FAZ fica na trilha `InventoryMovement` (`reference_kind="auto_consumption"`).
+    """
+
+    player = models.OneToOneField("players.Player", on_delete=models.PROTECT, related_name="auto_consumption")
+    enabled = models.BooleanField(default=False)
+    preferred_product = models.ForeignKey("catalog.Product", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    updated_at = models.BigIntegerField()
+
+
 class Shipment(models.Model):
     """Um envio pelo Correio (05 §11-12): item de um jogador a outro com taxa obrigatória. Imutável; guarda o detalhamento da taxa."""
 
